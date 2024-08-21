@@ -11,7 +11,6 @@ from torchvision import transforms
 import lightning as pl
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
-import wandb
 
 # Path settings
 DATASET_PATH = "./data"
@@ -352,9 +351,7 @@ def train_model(args):
         num_workers=4,
     )
 
-    # Initialize wandb
-    wandb.init(project="ebm-cifar10", config=args)
-    wandb_logger = WandbLogger(log_model="all")
+    wandb_logger = WandbLogger(project="ebm-cifar10", log_model="all")
 
     # Create a PyTorch Lightning trainer
     trainer = pl.Trainer(
@@ -388,7 +385,6 @@ def train_model(args):
     )
     trainer.fit(model, train_loader, test_loader)
 
-    wandb.finish()
     return model
 
 
