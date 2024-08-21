@@ -5,6 +5,8 @@
 #PBS -l walltime=24:00:00
 #PBS -j oe
 #PBS -o ebm_cifar10_output.log
+#PBS -M wc5118@ic.ac.uk                                               
+#PBS -m bae
 
 cd $PBS_O_WORKDIR
 
