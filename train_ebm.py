@@ -264,8 +264,8 @@ class GenerateCallback(pl.Callback):
                     normalize=True,
                     value_range=(-1, 1),
                 )
-                trainer.logger.experiment.add_image(
-                    f"generation_{i}", grid, global_step=trainer.current_epoch
+                trainer.logger.log_image(
+                    f"generation_{i}", [grid], step=trainer.current_epoch
                 )
 
     def generate_imgs(self, pl_module):
@@ -301,9 +301,7 @@ class SamplerCallback(pl.Callback):
             grid = torchvision.utils.make_grid(
                 exmp_imgs, nrow=4, normalize=True, value_range=(-1, 1)
             )
-            trainer.logger.experiment.add_image(
-                "sampler", grid, global_step=trainer.current_epoch
-            )
+            trainer.logger.log_image("sampler", [grid], step=trainer.current_epoch)
 
 
 class OutlierCallback(pl.Callback):
@@ -372,7 +370,7 @@ def train_model(args):
             ),
             GenerateCallback(every_n_epochs=1),
             SamplerCallback(every_n_epochs=1),
-            OutlierCallback(),
+            # OutlierCallback(),
             LearningRateMonitor("epoch"),
         ],
     )
