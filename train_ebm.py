@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as data_utils
 import torchvision
-from torchvision import transforms
+from torchvision import transforms, models
 import lightning as pl
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
@@ -49,6 +49,7 @@ class ConfigurableCNNModel(nn.Module):
         padding=1,
         final_pooling=True,
         input_size=(32, 32),
+        **kwargs,
     ):
         super().__init__()
 
@@ -103,6 +104,49 @@ class ConfigurableCNNModel(nn.Module):
 
     def forward(self, x):
         return self.cnn_layers(x).squeeze(dim=-1)
+
+
+class ConfigurableResNetModel(nn.Module):
+    def __init__(self, input_channels=3, hidden_features=512, out_dim=1, **kwargs):
+        super().__init__()
+
+        self.resnet = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
+
+        if input_channels != 3:
+            self.resnet.conv1 = nn.Conv2d(
+                input_channels, 64, kernel_size=3, stride=1, padding=1, bias=False
+            )
+
+        self.resnet.maxpool = nn.Identity()
+        self.resnet.fc = nn.Sequential(
+            nn.Linear(512, hidden_features),
+            nn.ReLU(),
+            nn.Linear(hidden_features, out_dim),
+        )
+
+    def forward(self, x):
+        return self.resnet(x).squeeze(dim=-1)
+
+
+class ConfigurableVGG19Model(nn.Module):
+    def __init__(self, input_channels=3, hidden_features=512, out_dim=1, **kwargs):
+        super().__init__()
+
+        self.vgg19 = models.vgg19(weights=models.VGG19_Weights.IMAGENET1K_V1)
+
+        if input_channels != 3:
+            self.vgg19.features[0] = nn.Conv2d(
+                input_channels, 64, kernel_size=3, padding=1
+            )
+
+        self.vgg19.classifier = nn.Sequential(
+            nn.Linear(512 * 7 * 7, hidden_features),
+            nn.ReLU(),
+            nn.Linear(hidden_features, out_dim),
+        )
+
+    def forward(self, x):
+        return self.vgg19(x).squeeze(dim=-1)
 
 
 # Sampler class
@@ -372,16 +416,24 @@ def train_model(args):
         ],
     )
 
+    # Choose the model class based on the argument
+
+    model_class = ConfigurableCNNModel
+    if args.model == "resnet":
+        model_class = ConfigurableResNetModel
+    elif args.model == "vgg19":
+        model_class = ConfigurableVGG19Model
+
     # Create and train the model
     pl.seed_everything(args.seed)
     model = DeepEnergyModel(
-        model_class=ConfigurableCNNModel,
+        model_class=model_class,
         img_shape=(3, 32, 32),
         batch_size=args.batch_size,
         lr=args.lr,
         beta1=args.beta1,
         hidden_features=args.hidden_features,
-        depth=args.depth,
+        depth=args.depth if args.model == "cnn" else None,
     )
     trainer.fit(model, train_loader, test_loader)
 
@@ -409,6 +461,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--seed", type=int, default=42, help="Random seed for reproducibility"
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="cnn",
+        choices=["cnn", "resnet", "vgg19"],
+        help="Model to use for training",
     )
 
     args = parser.parse_args()
