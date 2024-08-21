@@ -14,7 +14,7 @@ cd $PBS_O_WORKDIR
 eval "$(~/anaconda3/bin/conda shell.bash hook)"
 source activate torch_cuda_env
 
-python ebm_cifar10.py --batch_size 256 --lr 1e-4 --beta1 0.0 --hidden_features 64 --depth 3 --max_epochs 120 --seed 88
+python train_ebm.py --batch_size 256 --lr 1e-4 --beta1 0.0 --hidden_features 64 --depth 3 --max_epochs 120 --seed 88
 
 # Deactivate the virtual environment
 deactivate

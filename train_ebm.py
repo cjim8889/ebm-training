@@ -21,6 +21,9 @@ CHECKPOINT_PATH = "./saved_models/ebm"
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
+# Set high precision for matrix multiplication to utilise Tensor Cores
+torch.set_float32_matmul_precision("high")
+
 # Device configuration
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
