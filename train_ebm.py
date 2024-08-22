@@ -17,8 +17,8 @@ DATASET_PATH = "./data"
 CHECKPOINT_PATH = "./saved_models/ebm"
 
 # Ensure deterministic behavior
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
+# torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = True
 
 # Set high precision for matrix multiplication to utilise Tensor Cores
 torch.set_float32_matmul_precision("high")
@@ -385,7 +385,9 @@ def train_model(args):
         shuffle=True,
         drop_last=True,
         num_workers=4,
+        persistent_workers=True,
         pin_memory=True,
+        pin_memory_device=device,
     )
     test_loader = data_utils.DataLoader(
         test_set,
@@ -393,6 +395,8 @@ def train_model(args):
         shuffle=False,
         drop_last=False,
         num_workers=4,
+        persistent_workers=True,
+        pin_memory=True,
     )
 
     wandb_logger = WandbLogger(project="ebm-cifar10", log_model="all")
@@ -414,6 +418,7 @@ def train_model(args):
             # OutlierCallback(),
             LearningRateMonitor("epoch"),
         ],
+        precision=16 if torch.cuda.is_available() else 32,
     )
 
     # Choose the model class based on the argument
