@@ -118,14 +118,7 @@ def denoising_score_matching_loss(model, x, key, noise_level):
     noise = jax.random.normal(key, x.shape) * noise_level
     x_noisy = x + noise
     scores = jax.vmap(stein_score, in_axes=(None, 0))(model, x_noisy)
-    loss = 0.5 * jnp.mean(
-        jnp.linalg.norm(
-            jnp.reshape(scores + (noise / noise_level**2), (scores.shape[0], -1)),
-            axis=1,
-            ord=2,
-        )
-        ** 2
-    )
+    loss = 0.5 * jnp.sum((scores + (noise / noise_level**2)) ** 2) / x.shape[0]
     return loss
 
 
