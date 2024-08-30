@@ -158,16 +158,16 @@ def train(model, train_loader, optim, key, epochs, print_every):
         model = eqx.apply_updates(model, updates)
         return model, opt_state, loss_value
 
+    step = 0
     for epoch in range(epochs):
         for i, (x, _) in enumerate(train_loader):
+            step += 1
             x = x.numpy()
             subkey, key = jax.random.split(key)
             model, opt_state, train_loss = make_step(model, opt_state, x, subkey)
 
             # Log metrics to WandB
-            wandb.log(
-                {"train_loss": train_loss.item()}, step=epoch * len(train_loader) + i
-            )
+            wandb.log({"train_loss": train_loss.item()}, step=step)
 
             if i % print_every == 0:
                 print(f"Epoch {epoch}, Step {i}, Loss: {train_loss.item()}")
@@ -180,7 +180,7 @@ def train(model, train_loader, optim, key, epochs, print_every):
         generated_samples = torch.tensor(generated_samples).cpu()
 
         grid = make_grid(generated_samples, nrow=4, normalize=True)
-        wandb.log({"generated_samples": [wandb.Image(grid)]}, step=epoch)
+        wandb.log({"generated_samples": [wandb.Image(grid)]}, step=step)
 
     return model
 
