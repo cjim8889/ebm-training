@@ -1,5 +1,6 @@
 import argparse
 
+import numpy as np
 import wandb
 import torch
 import torch.utils.data as data_utils
@@ -173,9 +174,11 @@ def train(model, train_loader, optim, key, epochs, print_every):
 
         subkey, key = jax.random.split(key)
         generated_samples = sample_images(subkey, model, num_samples=16)
-        generated_samples = (
-            torch.tensor(generated_samples).permute(0, 2, 3, 1).cpu()
-        )  # Move to CPU and adjust dimensions for grid
+        generated_samples = np.array(
+            generated_samples
+        )  # Ensure it's a writable NumPy array
+        generated_samples = torch.tensor(generated_samples).cpu()
+
         grid = make_grid(generated_samples, nrow=4, normalize=True)
         wandb.log({"generated_samples": [wandb.Image(grid)]}, step=epoch)
 
