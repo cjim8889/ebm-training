@@ -1,5 +1,4 @@
 import argparse
-
 import numpy as np
 import wandb
 import torch
@@ -114,24 +113,32 @@ def stein_score(model, x):
     return -score_fn(x)
 
 
-def denoising_score_matching_loss(model, x, key):
-    noise = jax.random.normal(key, x.shape) * 0.1
+def denoising_score_matching_loss(model, x, key, noise_level):
+    noise = jax.random.normal(key, x.shape) * noise_level
     x_noisy = x + noise
     scores = jax.vmap(stein_score, in_axes=(None, 0))(model, x_noisy)
     loss = 0.5 * jnp.mean(
         jnp.linalg.norm(
-            jnp.reshape(scores + (noise / 0.1), (scores.shape[0], -1)), axis=1, ord=2
+            jnp.reshape(scores + (noise / noise_level), (scores.shape[0], -1)),
+            axis=1,
+            ord=2,
         )
         ** 2
     )
     return loss
 
 
-def sample_langevin_dynamics(key, model, x, num_steps=10, step_size=0.01):
+def sample_langevin_dynamics(key, model, x, num_steps=60, step_size=10):
     def step(i, x):
-        noise = jax.random.normal(jax.random.fold_in(key, i), shape=x.shape)
+        noise = jax.random.normal(jax.random.fold_in(key, i), shape=x.shape) * 0.005
+        x = x + noise
+        x = jnp.clip(x, -1.0, 1.0)
+
         grad = stein_score(model, x)
-        x = x - (step_size / 2.0) * grad + jnp.sqrt(step_size) * noise
+        grad = jnp.clip(grad, -0.03, 0.03)
+
+        x = x - step_size * grad
+        x = jnp.clip(x, -1.0, 1.0)
         return x
 
     return jax.lax.fori_loop(0, num_steps, step, x)
@@ -146,14 +153,15 @@ def sample_images(key, model, num_samples=16):
     return samples
 
 
-def train(model, train_loader, optim, key, epochs, print_every):
+def train(model, train_loader, optim, key, epochs, print_every, noise_level):
     opt_state = optim.init(eqx.filter(model, eqx.is_array))
 
     @eqx.filter_jit
     def make_step(model, opt_state, x, key):
         loss_value, grads = eqx.filter_value_and_grad(denoising_score_matching_loss)(
-            model, x, key
+            model, x, key, noise_level
         )
+        grads = jax.tree.map(lambda g: jnp.clip(g, -1.0, 1.0), grads)
         updates, opt_state = optim.update(grads, opt_state, model)
         model = eqx.apply_updates(model, updates)
         return model, opt_state, loss_value
@@ -199,6 +207,7 @@ def main(args):
             "cnn_hidden_features": args.hidden_features,
             "cnn_depth": args.depth,
             "optimizer": "adam",
+            "noise_level": args.noise_level,
         },
     )
 
@@ -220,10 +229,12 @@ def main(args):
         hidden_features=args.hidden_features,
         depth=args.depth,
     )
-    optim = optax.adam(args.lr)
+    optim = optax.adam(args.lr, b1=0.0)  # No momentum
 
     # Train the model
-    train(model, train_loader, optim, key, args.epochs, args.print_every)
+    train(
+        model, train_loader, optim, key, args.epochs, args.print_every, args.noise_level
+    )
 
 
 if __name__ == "__main__":
@@ -247,6 +258,12 @@ if __name__ == "__main__":
         help="Number of hidden features in CNN",
     )
     parser.add_argument("--depth", type=int, default=4, help="Depth of the CNN")
+    parser.add_argument(
+        "--noise_level",
+        type=float,
+        default=0.1,
+        help="Noise level for denoising score matching",
+    )
 
     args = parser.parse_args()
     main(args)
