@@ -114,11 +114,12 @@ def stein_score(model, x):
     return -score_fn(x)
 
 
-def denoising_score_matching_loss(model, x, key, noise_level):
-    noise = jax.random.normal(key, x.shape) * noise_level
+def denoising_score_matching_loss(model, x, key, sigmas):
+    batch_size = x.shape[0]
+    noise = jax.random.normal(key, x.shape) * sigmas
     x_noisy = x + noise
     scores = jax.vmap(stein_score, in_axes=(None, 0))(model, x_noisy)
-    loss = 0.5 * jnp.sum((scores + (noise / noise_level**2)) ** 2) / x.shape[0]
+    loss = 0.5 * jnp.sum(((scores * sigmas) + (noise / sigmas)) ** 2) / batch_size
     return loss
 
 
@@ -173,16 +174,23 @@ def sample_images(key, model, num_samples=16):
 
 
 def train(
-    model, train_loader, optim, key, epochs, print_every, noise_level, loss_type="dsm"
+    model,
+    train_loader,
+    optim,
+    key,
+    epochs,
+    print_every,
+    min_noise,
+    max_noise,
+    noise_distribution,
+    loss_type="dsm",
 ):
     opt_state = optim.init(eqx.filter(model, eqx.is_array))
 
     @eqx.filter_jit
-    def make_step(model, opt_state, x, key):
+    def make_step(model, opt_state, x, key, sigmas):
         if loss_type == "dsm":
-            loss_fn = functools.partial(
-                denoising_score_matching_loss, noise_level=noise_level
-            )
+            loss_fn = functools.partial(denoising_score_matching_loss, sigmas=sigmas)
         elif loss_type == "ssm":
             loss_fn = sliced_score_matching_loss
         else:
@@ -199,8 +207,21 @@ def train(
         for i, (x, _) in enumerate(train_loader):
             step += 1
             x = x.numpy()
+            batch_size = x.shape[0]
+
+            # Generate sigmas for this batch
+            if noise_distribution == "exp":
+                sigmas_np = np.logspace(
+                    np.log10(min_noise), np.log10(max_noise), batch_size
+                )
+            elif noise_distribution == "lin":
+                sigmas_np = np.linspace(min_noise, max_noise, batch_size)
+            sigmas = jnp.array(sigmas_np).reshape((batch_size, 1, 1, 1))
+
             subkey, key = jax.random.split(key)
-            model, opt_state, train_loss = make_step(model, opt_state, x, subkey)
+            model, opt_state, train_loss = make_step(
+                model, opt_state, x, subkey, sigmas
+            )
 
             # Log metrics to WandB
             wandb.log({"train_loss": train_loss.item()}, step=step)
@@ -235,7 +256,9 @@ def main(args):
             "cnn_hidden_features": args.hidden_features,
             "cnn_depth": args.depth,
             "optimizer": "adam",
-            "noise_level": args.noise_level,
+            "min_noise": args.min_noise,
+            "max_noise": args.max_noise,
+            "noise_distribution": args.noise_distribution,
         },
     )
 
@@ -267,7 +290,9 @@ def main(args):
         key,
         args.epochs,
         args.print_every,
-        args.noise_level,
+        args.min_noise,
+        args.max_noise,
+        args.noise_distribution,
         loss_type=args.loss_type,
     )
 
@@ -294,17 +319,30 @@ if __name__ == "__main__":
     )
     parser.add_argument("--depth", type=int, default=4, help="Depth of the CNN")
     parser.add_argument(
-        "--noise_level",
-        type=float,
-        default=0.1,
-        help="Noise level for denoising score matching",
-    )
-    parser.add_argument(
         "--loss_type",
         type=str,
         default="dsm",
         choices=["dsm", "ssm"],
         help="Loss type: denoising score matching (dsm) or sliced score matching (ssm)",
+    )
+    parser.add_argument(
+        "--min_noise",
+        type=float,
+        default=0.01,
+        help="Minimum noise level for denoising score matching",
+    )
+    parser.add_argument(
+        "--max_noise",
+        type=float,
+        default=0.1,
+        help="Maximum noise level for denoising score matching",
+    )
+    parser.add_argument(
+        "--noise_distribution",
+        type=str,
+        default="lin",
+        choices=["lin", "exp"],
+        help="Noise distribution: linear (lin) or exponential (exp) spacing",
     )
 
     args = parser.parse_args()
