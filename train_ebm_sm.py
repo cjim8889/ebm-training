@@ -10,6 +10,7 @@ import equinox as eqx
 import optax
 from torchvision import transforms
 from torchvision.datasets import CIFAR10
+import functools
 
 
 # Define CNN model using Equinox
@@ -119,13 +120,38 @@ def denoising_score_matching_loss(model, x, key, noise_level):
     scores = jax.vmap(stein_score, in_axes=(None, 0))(model, x_noisy)
     loss = 0.5 * jnp.mean(
         jnp.linalg.norm(
-            jnp.reshape(scores + (noise / noise_level), (scores.shape[0], -1)),
+            jnp.reshape(scores + (noise / noise_level**2), (scores.shape[0], -1)),
             axis=1,
             ord=2,
         )
         ** 2
     )
     return loss
+
+
+def sliced_score_matching_loss(model, x, key, num_slices=5):
+    batch_size, channels, height, width = x.shape
+    x = x.reshape(batch_size, -1)
+
+    vectors = jax.random.normal(
+        key, (num_slices, batch_size, channels * height * width)
+    )
+    vectors = vectors / jnp.linalg.norm(vectors, axis=-1, keepdims=True)
+
+    def score_and_jacobian(x):
+        score = stein_score(model, x.reshape(-1, channels, height, width))
+        return score.reshape(batch_size, -1)
+
+    score_fn = jax.vmap(score_and_jacobian)
+
+    def compute_loss(v):
+        score, jvp = jax.jvp(score_fn, (x,), (v,))
+        loss_1 = jnp.sum(jvp * v, axis=-1)
+        loss_2 = 0.5 * jnp.sum(score**2, axis=-1)
+        return loss_1 + loss_2
+
+    losses = jax.vmap(compute_loss)(vectors)
+    return jnp.mean(losses)
 
 
 def sample_langevin_dynamics(key, model, x, num_steps=60, step_size=10):
@@ -153,14 +179,23 @@ def sample_images(key, model, num_samples=16):
     return samples
 
 
-def train(model, train_loader, optim, key, epochs, print_every, noise_level):
+def train(
+    model, train_loader, optim, key, epochs, print_every, noise_level, loss_type="dsm"
+):
     opt_state = optim.init(eqx.filter(model, eqx.is_array))
 
     @eqx.filter_jit
     def make_step(model, opt_state, x, key):
-        loss_value, grads = eqx.filter_value_and_grad(denoising_score_matching_loss)(
-            model, x, key, noise_level
-        )
+        if loss_type == "dsm":
+            loss_fn = functools.partial(
+                denoising_score_matching_loss, noise_level=noise_level
+            )
+        elif loss_type == "ssm":
+            loss_fn = sliced_score_matching_loss
+        else:
+            raise ValueError(f"Unknown loss type: {loss_type}")
+
+        loss_value, grads = eqx.filter_value_and_grad(loss_fn)(model, x, key)
         grads = jax.tree.map(lambda g: jnp.clip(g, -1.0, 1.0), grads)
         updates, opt_state = optim.update(grads, opt_state, model)
         model = eqx.apply_updates(model, updates)
@@ -233,7 +268,14 @@ def main(args):
 
     # Train the model
     train(
-        model, train_loader, optim, key, args.epochs, args.print_every, args.noise_level
+        model,
+        train_loader,
+        optim,
+        key,
+        args.epochs,
+        args.print_every,
+        args.noise_level,
+        loss_type=args.loss_type,
     )
 
 
@@ -263,6 +305,13 @@ if __name__ == "__main__":
         type=float,
         default=0.1,
         help="Noise level for denoising score matching",
+    )
+    parser.add_argument(
+        "--loss_type",
+        type=str,
+        default="dsm",
+        choices=["dsm", "ssm"],
+        help="Loss type: denoising score matching (dsm) or sliced score matching (ssm)",
     )
 
     args = parser.parse_args()
