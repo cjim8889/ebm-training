@@ -111,7 +111,7 @@ class CNN(eqx.Module):
 
 def stein_score(model, x):
     score_fn = jax.grad(model, argnums=0)
-    return -score_fn(x)
+    return score_fn(x)
 
 
 def denoising_score_matching_loss(model, x, key, sigmas, sigma0=0.1):
