@@ -114,12 +114,18 @@ def stein_score(model, x):
     return -score_fn(x)
 
 
-def denoising_score_matching_loss(model, x, key, sigmas):
+def denoising_score_matching_loss(model, x, key, sigmas, sigma0=0.1):
+    sigma02 = sigma0**2
+
     batch_size = x.shape[0]
     noise = jax.random.normal(key, x.shape) * sigmas
     x_noisy = x + noise
+
     scores = jax.vmap(stein_score, in_axes=(None, 0))(model, x_noisy)
-    loss = 0.5 * jnp.sum(((scores * sigmas) + (noise / sigmas)) ** 2) / batch_size
+
+    loss = jnp.sum(
+        (((x - x_noisy) / sigma02 / sigmas + scores / sigmas) ** 2) / batch_size
+    )
     return loss
 
 
