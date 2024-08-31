@@ -122,9 +122,11 @@ def denoising_score_matching_loss(model, x, key, sigmas, sigma0=0.1):
     x_noisy = x + noise
 
     scores = jax.vmap(stein_score, in_axes=(None, 0))(model, x_noisy)
+    x_noisy_detached = jax.lax.stop_gradient(x_noisy)
 
     loss = jnp.sum(
-        (((x - x_noisy) / sigma02 / sigmas + scores / sigmas) ** 2) / batch_size
+        (((x - x_noisy_detached) / sigma02 / sigmas + scores / sigmas) ** 2)
+        / batch_size
     )
     return loss
 
