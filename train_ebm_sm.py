@@ -132,28 +132,28 @@ def denoising_score_matching_loss(model, x, key, sigmas, sigma0=0.1):
 
 
 def sliced_score_matching_loss(model, x, key, num_slices=5):
-    batch_size, channels, height, width = x.shape
-    x = x.reshape(batch_size, -1)
+    batch_size, channels, height, width = x.shape  # Unpack dimensions
+    input_dim = channels * height * width
 
-    vectors = jax.random.normal(
-        key, (num_slices, batch_size, channels * height * width)
+    # Repeat x for num_slices slices
+    x = jnp.tile(x[:, None, :, :, :], (1, num_slices, 1, 1, 1)).reshape(
+        -1, channels, height, width
     )
-    vectors = vectors / jnp.linalg.norm(vectors, axis=-1, keepdims=True)
 
-    def score_and_jacobian(x):
-        score = stein_score(model, x.reshape(-1, channels, height, width))
-        return score.reshape(batch_size, -1)
+    # Generate random projection vectors
+    key, subkey = jax.random.split(key)
+    vectors = jax.random.normal(subkey, shape=x.shape)
+    
+    vectors = vectors / (jnp.linalg.norm(vectors, axis=(1, 2, 3), keepdims=True) + 1e-8)
 
-    score_fn = jax.vmap(score_and_jacobian)
+    h_x, h_x_v = eqx.filter_jvp(jax.vmap(model), (x,), (vectors,))
 
-    def compute_loss(v):
-        score, jvp = jax.jvp(score_fn, (x,), (v,))
-        loss_1 = jnp.sum(jvp * v, axis=-1)
-        loss_2 = 0.5 * jnp.sum(score**2, axis=-1)
-        return loss_1 + loss_2
+    # Compute loss components
+    loss_1 = jnp.sum(h_x_v * vectors, axis=(-3, -2, -1))
+    loss_2 = 0.5 * jnp.sum(h_x * vectors, axis=(-3, -2, -1)) ** 2
 
-    losses = jax.vmap(compute_loss)(vectors)
-    return jnp.mean(losses)
+    loss = loss_1 + loss_2
+    return jnp.mean(loss)
 
 
 def sample_langevin_dynamics(key, model, x, num_steps=60, step_size=10):
@@ -288,7 +288,7 @@ def main(args):
         hidden_features=args.hidden_features,
         depth=args.depth,
     )
-    optim = optax.adam(args.lr, b1=0.0)  # No momentum
+    optim = optax.adam(args.lr, b1=0.9, b2=0.95)  # No momentum
 
     # Train the model
     train(
