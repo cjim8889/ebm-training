@@ -23,8 +23,6 @@ from matplotlib.animation import FuncAnimation
 plt.rcParams["figure.dpi"] = 300
 plt.rcParams["figure.figsize"] = [6.0, 4.0]
 
-key = jax.random.PRNGKey(888)
-
 
 def plot_contours_2D(
     log_prob_func, ax: Optional[plt.Axes] = None, bound: float = 3, levels: int = 20
@@ -1136,19 +1134,17 @@ def train_velocity_field(
 # Define Main Function
 def main(args):
     # Initialize WandB
-    global key
+    key = jax.random.PRNGKey(args.seed)
     key, subkey = jax.random.split(key)
+
     gmm = GMM(
-        dim=args.gmm_dim,
+        dim=2,
         n_mixes=args.gmm_n_mixes,
-        loc_scaling=args.gmm_loc_scaling,
-        scale_scaling=args.gmm_scale_scaling,
-        seed=args.gmm_seed,
+        seed=subkey[0],
     )
     initial = MultivariateGaussian(
         dim=args.initial_dim,
         sigma=args.initial_sigma,
-        plot_bound_factor=args.initial_plot_bound_factor,
     )
 
     # Initialize the velocity field
@@ -1191,7 +1187,7 @@ def parse_arguments():
 
     # General Hyperparameters
     parser.add_argument(
-        "--seed", type=int, default=88, help="Random seed for reproducibility."
+        "--seed", type=int, default=80801, help="Random seed for reproducibility."
     )
     parser.add_argument(
         "--wandb_project",
@@ -1233,7 +1229,7 @@ def parse_arguments():
         "--hidden_dim", type=int, default=128, help="Hidden dimension size of the MLP."
     )
     parser.add_argument(
-        "--depth", type=int, default=4, help="Depth (number of layers) of the MLP."
+        "--depth", type=int, default=3, help="Depth (number of layers) of the MLP."
     )
     parser.add_argument(
         "--gradient_norm", type=float, default=1.0, help="Gradient clipping norm."
@@ -1241,25 +1237,7 @@ def parse_arguments():
 
     # GMM Hyperparameters
     parser.add_argument(
-        "--gmm_dim", type=int, default=2, help="Dimensionality of the GMM."
-    )
-    parser.add_argument(
         "--gmm_n_mixes", type=int, default=40, help="Number of mixtures in the GMM."
-    )
-    parser.add_argument(
-        "--gmm_loc_scaling",
-        type=float,
-        default=40.0,
-        help="Location scaling factor for GMM means.",
-    )
-    parser.add_argument(
-        "--gmm_scale_scaling",
-        type=float,
-        default=1.0,
-        help="Scale scaling factor for GMM components.",
-    )
-    parser.add_argument(
-        "--gmm_seed", type=int, default=512, help="Random seed for GMM initialization."
     )
 
     # Initial Distribution Hyperparameters
@@ -1274,26 +1252,6 @@ def parse_arguments():
         type=float,
         default=20.0,
         help="Sigma (standard deviation) for the initial Gaussian.",
-    )
-    parser.add_argument(
-        "--initial_plot_bound_factor",
-        type=float,
-        default=3.0,
-        help="Factor to determine the plotting bounds based on sigma for the initial distribution.",
-    )
-
-    # GaussianMixture2D Hyperparameters
-    parser.add_argument(
-        "--gmm2d_scale",
-        type=float,
-        default=0.5477222,
-        help="Scale parameter for GaussianMixture2D.",
-    )
-    parser.add_argument(
-        "--gmm2d_width_in_n_modes",
-        type=int,
-        default=3,
-        help="Width in number of modes for GaussianMixture2D.",
     )
 
     # MCMC Hyperparameters
