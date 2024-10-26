@@ -1,0 +1,21 @@
+[project]
+name = "ebm-sampling"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "chex>=0.1.81",
+    "distrax>=0.1.5",
+    "equinox>=0.11.7",
+    "ipykernel>=6.29.5",
+    "jax-metal==0.1.0",
+    "jaxlib==0.4.26",
+    "jax==0.4.26",
+    "matplotlib>=3.9.2",
+    "numpy>=2.1.2",
+    "optax>=0.2.1",
+    "pandas>=2.2.3",
+    "plotly>=5.24.1",
+    "wandb>=0.18.3",
+]
