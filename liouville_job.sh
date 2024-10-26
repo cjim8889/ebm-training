@@ -1,7 +1,6 @@
 #!/bin/bash
 
-#PBS -N liouville
-#PBS -l select=1:ncpus=4:mem=32gb:ngpus=1:gpu_type=L40S
+#PBS -l select=1:ncpus=4:mem=64gb:ngpus=1:gpu_type=L40S
 #PBS -l walltime=24:00:00
 #PBS -j oe
 #PBS -o liouville_output.log
