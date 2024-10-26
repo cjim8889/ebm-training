@@ -1,7 +1,7 @@
+# Disable NVIDIA TF32 mixed precision to avoid numerical instability
 import os
 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
-os.environ["XLA_FLAGS"] = "--xla_gpu_disable_tf32=true"
 
 import jax
 import jax.numpy as jnp
@@ -27,6 +27,9 @@ from matplotlib.animation import FuncAnimation
 
 plt.rcParams["figure.dpi"] = 300
 plt.rcParams["figure.figsize"] = [6.0, 4.0]
+
+# Set the default precision for matmul operations to the highest available
+jax.config.update("jax_default_matmul_precision", "highest")
 
 
 def plot_contours_2D(
