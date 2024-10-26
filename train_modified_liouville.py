@@ -958,7 +958,10 @@ def train_velocity_field(
     N: int = 512,
     num_epochs: int = 200,
     num_steps: int = 100,
+    optimiser: str = "adam",
     learning_rate: float = 1e-03,
+    momentum: float = 0.9,
+    nestrov: bool = True,
     T: int = 32,
     gradient_norm: float = 1.0,
     mcmc_type: str = "langevin",
@@ -1003,7 +1006,10 @@ def train_velocity_field(
             "N": N,
             "num_epochs": num_epochs,
             "num_steps": num_steps,
+            "optimiser": optimiser,
             "learning_rate": learning_rate,
+            "momentum": momentum,
+            "nestrov": nestrov,
             "gradient_norm": gradient_norm,
             "hidden_dim": v_theta.mlp.width_size,
             "depth": v_theta.mlp.depth,
@@ -1036,7 +1042,19 @@ def train_velocity_field(
 
     # Set up optimizer
     gradient_clipping = optax.clip_by_global_norm(gradient_norm)
-    optimizer = optax.chain(gradient_clipping, optax.adamw(learning_rate=learning_rate))
+
+    if optimiser == "adam":
+        opt = optax.adam(learning_rate)
+    elif optimiser == "sgd":
+        opt = optax.sgd(learning_rate, momentum=momentum, nesterov=nestrov)
+    elif optimiser == "adamw":
+        opt = optax.adamw(learning_rate)
+    elif optimiser == "adamax":
+        opt = optax.adamax(learning_rate)
+    else:
+        opt = optax.adam(learning_rate)
+
+    optimizer = optax.chain(gradient_clipping, opt)
     opt_state = optimizer.init(eqx.filter(v_theta, eqx.is_inexact_array))
 
     # Generate time steps
@@ -1118,7 +1136,7 @@ def train_velocity_field(
             key, subkey = jax.random.split(key)
             kl_div, ess, E_log_q, log_p, log_q = estimate_diagnostics(
                 v_theta,
-                10000,
+                50000,
                 subkey,
                 linear_ts,
                 target_density.log_prob,
@@ -1188,7 +1206,9 @@ def main(args):
         N=args.N,
         num_epochs=args.num_epochs,
         num_steps=args.num_steps,
+        optimiser=args.optimiser,
         learning_rate=args.learning_rate,
+        momentum=args.momentum,
         T=args.T,
         gradient_norm=args.gradient_norm,
         mcmc_type=args.mcmc_type,  # Added
@@ -1198,6 +1218,7 @@ def main(args):
         schedule=args.schedule,  # Added
         schedule_alpha=args.schedule_alpha,  # Added
         schedule_gamma=args.schedule_gamma,
+        nestrov=True,
     )
 
 
@@ -1242,10 +1263,20 @@ def parse_arguments():
         "--num_steps", type=int, default=100, help="Number of training steps per epoch."
     )
     parser.add_argument(
+        "--optimiser",
+        type=str,
+        choices=["adam", "sgd", "adamw", "adamax"],
+        default="adam",
+        help="Optimizer to use for training.",
+    )
+    parser.add_argument(
         "--learning_rate",
         type=float,
         default=1e-3,
         help="Learning rate for the optimizer.",
+    )
+    parser.add_argument(
+        "--momentum", type=float, default=0.9, help="Momentum for the optimizer."
     )
     parser.add_argument(
         "--hidden_dim", type=int, default=128, help="Hidden dimension size of the MLP."
