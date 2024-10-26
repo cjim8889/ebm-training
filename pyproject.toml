@@ -9,7 +9,6 @@ dependencies = [
     "distrax>=0.1.5",
     "equinox>=0.11.7",
     "ipykernel>=6.29.5",
-    "jax-metal==0.1.0",
     "jaxlib==0.4.26",
     "jax==0.4.26",
     "matplotlib>=3.9.2",
