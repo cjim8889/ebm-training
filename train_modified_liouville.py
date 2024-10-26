@@ -1,3 +1,8 @@
+import os
+
+os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
+os.environ["XLA_FLAGS"] = "--xla_gpu_disable_tf32=true"
+
 import jax
 import jax.numpy as jnp
 import equinox as eqx
