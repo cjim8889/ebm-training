@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-jax.config.update("jax_default_matmul_precision", jax.lax.Precision.HIGHEST)
+jax.config.update("jax_default_matmul_precision", "float32")
 
 import equinox as eqx
 import numpy as np
