@@ -1,3 +1,7 @@
+import os
+
+os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
+
 import jax
 import jax.numpy as jnp
 
@@ -1101,6 +1105,7 @@ def train_velocity_field(
 
         if epoch % 2 == 0:
             linear_ts = jnp.linspace(0, 1, T)
+            key, subkey = jax.random.split(key)
             val_samples = generate_samples(
                 v_theta, N, subkey, linear_ts, sample_initial
             )
