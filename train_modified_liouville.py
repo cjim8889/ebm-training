@@ -921,7 +921,7 @@ def estimate_diagnostics(
     # Compute expectation of log q(x)
     expectation_log_q: Array = compute_expectation_log_q(log_q_x)
 
-    return kl_divergence, ess, expectation_log_q
+    return kl_divergence, ess, expectation_log_q, log_probs_p, log_q_x
 
 
 def epsilon(v_theta, x, dt_log_density, t, score_fn):
@@ -1116,7 +1116,7 @@ def train_velocity_field(
             wandb.log({"validation_samples": wandb.Image(fig)})
 
             key, subkey = jax.random.split(key)
-            kl_div, ess, E_log_q = estimate_diagnostics(
+            kl_div, ess, E_log_q, log_p, log_q = estimate_diagnostics(
                 v_theta,
                 10000,
                 subkey,
@@ -1126,14 +1126,26 @@ def train_velocity_field(
                 sample_initial,
                 initial_density.log_prob,
             )
+
+            kl_div_np = kl_div
+
+            if kl_div > 100:
+                log_p_np = jax.device_get(log_p).astype(np.float64)
+                log_q_np = jax.device_get(log_q).astype(np.float64)
+                kl_div_np = np.mean(log_p_np - log_q_np)
+
             wandb.log(
                 {
                     "forward_kl_divergence": kl_div,
+                    "forward_kl_divergence_np": kl_div_np,
                     "ESS": ess,
                     "Expectation_log_q": E_log_q,
                 }
             )
-            print(f"KL Divergence: {kl_div}, ESS: {ess}, E[log q]: {E_log_q}")
+
+            print(
+                f"KL Divergence: {kl_div}, KL Divergence FP64: {kl_div_np}, ESS: {ess}, E[log q]: {E_log_q}"
+            )
 
             plt.close(fig)
 
