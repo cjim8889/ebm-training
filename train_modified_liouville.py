@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 
 jax.config.update("jax_default_matmul_precision", "float32")
+jax.config.update("jax_enable_x64", True)
 
 import equinox as eqx
 import numpy as np
