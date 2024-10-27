@@ -1152,6 +1152,7 @@ def train_velocity_field(
                 log_p_np = jax.device_get(log_p).astype(np.float64)
                 log_q_np = jax.device_get(log_q).astype(np.float64)
                 kl_div_np = np.mean(log_p_np - log_q_np)
+                jax.debug.print("KL Divergence FP64: ", kl_div, log_p, log_q)
 
             wandb.log(
                 {
