@@ -766,6 +766,94 @@ def reverse_time_flow(
     return xs, log_probs
 
 
+@eqx.filter_jit
+def generate_samples_with_log_prob_rk4(
+    v_theta: Callable,
+    initial_samples: jnp.ndarray,
+    initial_log_probs: jnp.ndarray,
+    ts: jnp.ndarray,
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    def step(carry, t):
+        x_prev, log_prob_prev, t_prev = carry
+        dt = t - t_prev
+
+        def velocity(x, t_local):
+            return v_theta(x, t_local)
+
+        def divergence_term(x, t_local):
+            return divergence_velocity(v_theta, x, t_local)
+
+        # RK4 for x
+        k1 = jax.vmap(velocity)(x_prev, t_prev)
+        k2 = jax.vmap(velocity)(x_prev + 0.5 * dt * k1, t_prev + 0.5 * dt)
+        k3 = jax.vmap(velocity)(x_prev + 0.5 * dt * k2, t_prev + 0.5 * dt)
+        k4 = jax.vmap(velocity)(x_prev + dt * k3, t_prev + dt)
+        x_next = x_prev + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
+
+        # RK4 for divergence
+        d1 = jax.vmap(divergence_term)(x_prev, t_prev)
+        d2 = jax.vmap(divergence_term)(x_prev + 0.5 * dt * k1, t_prev + 0.5 * dt)
+        d3 = jax.vmap(divergence_term)(x_prev + 0.5 * dt * k2, t_prev + 0.5 * dt)
+        d4 = jax.vmap(divergence_term)(x_prev + dt * k3, t_prev + dt)
+        divergence_avg = (d1 + 2 * d2 + 2 * d3 + d4) / 6.0
+        log_prob_next = log_prob_prev - dt * divergence_avg
+
+        return (x_next, log_prob_next, t), None
+
+    # Initialize carry with initial samples and their log-probabilities
+    carry = (initial_samples, initial_log_probs, ts[0] if len(ts) > 0 else 0.0)
+    (samples, log_probs, _), _ = jax.lax.scan(step, carry, ts)
+
+    return samples, log_probs
+
+
+@eqx.filter_jit
+def reverse_time_flow_rk4(
+    v_theta: Callable,
+    final_samples: jnp.ndarray,
+    final_log_probs: jnp.ndarray,
+    final_time: float,
+    ts: jnp.ndarray,
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    # Reverse ts to integrate backward
+    ts_rev = ts[::-1]
+
+    def step(carry, t):
+        x_next, log_prob_next, t_next = carry
+        dt = t - t_next  # dt is negative for backward integration
+
+        def velocity(x, t_local):
+            return v_theta(x, t_local)
+
+        def divergence_term(x, t_local):
+            return divergence_velocity(v_theta, x, t_local)
+
+        # RK4 for x (backward)
+        k1 = jax.vmap(velocity)(x_next, t_next)
+        k2 = jax.vmap(velocity)(x_next + 0.5 * dt * k1, t_next + 0.5 * dt)
+        k3 = jax.vmap(velocity)(x_next + 0.5 * dt * k2, t_next + 0.5 * dt)
+        k4 = jax.vmap(velocity)(x_next + dt * k3, t_next + dt)
+        x_prev = x_next + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
+
+        # RK4 for divergence (backward)
+        d1 = jax.vmap(divergence_term)(x_next, t_next)
+        d2 = jax.vmap(divergence_term)(x_next + 0.5 * dt * k1, t_next + 0.5 * dt)
+        d3 = jax.vmap(divergence_term)(x_next + 0.5 * dt * k2, t_next + 0.5 * dt)
+        d4 = jax.vmap(divergence_term)(x_next + dt * k3, t_next + dt)
+        divergence_avg = (d1 + 2 * d2 + 2 * d3 + d4) / 6.0
+        log_prob_prev = (
+            log_prob_next - dt * divergence_avg
+        )  # Note the sign change for backward
+
+        return (x_prev, log_prob_prev, t), None
+
+    # Initialize carry with final samples and their log-probabilities
+    carry = (final_samples, final_log_probs, final_time)
+    (xs, log_probs, _), _ = jax.lax.scan(step, carry, ts_rev)
+
+    return xs, log_probs
+
+
 @jax.jit
 def compute_log_effective_sample_size(log_p: Array, log_q: Array) -> Array:
     """
@@ -896,9 +984,9 @@ def estimate_diagnostics(
     log_probs_p: Array = log_prob_p_fn(samples_p)  # Compute log p(x) for these samples
 
     # Perform reverse-time integration to compute samples and log probabilities under q(x)
-    samples_rev: Array
-    log_probs_q: Array
-    samples_rev, log_probs_q = reverse_time_flow(v_theta, samples_p, final_time, ts)
+    samples_rev, log_probs_q = reverse_time_flow_rk4(
+        v_theta, samples_p, jnp.zeros((num_samples,), dtype=jnp.float32), final_time, ts
+    )
 
     # Compute log q(x(T)) = log q(x(0)) + accumulated log_probs
     base_log_probs: Array = base_log_prob(samples_rev)  # Compute log q(x(0))
