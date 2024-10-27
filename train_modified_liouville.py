@@ -785,14 +785,16 @@ def generate_samples_with_log_prob_rk4(
         x_next = x_prev + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
 
         # RK4 for divergence
-        d1 = jax.vmap(lambda x: divergence_velocity(x, t_prev))(x_prev)
-        d2 = jax.vmap(lambda x: divergence_velocity(x, t_prev + 0.5 * dt))(
+        d1 = jax.vmap(lambda x: divergence_velocity(v_theta, x, t_prev))(x_prev)
+        d2 = jax.vmap(lambda x: divergence_velocity(v_theta, x, t_prev + 0.5 * dt))(
             x_prev + 0.5 * dt * k1
         )
-        d3 = jax.vmap(lambda x: divergence_velocity(x, t_prev + 0.5 * dt))(
+        d3 = jax.vmap(lambda x: divergence_velocity(v_theta, x, t_prev + 0.5 * dt))(
             x_prev + 0.5 * dt * k2
         )
-        d4 = jax.vmap(lambda x: divergence_velocity(x, t_prev + dt))(x_prev + dt * k3)
+        d4 = jax.vmap(lambda x: divergence_velocity(v_theta, x, t_prev + dt))(
+            x_prev + dt * k3
+        )
         divergence_avg = (d1 + 2 * d2 + 2 * d3 + d4) / 6.0
         log_prob_next = log_prob_prev - dt * divergence_avg
 
@@ -1084,6 +1086,36 @@ def train_velocity_field(
     Returns:
         Any: Trained velocity field v_theta.
     """
+    print("Argument Types:")
+    print(f"1. initial_density: {type(initial_density).__name__}")
+    print(f"2. target_density: {type(target_density).__name__}")
+    print(f"3. v_theta: {type(v_theta).__name__}")
+    print(f"4. key: {type(key).__name__}")
+    print(f"5. N: {type(N).__name__}")
+    print(f"6. num_epochs: {type(num_epochs).__name__}")
+    print(f"7. num_steps: {type(num_steps).__name__}")
+    print(f"8. optimiser: {type(optimiser).__name__}")
+    print(f"9. learning_rate: {type(learning_rate).__name__}")
+    print(f"10. momentum: {type(momentum).__name__}")
+    print(f"11. nestrov: {type(nestrov).__name__}")
+    print(f"12. T: {type(T).__name__}")
+    print(f"13. gradient_norm: {type(gradient_norm).__name__}")
+    print(f"14. mcmc_type: {type(mcmc_type).__name__}")
+    print(f"15. num_mcmc_steps: {type(num_mcmc_steps).__name__}")
+    print(
+        f"16. num_mcmc_integration_steps: {type(num_mcmc_integration_steps).__name__}"
+    )
+    print(f"17. eta: {type(eta).__name__}")
+    print(f"18. schedule: {type(schedule).__name__}")
+    print(f"19. schedule_alpha: {type(schedule_alpha).__name__}")
+    print(f"20. schedule_gamma: {type(schedule_gamma).__name__}")
+    print(f"21. run_name: {type(run_name).__name__}")
+
+    if kwargs:
+        print("\nKeyword Argument Types (kwargs):")
+        for key_arg, value in kwargs.items():
+            print(f"{key_arg}: {type(value).__name__}")
+
     # Handle logging hyperparameters
     wandb.init(
         project="liouville",
