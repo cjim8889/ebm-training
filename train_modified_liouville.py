@@ -777,24 +777,22 @@ def generate_samples_with_log_prob_rk4(
         x_prev, log_prob_prev, t_prev = carry
         dt = t - t_prev
 
-        def velocity(x, t_local):
-            return v_theta(x, t_local)
-
-        def divergence_term(x, t_local):
-            return divergence_velocity(v_theta, x, t_local)
-
         # RK4 for x
-        k1 = jax.vmap(velocity)(x_prev, t_prev)
-        k2 = jax.vmap(velocity)(x_prev + 0.5 * dt * k1, t_prev + 0.5 * dt)
-        k3 = jax.vmap(velocity)(x_prev + 0.5 * dt * k2, t_prev + 0.5 * dt)
-        k4 = jax.vmap(velocity)(x_prev + dt * k3, t_prev + dt)
+        k1 = jax.vmap(lambda x: v_theta(x, t_prev))(x_prev)
+        k2 = jax.vmap(lambda x: v_theta(x, t_prev + 0.5 * dt))(x_prev + 0.5 * dt * k1)
+        k3 = jax.vmap(lambda x: v_theta(x, t_prev + 0.5 * dt))(x_prev + 0.5 * dt * k2)
+        k4 = jax.vmap(lambda x: v_theta(x, t_prev + dt))(x_prev + dt * k3)
         x_next = x_prev + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
 
         # RK4 for divergence
-        d1 = jax.vmap(divergence_term)(x_prev, t_prev)
-        d2 = jax.vmap(divergence_term)(x_prev + 0.5 * dt * k1, t_prev + 0.5 * dt)
-        d3 = jax.vmap(divergence_term)(x_prev + 0.5 * dt * k2, t_prev + 0.5 * dt)
-        d4 = jax.vmap(divergence_term)(x_prev + dt * k3, t_prev + dt)
+        d1 = jax.vmap(lambda x: divergence_velocity(x, t_prev))(x_prev)
+        d2 = jax.vmap(lambda x: divergence_velocity(x, t_prev + 0.5 * dt))(
+            x_prev + 0.5 * dt * k1
+        )
+        d3 = jax.vmap(lambda x: divergence_velocity(x, t_prev + 0.5 * dt))(
+            x_prev + 0.5 * dt * k2
+        )
+        d4 = jax.vmap(lambda x: divergence_velocity(x, t_prev + dt))(x_prev + dt * k3)
         divergence_avg = (d1 + 2 * d2 + 2 * d3 + d4) / 6.0
         log_prob_next = log_prob_prev - dt * divergence_avg
 
