@@ -977,9 +977,10 @@ def estimate_diagnostics(
     log_probs_p: Array = log_prob_p_fn(samples_p)  # Compute log p(x) for these samples
 
     # Perform reverse-time integration to compute samples and log probabilities under q(x)
-    samples_rev, log_probs_q = reverse_time_flow_rk4(
-        v_theta, samples_p, jnp.zeros((num_samples,), dtype=jnp.float32), final_time, ts
-    )
+    # samples_rev, log_probs_q = reverse_time_flow_rk4(
+    #     v_theta, samples_p, jnp.zeros((num_samples,), dtype=jnp.float32), final_time, ts
+    # )
+    samples_rev, log_probs_q = reverse_time_flow(v_theta, samples_p, final_time, ts)
 
     # Compute log q(x(T)) = log q(x(0)) + accumulated log_probs
     base_log_probs: Array = base_log_prob(samples_rev)  # Compute log q(x(0))
