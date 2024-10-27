@@ -828,14 +828,16 @@ def reverse_time_flow_rk4(
         x_prev = x_next + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
 
         # RK4 for divergence (backward)
-        d1 = jax.vmap(lambda x: divergence_velocity(x, t_next))(x_next)
-        d2 = jax.vmap(lambda x: divergence_velocity(x, t_next + 0.5 * dt))(
+        d1 = jax.vmap(lambda x: divergence_velocity(v_theta, x, t_next))(x_next)
+        d2 = jax.vmap(lambda x: divergence_velocity(v_theta, x, t_next + 0.5 * dt))(
             x_next + 0.5 * dt * k1
         )
-        d3 = jax.vmap(lambda x: divergence_velocity(x, t_next + 0.5 * dt))(
+        d3 = jax.vmap(lambda x: divergence_velocity(v_theta, x, t_next + 0.5 * dt))(
             x_next + 0.5 * dt * k2
         )
-        d4 = jax.vmap(lambda x: divergence_velocity(x, t_next + dt))(x_next + dt * k3)
+        d4 = jax.vmap(lambda x: divergence_velocity(v_theta, x, t_next + dt))(
+            x_next + dt * k3
+        )
         divergence_avg = (d1 + 2 * d2 + 2 * d3 + d4) / 6.0
         log_prob_prev = (
             log_prob_next - dt * divergence_avg
@@ -1055,6 +1057,7 @@ def train_velocity_field(
     schedule: str = "linear",
     schedule_alpha: float = 5.0,  # Added
     schedule_gamma: float = 0.5,
+    run_name: str = "velocity_field_training",
     **kwargs: Any,
 ) -> Any:
     """
@@ -1104,7 +1107,7 @@ def train_velocity_field(
             "schedule": schedule,
             **kwargs,
         },
-        name="velocity_field_training",
+        name=run_name,
         reinit=True,
     )
 
@@ -1311,6 +1314,7 @@ def main(args):
         schedule_alpha=args.schedule_alpha,  # Added
         schedule_gamma=args.schedule_gamma,
         nestrov=True,
+        run_name=args.run_name,
     )
 
 
