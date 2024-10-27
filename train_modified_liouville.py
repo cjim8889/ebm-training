@@ -1086,35 +1086,45 @@ def train_velocity_field(
     Returns:
         Any: Trained velocity field v_theta.
     """
-    print("Argument Types:")
-    print(f"1. initial_density: {type(initial_density).__name__}")
-    print(f"2. target_density: {type(target_density).__name__}")
-    print(f"3. v_theta: {type(v_theta).__name__}")
-    print(f"4. key: {type(key).__name__}")
-    print(f"5. N: {type(N).__name__}")
-    print(f"6. num_epochs: {type(num_epochs).__name__}")
-    print(f"7. num_steps: {type(num_steps).__name__}")
-    print(f"8. optimiser: {type(optimiser).__name__}")
-    print(f"9. learning_rate: {type(learning_rate).__name__}")
-    print(f"10. momentum: {type(momentum).__name__}")
-    print(f"11. nestrov: {type(nestrov).__name__}")
-    print(f"12. T: {type(T).__name__}")
-    print(f"13. gradient_norm: {type(gradient_norm).__name__}")
-    print(f"14. mcmc_type: {type(mcmc_type).__name__}")
-    print(f"15. num_mcmc_steps: {type(num_mcmc_steps).__name__}")
+    print("Arguments and Their Types & Values:")
     print(
-        f"16. num_mcmc_integration_steps: {type(num_mcmc_integration_steps).__name__}"
+        f"1. initial_density (Type: {type(initial_density).__name__}) = {initial_density}"
     )
-    print(f"17. eta: {type(eta).__name__}")
-    print(f"18. schedule: {type(schedule).__name__}")
-    print(f"19. schedule_alpha: {type(schedule_alpha).__name__}")
-    print(f"20. schedule_gamma: {type(schedule_gamma).__name__}")
-    print(f"21. run_name: {type(run_name).__name__}")
+    print(
+        f"2. target_density (Type: {type(target_density).__name__}) = {target_density}"
+    )
+    print(f"3. v_theta (Type: {type(v_theta).__name__}) = {v_theta}")
+    print(f"4. key (Type: {type(key).__name__}) = {key}")
+    print(f"5. N (Type: {type(N).__name__}) = {N}")
+    print(f"6. num_epochs (Type: {type(num_epochs).__name__}) = {num_epochs}")
+    print(f"7. num_steps (Type: {type(num_steps).__name__}) = {num_steps}")
+    print(f"8. optimiser (Type: {type(optimiser).__name__}) = '{optimiser}'")
+    print(f"9. learning_rate (Type: {type(learning_rate).__name__}) = {learning_rate}")
+    print(f"10. momentum (Type: {type(momentum).__name__}) = {momentum}")
+    print(f"11. nestrov (Type: {type(nestrov).__name__}) = {nestrov}")
+    print(f"12. T (Type: {type(T).__name__}) = {T}")
+    print(f"13. gradient_norm (Type: {type(gradient_norm).__name__}) = {gradient_norm}")
+    print(f"14. mcmc_type (Type: {type(mcmc_type).__name__}) = '{mcmc_type}'")
+    print(
+        f"15. num_mcmc_steps (Type: {type(num_mcmc_steps).__name__}) = {num_mcmc_steps}"
+    )
+    print(
+        f"16. num_mcmc_integration_steps (Type: {type(num_mcmc_integration_steps).__name__}) = {num_mcmc_integration_steps}"
+    )
+    print(f"17. eta (Type: {type(eta).__name__}) = {eta}")
+    print(f"18. schedule (Type: {type(schedule).__name__}) = '{schedule}'")
+    print(
+        f"19. schedule_alpha (Type: {type(schedule_alpha).__name__}) = {schedule_alpha}"
+    )
+    print(
+        f"20. schedule_gamma (Type: {type(schedule_gamma).__name__}) = {schedule_gamma}"
+    )
+    print(f"21. run_name (Type: {type(run_name).__name__}) = '{run_name}'")
 
     if kwargs:
-        print("\nKeyword Argument Types (kwargs):")
+        print("\nKeyword Arguments (kwargs) and Their Types & Values:")
         for key_arg, value in kwargs.items():
-            print(f"{key_arg}: {type(value).__name__}")
+            print(f"{key_arg} (Type: {type(value).__name__}) = {value}")
 
     # Handle logging hyperparameters
     wandb.init(
