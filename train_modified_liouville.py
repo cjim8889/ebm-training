@@ -6,7 +6,6 @@ import jax
 import jax.numpy as jnp
 
 jax.config.update("jax_default_matmul_precision", "float32")
-jax.config.update("jax_enable_x64", True)
 
 import equinox as eqx
 import numpy as np
@@ -1152,7 +1151,14 @@ def train_velocity_field(
                 log_p_np = jax.device_get(log_p).astype(np.float64)
                 log_q_np = jax.device_get(log_q).astype(np.float64)
                 kl_div_np = np.mean(log_p_np - log_q_np)
-                jax.debug.print("KL Divergence FP64: ", kl_div, log_p, log_q)
+                wandb.log(
+                    {
+                        "log_p": log_p,
+                        "log_q": log_q,
+                        "log_w": log_p - log_q,
+                    }
+                )
+                print("KL Divergence is too large, using numpy computation.")
 
             wandb.log(
                 {
