@@ -1,12 +1,5 @@
-import os
-
-os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
-
 import jax
 import jax.numpy as jnp
-
-jax.config.update("jax_default_matmul_precision", "float32")
-
 import equinox as eqx
 import numpy as np
 import pandas as pd
@@ -385,7 +378,7 @@ class TimeVelocityField(eqx.Module):
             in_size=input_dim + 1,  # x and t
             out_size=input_dim,
             width_size=hidden_dim,
-            activation=jax.nn.relu,
+            activation=jax.nn.sigmoid,
             depth=depth,
             key=key,
         )
@@ -1009,7 +1002,7 @@ def estimate_diagnostics(
     # Compute expectation of log q(x)
     expectation_log_q: Array = compute_expectation_log_q(log_q_x)
 
-    return kl_divergence, ess, expectation_log_q, log_probs_p, log_q_x
+    return kl_divergence, ess, expectation_log_q
 
 
 def epsilon(v_theta, x, dt_log_density, t, score_fn):
@@ -1250,7 +1243,7 @@ def train_velocity_field(
         print(f"Epoch {epoch}, Average Loss: {avg_loss}")
         wandb.log({"epoch": epoch, "average_loss": avg_loss})
 
-        if epoch % 2 == 0:
+        if epoch % 10 == 0:
             linear_ts = jnp.linspace(0, 1, T)
             key, subkey = jax.random.split(key)
             val_samples = generate_samples(
@@ -1263,9 +1256,9 @@ def train_velocity_field(
             wandb.log({"validation_samples": wandb.Image(fig)})
 
             key, subkey = jax.random.split(key)
-            kl_div, ess, E_log_q, log_p, log_q = estimate_diagnostics(
+            kl_div, ess, E_log_q = estimate_diagnostics(
                 v_theta,
-                50000,
+                10000,
                 subkey,
                 linear_ts,
                 target_density.log_prob,
@@ -1274,33 +1267,15 @@ def train_velocity_field(
                 initial_density.log_prob,
             )
 
-            kl_div_np = kl_div
-
-            if kl_div > 100:
-                log_p_np = jax.device_get(log_p).astype(np.float64)
-                log_q_np = jax.device_get(log_q).astype(np.float64)
-                kl_div_np = np.mean(log_p_np - log_q_np)
-                wandb.log(
-                    {
-                        "log_p": log_p,
-                        "log_q": log_q,
-                        "log_w": log_p - log_q,
-                    }
-                )
-                print("KL Divergence is too large, using numpy computation.")
-
             wandb.log(
                 {
                     "forward_kl_divergence": kl_div,
-                    "forward_kl_divergence_np": kl_div_np,
                     "ESS": ess,
                     "Expectation_log_q": E_log_q,
                 }
             )
 
-            print(
-                f"KL Divergence: {kl_div}, KL Divergence FP64: {kl_div_np}, ESS: {ess}, E[log q]: {E_log_q}"
-            )
+            print(f"KL Divergence: {kl_div}, ESS: {ess}, E[log q]: {E_log_q}")
 
             plt.close(fig)
 
