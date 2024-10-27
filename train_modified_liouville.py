@@ -820,24 +820,22 @@ def reverse_time_flow_rk4(
         x_next, log_prob_next, t_next = carry
         dt = t - t_next  # dt is negative for backward integration
 
-        def velocity(x, t_local):
-            return v_theta(x, t_local)
-
-        def divergence_term(x, t_local):
-            return divergence_velocity(v_theta, x, t_local)
-
         # RK4 for x (backward)
-        k1 = jax.vmap(velocity)(x_next, t_next)
-        k2 = jax.vmap(velocity)(x_next + 0.5 * dt * k1, t_next + 0.5 * dt)
-        k3 = jax.vmap(velocity)(x_next + 0.5 * dt * k2, t_next + 0.5 * dt)
-        k4 = jax.vmap(velocity)(x_next + dt * k3, t_next + dt)
+        k1 = jax.vmap(lambda x: v_theta(x, t_next))(x_next)
+        k2 = jax.vmap(lambda x: v_theta(x, t_next + 0.5 * dt))(x_next + 0.5 * dt * k1)
+        k3 = jax.vmap(lambda x: v_theta(x, t_next + 0.5 * dt))(x_next + 0.5 * dt * k2)
+        k4 = jax.vmap(lambda x: v_theta(x, t_next + dt))(x_next + dt * k3)
         x_prev = x_next + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
 
         # RK4 for divergence (backward)
-        d1 = jax.vmap(divergence_term)(x_next, t_next)
-        d2 = jax.vmap(divergence_term)(x_next + 0.5 * dt * k1, t_next + 0.5 * dt)
-        d3 = jax.vmap(divergence_term)(x_next + 0.5 * dt * k2, t_next + 0.5 * dt)
-        d4 = jax.vmap(divergence_term)(x_next + dt * k3, t_next + dt)
+        d1 = jax.vmap(lambda x: divergence_velocity(x, t_next))(x_next)
+        d2 = jax.vmap(lambda x: divergence_velocity(x, t_next + 0.5 * dt))(
+            x_next + 0.5 * dt * k1
+        )
+        d3 = jax.vmap(lambda x: divergence_velocity(x, t_next + 0.5 * dt))(
+            x_next + 0.5 * dt * k2
+        )
+        d4 = jax.vmap(lambda x: divergence_velocity(x, t_next + dt))(x_next + dt * k3)
         divergence_avg = (d1 + 2 * d2 + 2 * d3 + d4) / 6.0
         log_prob_prev = (
             log_prob_next - dt * divergence_avg
