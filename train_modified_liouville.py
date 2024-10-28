@@ -16,6 +16,7 @@ from itertools import product
 
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
+from itertools import combinations
 
 # from IPython.display import HTML
 #
@@ -241,14 +242,144 @@ class GMM(Target):
     def visualise(
         self,
         samples: chex.Array,
-        axes: List[plt.Axes],
-    ) -> None:
+    ) -> plt.Figure:
         """Visualise samples from the model."""
-        assert len(axes) == self.n_plots
-        ax = axes[0]
+        fig, ax = plt.subplots(1, 1, figsize=(6, 4))
+
         plot_marginal_pair(samples, ax, bounds=(-self._plot_bound, self._plot_bound))
         if self.dim == 2:
             plot_contours_2D(self.log_prob, ax, bound=self._plot_bound, levels=50)
+
+        return fig
+class MultiDimGMM:
+    def __init__(
+        self,
+        n_dim: int = 2,
+        n_mixes: int = 40,
+        loc_scaling: float = 40,
+        scale_scaling: float = 1.0,
+        seed: int = 0,
+    ) -> None:
+        self.n_dim = n_dim
+        self.n_mixes = n_mixes
+        self.loc_scaling = loc_scaling
+        self.scale_scaling = scale_scaling
+        self.seed = seed
+
+        key = jax.random.PRNGKey(seed)
+        logits = jnp.ones(n_mixes)
+        mean = (
+            jax.random.uniform(shape=(n_mixes, n_dim), key=key, minval=-1.0, maxval=1.0)
+            * loc_scaling
+        )
+        scale = jnp.ones(shape=(n_mixes, n_dim)) * scale_scaling
+
+        mixture_dist = distrax.Categorical(logits=logits)
+        components_dist = distrax.Independent(
+            distrax.Normal(loc=mean, scale=scale), reinterpreted_batch_ndims=1
+        )
+        self.distribution = distrax.MixtureSameFamily(
+            mixture_distribution=mixture_dist,
+            components_distribution=components_dist,
+        )
+
+        self._plot_bound = loc_scaling * 1.5
+
+    def log_prob(self, x: jnp.ndarray) -> jnp.ndarray:
+        return self.distribution.log_prob(x)
+
+    def sample(self, seed: chex.PRNGKey, sample_shape: tuple = ()) -> jnp.ndarray:
+        return self.distribution.sample(seed=seed, sample_shape=sample_shape)
+
+    def visualise(self, samples: jnp.ndarray) -> plt.Figure:
+        """Visualise pairwise marginal distributions."""
+        dims = list(range(self.n_dim))
+        dim_pairs = list(combinations(dims, 2))
+        num_pairs = len(dim_pairs)
+
+        # Set up the subplot grid
+        fig, axes = plt.subplots(
+            nrows=num_pairs,
+            ncols=1,
+            figsize=(6, 4 * num_pairs),
+            squeeze=False
+        )
+
+        for idx, (dim1, dim2) in enumerate(dim_pairs):
+            ax = axes[idx, 0]
+            marginal_samples = samples[:, [dim1, dim2]]
+            self._plot_marginal_pair(marginal_samples, ax)
+            self._plot_marginal_contours(ax, (dim1, dim2))
+            ax.set_title(f'Dimensions {dim1} vs {dim2}')
+            ax.set_xlabel(f'Dimension {dim1}')
+            ax.set_ylabel(f'Dimension {dim2}')
+
+        plt.tight_layout()
+        return fig
+
+    def _plot_marginal_contours(
+        self,
+        ax: Optional[plt.Axes],
+        dims: Tuple[int, int],
+        bound: float = None,
+        levels: int = 20,
+    ):
+        """Plot the contours of the marginal 2D log prob function for specified dimensions."""
+        if bound is None:
+            bound = self._plot_bound
+        n_points = 100
+        x_points_dim1 = np.linspace(-bound, bound, n_points)
+        x_points_dim2 = np.linspace(-bound, bound, n_points)
+        x1_grid, x2_grid = np.meshgrid(x_points_dim1, x_points_dim2)
+        grid_shape = x1_grid.shape
+        x_grid = jnp.stack([x1_grid.ravel(), x2_grid.ravel()], axis=-1)
+
+        # Compute marginal log probabilities over the selected dimensions
+        log_probs = self._marginal_log_prob(x_grid, dims)
+        log_probs = jnp.clip(log_probs, a_min=-1000, a_max=None)
+        z = log_probs.reshape(grid_shape)
+        ax.contour(x1_grid, x2_grid, z, levels=levels, cmap='viridis')
+
+    def _marginal_log_prob(self, x: jnp.ndarray, dims: Tuple[int, int]) -> jnp.ndarray:
+        """Compute the marginal log probability over the specified dimensions."""
+        # Extract the means and scales for the specified dimensions
+        mean = self.distribution.components_distribution.distribution.loc[:, dims]
+        scale = self.distribution.components_distribution.distribution.scale[:, dims]
+        logits = self.distribution.mixture_distribution.logits
+
+        # Create a new mixture distribution over the selected dimensions
+        mixture_dist = distrax.Categorical(logits=logits)
+        components_dist = distrax.Independent(
+            distrax.Normal(loc=mean, scale=scale),
+            reinterpreted_batch_ndims=1
+        )
+        marginal_distribution = distrax.MixtureSameFamily(
+            mixture_distribution=mixture_dist,
+            components_distribution=components_dist,
+        )
+        return marginal_distribution.log_prob(x)
+
+    def _plot_marginal_pair(
+        self,
+        samples: jnp.ndarray,
+        ax: Optional[plt.Axes],
+        bounds: Tuple[float, float] = None,
+        alpha: float = 0.5,
+    ):
+        """Plot samples from the marginal distribution for a given pair of dimensions."""
+        if bounds is None:
+            bounds = (-self._plot_bound, self._plot_bound)
+        samples_clipped = jnp.clip(samples, bounds[0], bounds[1])
+        ax.scatter(
+            samples_clipped[:, 0],
+            samples_clipped[:, 1],
+            alpha=alpha,
+            s=10,
+            label='Samples'
+        )
+        ax.set_xlim(bounds)
+        ax.set_ylim(bounds)
+        ax.legend()
 
 
 class MultivariateGaussian(Target):
@@ -1250,9 +1381,7 @@ def train_velocity_field(
             val_samples = generate_samples(
                 v_theta, N, subkey, linear_ts, sample_initial
             )
-            fig, axes = plt.subplots(1, 1, figsize=(6, 6))
-
-            target_density.visualise(val_samples[-1], [axes])
+            fig = target_density.visualise(val_samples[-1])
 
             wandb.log({"validation_samples": wandb.Image(fig)})
 
@@ -1290,11 +1419,21 @@ def main(args):
     key = jax.random.PRNGKey(args.seed)
     key, subkey = jax.random.split(key)
 
-    gmm = GMM(
-        dim=2,
-        n_mixes=args.gmm_n_mixes,
-        seed=subkey[0],
-    )
+    if args.input_dim == 2:
+        gmm = GMM(
+            dim=2,
+            n_mixes=args.gmm_n_mixes,
+            seed=subkey[0],
+        )
+    elif args.input_dim > 2:
+        gmm = MultiDimGMM(
+            n_dim=args.input_dim,
+            n_mixes=args.gmm_n_mixes,
+            seed=subkey[0],
+        )
+    else:
+        raise ValueError("Input dimension must be at least 2.")
+
     initial = MultivariateGaussian(
         dim=args.initial_dim,
         sigma=args.initial_sigma,
