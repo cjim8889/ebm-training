@@ -286,6 +286,7 @@ class MultiDimGMM:
         )
 
         self._plot_bound = loc_scaling * 1.5
+        self.rng = np.random.default_rng(seed)
 
     def log_prob(self, x: jnp.ndarray) -> jnp.ndarray:
         return self.distribution.log_prob(x)
@@ -297,21 +298,42 @@ class MultiDimGMM:
         """Visualise pairwise marginal distributions."""
         dims = list(range(self.n_dim))
         dim_pairs = list(combinations(dims, 2))
-        num_pairs = len(dim_pairs)
+
+        # Randomly select at most 4 pairs of dimensions
+        num_pairs = min(len(dim_pairs), 4)
+        if len(dim_pairs) > 4:
+            dim_pairs = self.rng.choice(dim_pairs, size=4, replace=False)
+        else:
+            dim_pairs = dim_pairs[:num_pairs]
 
         # Set up the subplot grid
+        if num_pairs == 1:
+            nrows, ncols = 1, 1
+        elif num_pairs == 2:
+            nrows, ncols = 1, 2
+        elif num_pairs == 3:
+            nrows, ncols = 2, 2  # Will have one empty subplot
+        else:
+            nrows, ncols = 2, 2
+
         fig, axes = plt.subplots(
-            nrows=num_pairs, ncols=1, figsize=(6, 4 * num_pairs), squeeze=False
+            nrows=nrows, ncols=ncols, figsize=(6 * ncols, 4 * nrows), squeeze=False
         )
 
+        axes = axes.flatten()
+
         for idx, (dim1, dim2) in enumerate(dim_pairs):
-            ax = axes[idx, 0]
+            ax = axes[idx]
             marginal_samples = samples[:, [dim1, dim2]]
             self._plot_marginal_pair(marginal_samples, ax)
             self._plot_marginal_contours(ax, (dim1, dim2))
             ax.set_title(f"Dimensions {dim1} vs {dim2}")
             ax.set_xlabel(f"Dimension {dim1}")
             ax.set_ylabel(f"Dimension {dim2}")
+
+        # Hide any unused axes
+        for idx in range(num_pairs, nrows * ncols):
+            fig.delaxes(axes[idx])
 
         plt.tight_layout()
         return fig
