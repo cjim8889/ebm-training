@@ -251,6 +251,8 @@ class GMM(Target):
             plot_contours_2D(self.log_prob, ax, bound=self._plot_bound, levels=50)
 
         return fig
+
+
 class MultiDimGMM:
     def __init__(
         self,
@@ -299,10 +301,7 @@ class MultiDimGMM:
 
         # Set up the subplot grid
         fig, axes = plt.subplots(
-            nrows=num_pairs,
-            ncols=1,
-            figsize=(6, 4 * num_pairs),
-            squeeze=False
+            nrows=num_pairs, ncols=1, figsize=(6, 4 * num_pairs), squeeze=False
         )
 
         for idx, (dim1, dim2) in enumerate(dim_pairs):
@@ -310,9 +309,9 @@ class MultiDimGMM:
             marginal_samples = samples[:, [dim1, dim2]]
             self._plot_marginal_pair(marginal_samples, ax)
             self._plot_marginal_contours(ax, (dim1, dim2))
-            ax.set_title(f'Dimensions {dim1} vs {dim2}')
-            ax.set_xlabel(f'Dimension {dim1}')
-            ax.set_ylabel(f'Dimension {dim2}')
+            ax.set_title(f"Dimensions {dim1} vs {dim2}")
+            ax.set_xlabel(f"Dimension {dim1}")
+            ax.set_ylabel(f"Dimension {dim2}")
 
         plt.tight_layout()
         return fig
@@ -338,7 +337,7 @@ class MultiDimGMM:
         log_probs = self._marginal_log_prob(x_grid, dims)
         log_probs = jnp.clip(log_probs, a_min=-1000, a_max=None)
         z = log_probs.reshape(grid_shape)
-        ax.contour(x1_grid, x2_grid, z, levels=levels, cmap='viridis')
+        ax.contour(x1_grid, x2_grid, z, levels=levels, cmap="viridis")
 
     def _marginal_log_prob(self, x: jnp.ndarray, dims: Tuple[int, int]) -> jnp.ndarray:
         """Compute the marginal log probability over the specified dimensions."""
@@ -350,8 +349,7 @@ class MultiDimGMM:
         # Create a new mixture distribution over the selected dimensions
         mixture_dist = distrax.Categorical(logits=logits)
         components_dist = distrax.Independent(
-            distrax.Normal(loc=mean, scale=scale),
-            reinterpreted_batch_ndims=1
+            distrax.Normal(loc=mean, scale=scale), reinterpreted_batch_ndims=1
         )
         marginal_distribution = distrax.MixtureSameFamily(
             mixture_distribution=mixture_dist,
@@ -375,7 +373,7 @@ class MultiDimGMM:
             samples_clipped[:, 1],
             alpha=alpha,
             s=10,
-            label='Samples'
+            label="Samples",
         )
         ax.set_xlim(bounds)
         ax.set_ylim(bounds)
@@ -518,6 +516,7 @@ class TimeVelocityField(eqx.Module):
         # Concatenate x and t
         t_expanded = jnp.array([t])
         x_t = jnp.concatenate([x, t_expanded], axis=-1)
+
         return self.mlp(x_t)
 
 
@@ -1435,7 +1434,7 @@ def main(args):
         raise ValueError("Input dimension must be at least 2.")
 
     initial = MultivariateGaussian(
-        dim=args.initial_dim,
+        dim=args.input_dim,
         sigma=args.initial_sigma,
     )
 
@@ -1547,12 +1546,6 @@ def parse_arguments():
     )
 
     # Initial Distribution Hyperparameters
-    parser.add_argument(
-        "--initial_dim",
-        type=int,
-        default=2,
-        help="Dimensionality of the initial distribution.",
-    )
     parser.add_argument(
         "--initial_sigma",
         type=float,
