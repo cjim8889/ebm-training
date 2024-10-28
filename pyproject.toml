@@ -1,9 +1,9 @@
 [project]
 name = "ebm-training"
-version = "0.1.0"
+version = "0.1.1"
 description = "Add your description here"
 readme = "README.md"
-requires-python = "==3.12.6"
+requires-python = ">=3.12"
 dependencies = [
     "chex>=0.1.81",
     "distrax>=0.1.5",
