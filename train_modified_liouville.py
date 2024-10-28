@@ -286,7 +286,7 @@ class MultiDimGMM:
         )
 
         self._plot_bound = loc_scaling * 1.5
-        self.rng = np.random.default_rng(seed)
+        self.rng = np.random.default_rng(888)
 
     def log_prob(self, x: jnp.ndarray) -> jnp.ndarray:
         return self.distribution.log_prob(x)
