@@ -1375,7 +1375,7 @@ def train_velocity_field(
         print(f"Epoch {epoch}, Average Loss: {avg_loss}")
         wandb.log({"epoch": epoch, "average_loss": avg_loss})
 
-        if epoch % 10 == 0:
+        if epoch % 20 == 0:
             linear_ts = jnp.linspace(0, 1, T)
             key, subkey = jax.random.split(key)
             val_samples = generate_samples(
