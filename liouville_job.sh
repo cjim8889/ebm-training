@@ -17,4 +17,4 @@ python train_modified_liouville.py --N 5120 --T 128 --schedule linear --optimise
 # Deactivate the virtual environment
 deactivate
 
-# uv run train_modified_liouville.py --N 5120 --T 128 --schedule inverse_power --mcmc_type hmc --num_mcmc_steps 5 --num_mcmc_integration_steps 5 --eta 1.0 --num_epochs 8000 --num_steps 50
+# CUDA_VISIBLE_DEVICES=3 uv run train_modified_liouville.py --hidden_dim 256 --N 1024 --T 128 --schedule inverse_power --input_dim 10 --depth 3 --mcmc_type langevin --num_mcmc_steps 5 --num_mcmc_integration_steps 5 --eta 1.0 --num_epochs 16000 --num_steps 50
