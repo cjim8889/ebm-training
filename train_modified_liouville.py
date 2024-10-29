@@ -1198,6 +1198,7 @@ def train_velocity_field(
     v_theta: Callable[[Array, float], Array],
     key: jax.random.PRNGKey,
     N: int = 512,
+    B: int = 64,
     num_epochs: int = 200,
     num_steps: int = 100,
     optimiser: str = "adam",
@@ -1395,7 +1396,9 @@ def train_velocity_field(
 
         epoch_loss = 0.0
         for s in range(num_steps):
-            v_theta, opt_state, loss = step(v_theta, opt_state, samples)
+            key, subkey = jax.random.split(key)
+            samps = jax.random.choice(subkey, samples, (B,), replace=False, axis=1)
+            v_theta, opt_state, loss = step(v_theta, opt_state, samps)
             epoch_loss += loss
 
             if s % 20 == 0:
@@ -1486,6 +1489,7 @@ def main(args):
         v_theta=v_theta,
         key=subkey,
         N=args.N,
+        B=args.B,
         num_epochs=args.num_epochs,
         num_steps=args.num_steps,
         optimiser=args.optimiser,
@@ -1538,6 +1542,12 @@ def parse_arguments():
         type=int,
         default=1024,
         help="Number of samples for training at each time step.",
+    )
+    parser.add_argument(
+        "--B",
+        type=int,
+        default=64,
+        help="Number of samples to use for each training step",
     )
     parser.add_argument(
         "--num_epochs", type=int, default=2000, help="Number of training epochs."
