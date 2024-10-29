@@ -654,6 +654,7 @@ def sample_hamiltonian_monte_carlo(
     num_steps: int = 10,
     integration_steps: int = 3,
     eta: float = 0.1,
+    rejection_sampling: bool = False,
 ) -> Array:
     """
     Perform a single chain of Hamiltonian Monte Carlo sampling.
@@ -706,18 +707,21 @@ def sample_hamiltonian_monte_carlo(
         # Final half step for momentum
         v = v + 0.5 * eta * grad_log_prob(x)
 
-        # Compute acceptance probability
-        proposed_h = hamiltonian(x, v)
-        accept_ratio = jnp.minimum(1.0, jnp.exp(current_h - proposed_h))
+        if rejection_sampling:
+            # Compute acceptance probability
+            proposed_h = hamiltonian(x, v)
+            accept_ratio = jnp.minimum(1.0, jnp.exp(current_h - proposed_h))
 
-        # Accept or reject
-        key, subkey = jax.random.split(key)
-        uniform_sample = jax.random.uniform(subkey)
-        accept = uniform_sample < accept_ratio
+            # Accept or reject
+            key, subkey = jax.random.split(key)
+            uniform_sample = jax.random.uniform(subkey)
+            accept = uniform_sample < accept_ratio
 
-        new_x = jax.lax.cond(accept, lambda _: x, lambda _: x_current, operand=None)
+            new_x = jax.lax.cond(accept, lambda _: x, lambda _: x_current, operand=None)
 
-        return new_x, None
+            return new_x, None
+        else:
+            return x, None
 
     # Run the chain
     keys = jax.random.split(key, num_steps)
@@ -737,6 +741,7 @@ def time_batched_sample_hamiltonian_monte_carlo(
     num_steps: int = 10,
     integration_steps: int = 3,
     eta: float = 0.1,
+    rejection_sampling: bool = False,
 ) -> chex.Array:
     """
     Apply HMC sampling over batches of samples and times.
@@ -765,6 +770,7 @@ def time_batched_sample_hamiltonian_monte_carlo(
                 num_steps,
                 integration_steps,
                 eta,
+                rejection_sampling,
             )
         )(xs, keys)
     )(xs, ts, keys.reshape((xs.shape[0], xs.shape[1], -1)))
@@ -833,6 +839,7 @@ def generate_samples_with_hmc(
     num_steps: int = 3,
     integration_steps: int = 3,
     eta: float = 0.01,
+    rejection_sampling: bool = False,
 ) -> jnp.ndarray:
     key, subkey = jax.random.split(key)
     initial_samples = sample_fn(subkey, num_samples)
@@ -845,6 +852,7 @@ def generate_samples_with_hmc(
         num_steps,
         integration_steps,
         eta,
+        rejection_sampling,
     )
 
     return final_samples
@@ -1380,6 +1388,7 @@ def train_velocity_field(
                 num_mcmc_steps,
                 num_mcmc_integration_steps,
                 eta,
+                False,
             )
         else:
             samples = generate_samples(v_theta, N, subkey, ts, sample_initial)
