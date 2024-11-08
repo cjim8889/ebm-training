@@ -1,6 +1,7 @@
 import argparse
 import torch
 import numpy as np
+from einops import rearrange
 
 from torch import Tensor
 from typing import Optional, Callable, Union, Tuple, Dict, Any, Sequence, List
@@ -9,6 +10,7 @@ from utils.torch_utils import seed_everything
 from utils.mog_utils import GMM, MultivariateGaussian
 from models.mlp_models import TimeVelocityField
 from utils.sampling_utils import time_schedule, generate_samples
+from utils.loss_utils import loss_fn
 
 def train_velocity_field(
     initial_density,
@@ -59,19 +61,53 @@ def train_velocity_field(
         Any: Trained velocity field v_theta.
     """
 
+    # Set up various functions
     def sample_initial(num_samples):
         return initial_density.sample((num_samples,))
     
-    ts = time_schedule(T, schedule_alpha, schedule_gamma)[schedule]()
-    if mcmc_type == "langevin":
-        samples = generate_samples(v_theta, N, ts, sample_initial)
-    elif mcmc_type == "hmc":
-        samples = generate_samples(v_theta, N, ts, sample_initial)
-    else:
-        samples = generate_samples(v_theta, N, ts, sample_initial)
+    def time_dependent_log_density(x, t):
+        return (1 - t) * initial_density.log_prob(x) + t * target_density.log_prob(x)
+    
+    def time_derivative_log_density(x, t):
+        # t = t.requires_grad_(True)
+        # log_p = time_dependent_log_density(x, t)
+        # return torch.autograd.grad(log_p.sum(), t)[0]
+        return - initial_density.log_prob(x) + target_density.log_prob(x)
 
-    print(ts)
-    print(samples.shape)
+    def score_function(x, t):
+        x = x.requires_grad_(True)
+        log_p = time_dependent_log_density(x, t)
+        return torch.autograd.grad(log_p.sum(), x)[0]
+    
+    
+    ts = time_schedule(T, schedule_alpha, schedule_gamma)[schedule]()
+
+    for epoch in range(num_epochs):
+        if mcmc_type == "langevin":
+            samples = generate_samples(v_theta, N, ts, sample_initial)
+        elif mcmc_type == "hmc":
+            samples = generate_samples(v_theta, N, ts, sample_initial)
+        else:
+            samples = generate_samples(v_theta, N, ts, sample_initial)
+
+        epoch_loss = 0.0
+        for s in range(num_steps):
+
+            samps = samples[
+                torch.randperm(samples.size(0))[:B]
+            ]   # (B, T, D)
+
+            optimiser.zero_grad()
+            loss = loss_fn(
+                v_theta, samps, ts, 
+                time_derivative_log_density=time_derivative_log_density,
+                score_fn=score_function
+            )
+            loss.backward()
+            optimiser.step()
+            epoch_loss += loss.item()
+            print(loss.item())
+            exit()
 
 def main(args):
     gmm = GMM(

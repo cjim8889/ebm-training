@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+from einops import rearrange
 
 def inverse_tangent_schedule(T=64, alpha=5):
     x_atan = torch.linspace(0, 1, T)
@@ -40,4 +41,5 @@ def generate_samples_with_euler_method(v_theta, initial_samples, ts):
 
 def generate_samples(v_theta, num_samples, ts, sample_fn):
     initial_samples = sample_fn(num_samples)
-    return generate_samples_with_euler_method(v_theta, initial_samples, ts)
+    samples = generate_samples_with_euler_method(v_theta, initial_samples, ts)
+    return rearrange(samples, 't n d -> n t d')
