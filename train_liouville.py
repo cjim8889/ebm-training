@@ -106,9 +106,9 @@ def train_velocity_field(
         return - initial_density.log_prob(x) + target_density.log_prob(x)
 
     def score_function(x, t):
-        x = x.requires_grad_(True)
+        x = x.detach().requires_grad_(True)
         log_p = time_dependent_log_density(x, t)
-        return torch.autograd.grad(log_p.sum(), x)[0]
+        return torch.autograd.grad(log_p.sum(), x, create_graph=True, retain_graph=True)[0]
     
     
     ts = time_schedule(T, schedule_alpha, schedule_gamma)[schedule]()
@@ -124,11 +124,12 @@ def train_velocity_field(
         epoch_loss = 0.0
         for s in range(num_steps):
 
-            samps = samples[
-                torch.randperm(samples.size(0))[:B]
-            ]   # (B, T, D)
+            with torch.no_grad():
+                samps = samples[
+                    torch.randperm(samples.size(0))[:B]
+                ].detach()   # (B, T, D)
 
-            optimiser.zero_grad()
+            optimiser.zero_grad(set_to_none=True)
             loss = loss_fn(
                 v_theta, samps, ts, 
                 time_derivative_log_density=time_derivative_log_density,
