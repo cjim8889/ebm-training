@@ -1,13 +1,13 @@
 import argparse
 import torch
 import numpy as np
-from einops import rearrange
+import wandb
 
 from torch import Tensor
 from typing import Optional, Callable, Union, Tuple, Dict, Any, Sequence, List
 
 from utils.torch_utils import seed_everything
-from utils.mog_utils import GMM, MultivariateGaussian
+from utils.mog_utils import GMM, MultivariateGaussian, plot_MoG40
 from models.mlp_models import TimeVelocityField
 from utils.sampling_utils import time_schedule, generate_samples
 from utils.loss_utils import loss_fn
@@ -34,6 +34,9 @@ def train_velocity_field(
     schedule_alpha: float = 5.0,  # Added
     schedule_gamma: float = 0.5,
     run_name: str = "velocity_field_training",
+    input_dim: int = 2,
+    hidden_dim: int = 128,
+    depth: int = 3,
     **kwargs: Any,
 ) -> Any:
     """
@@ -60,6 +63,34 @@ def train_velocity_field(
     Returns:
         Any: Trained velocity field v_theta.
     """
+
+    # Handle logging hyperparameters
+    wandb.init(
+        project="liouville",
+        config={
+            "input_dim": input_dim,
+            "T": T,
+            "N": N,
+            "num_epochs": num_epochs,
+            "num_steps": num_steps,
+            "optimiser": optimiser,
+            "learning_rate": learning_rate,
+            "momentum": momentum,
+            "nestrov": nestrov,
+            "gradient_norm": gradient_norm,
+            "hidden_dim": hidden_dim,
+            "depth": depth,
+            "mcmc_type": mcmc_type,
+            "num_mcmc_steps": num_mcmc_steps,
+            "num_mcmc_integration_steps": num_mcmc_integration_steps,
+            "eta": eta,
+            "schedule": schedule,
+            **kwargs,
+        },
+        name=run_name,
+        reinit=True,
+        mode="online",    # online disabled
+    )
 
     # Set up various functions
     def sample_initial(num_samples):
@@ -106,8 +137,25 @@ def train_velocity_field(
             loss.backward()
             optimiser.step()
             epoch_loss += loss.item()
-            print(loss.item())
-            exit()
+
+            if s % 20 == 0:
+                wandb.log({"loss": loss.item()})
+        
+        avg_loss = epoch_loss / num_steps
+        print(f"Epoch {epoch}, Average Loss: {avg_loss}")
+        wandb.log({"epoch": epoch, "average_loss": avg_loss})
+
+        if epoch % 20 == 0:
+            linear_ts = torch.linspace(0, 1, T)
+            val_samples = generate_samples(
+                v_theta, 10000, linear_ts, sample_initial
+            )[:, -1, :].detach().cpu()
+
+            fig = plot_MoG40(
+                log_prob_function=target_density.log_prob,
+                samples=val_samples, 
+            )
+            wandb.log({"validation_samples": wandb.Image(fig)})
 
 def main(args):
     gmm = GMM(
@@ -170,6 +218,9 @@ def main(args):
         schedule_gamma=args.schedule_gamma,
         nestrov=True,
         run_name=args.run_name,
+        input_dim=2,
+        hidden_dim=128,
+        depth=3,
     )
 
 
@@ -192,7 +243,7 @@ def parse_arguments():
     parser.add_argument(
         "--run_name",
         type=str,
-        default="velocity_field_training",
+        default="velocity_field_training_torch",
         help="Name of the WandB run.",
     )
 
@@ -262,7 +313,7 @@ def parse_arguments():
     parser.add_argument(
         "--mcmc_type",
         type=str,
-        choices=["langevin", "hmc"],
+        choices=["langevin", "hmc", "uniform"],
         default="hmc",
         help="Type of MCMC sampler to use ('langevin' or 'hmc').",
     )
