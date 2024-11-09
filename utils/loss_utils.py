@@ -30,6 +30,8 @@ def loss_fn(v_theta, xs, ts, time_derivative_log_density, score_fn):
                 xs_detached, 
                 create_graph=True
             )[0][..., i]
+
+    # Alternative way to calculate divergence
     # div_v = torch.zeros(xs_detached.shape[:2], device=xs_detached.device)
     # for i in range(xs_detached.shape[2]):
     #     div_v += torch.autograd.grad(v[..., i].sum(), xs_detached, retain_graph=True)[0][..., i]

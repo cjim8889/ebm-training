@@ -9,7 +9,7 @@ from typing import Optional, Callable, Union, Tuple, Dict, Any, Sequence, List
 from utils.torch_utils import seed_everything
 from utils.mog_utils import GMM, MultivariateGaussian, plot_MoG40
 from models.mlp_models import TimeVelocityField
-from utils.sampling_utils import time_schedule, generate_samples
+from utils.sampling_utils import time_schedule, generate_samples, generate_samples_with_hmc, generate_samples_with_langevin_dynamics
 from utils.loss_utils import loss_fn
 
 def train_velocity_field(
@@ -108,16 +108,34 @@ def train_velocity_field(
     def score_function(x, t):
         x = x.detach().requires_grad_(True)
         log_p = time_dependent_log_density(x, t)
-        return torch.autograd.grad(log_p.sum(), x, create_graph=True, retain_graph=True)[0]
+        return torch.autograd.grad(log_p.sum(), x)[0]
     
     
     ts = time_schedule(T, schedule_alpha, schedule_gamma)[schedule]()
 
     for epoch in range(num_epochs):
         if mcmc_type == "langevin":
-            samples = generate_samples(v_theta, N, ts, sample_initial)
+            samples = generate_samples_with_langevin_dynamics(
+                v_theta,
+                N,
+                ts,
+                sample_initial,
+                score_function,
+                num_mcmc_steps,
+                eta,
+            )
         elif mcmc_type == "hmc":
-            samples = generate_samples(v_theta, N, ts, sample_initial)
+            samples = generate_samples_with_hmc(
+                v_theta,
+                sample_initial,
+                time_dependent_log_density,
+                N,
+                ts,
+                num_mcmc_steps,
+                num_mcmc_integration_steps,
+                eta,
+                False,
+            )
         else:
             samples = generate_samples(v_theta, N, ts, sample_initial)
 
