@@ -769,6 +769,7 @@ def main():
         project="continuous_liouville_blr",
         config={
             "input_dim": initial_density.dim,
+            "data_path": args.data_path,
             "T": args.num_timesteps,
             "N": args.num_samples,
             "num_epochs": args.num_epochs,
