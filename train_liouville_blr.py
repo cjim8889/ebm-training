@@ -568,6 +568,7 @@ def train_velocity_field_for_blr(
     X_test: chex.Array = None,
     y_test: chex.Array = None,
     optimizer: str = "adamw",
+    eval_samples: int = 25600,
     **kwargs: Any,
 ) -> Any:
     path_distribution = AnnealedDistribution(
@@ -645,7 +646,7 @@ def train_velocity_field_for_blr(
             betas = generate_samples(
                 subkey,
                 v_theta,
-                N,
+                eval_samples,
                 linear_ts,
                 path_distribution.sample_initial,
                 integrator,
@@ -702,6 +703,7 @@ def main():
     parser.add_argument("--mcmc-integration-steps", type=int, default=3)
     parser.add_argument("--eta", type=float, default=0.2)
     parser.add_argument("--initial-sigma", type=float, default=20.0)
+    parser.add_argument("--eval-samples", type=int, default=25600)
     parser.add_argument(
         "--schedule",
         type=str,
@@ -781,6 +783,7 @@ def main():
             "gamma_range": args.gamma_min,
             "optimizer": args.optimizer,
             "normalize_features": args.normalize_features,
+            "eval_samples": args.eval_samples,
         },
         name="velocity_field_training",
         reinit=True,
@@ -808,6 +811,7 @@ def main():
         X_test=X_test,
         y_test=y_test,
         optimizer=args.optimizer,
+        eval_samples=args.eval_samples,
     )
 
 
