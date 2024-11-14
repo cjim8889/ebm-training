@@ -31,6 +31,8 @@ python train_liouville_blr.py \
   --optimizer="adamw" \
   --gamma-min=0.4 \
   --gamma-max=0.6 \
-  --seed=97979
+  --seed=97979 \
+  --normalize-features 
+  
 # Deactivate the virtual environment
 deactivate
