@@ -32,7 +32,8 @@ python train_liouville_blr.py \
   --gamma-min=0.4 \
   --gamma-max=0.6 \
   --seed=97979 \
+  --with-rejection-sampling \
   --normalize-features 
-  
+
 # Deactivate the virtual environment
 deactivate
