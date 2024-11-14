@@ -570,32 +570,6 @@ def train_velocity_field_for_blr(
     optimizer: str = "adamw",
     **kwargs: Any,
 ) -> Any:
-    # Handle logging hyperparameters
-    wandb.init(
-        project="continuous_liouville_blr",
-        config={
-            "input_dim": initial_density.dim,
-            "T": T,
-            "N": N,
-            "num_epochs": num_epochs,
-            "num_steps": num_steps,
-            "learning_rate": learning_rate,
-            "gradient_norm": gradient_norm,
-            "hidden_dim": v_theta.mlp.width_size,
-            "depth": v_theta.mlp.depth,
-            "mcmc_type": mcmc_type,
-            "num_mcmc_steps": num_mcmc_steps,
-            "num_mcmc_integration_steps": num_mcmc_integration_steps,
-            "eta": eta,
-            "schedule": schedule,
-            "gamma_range": gamma_range,
-            "optimizer": optimizer,
-            **kwargs,
-        },
-        name="velocity_field_training",
-        reinit=True,
-    )
-
     path_distribution = AnnealedDistribution(
         initial_distribution=initial_density,
         target_distribution=target_density,
@@ -742,6 +716,11 @@ def main():
         choices=["adam", "adamw", "sgd", "rmsprop"],
         default="adamw",
     )
+    parser.add_argument(
+        "--normalize-features",
+        action="store_true",
+        help="Normalize each feature dimension to zero mean and unit variance",
+    )
     parser.add_argument("--gamma-min", type=float, default=0.4)
     parser.add_argument("--gamma-max", type=float, default=0.6)
     parser.add_argument("--seed", type=int, default=0)
@@ -756,6 +735,13 @@ def main():
 
     # Preprocess data
     y = jnp.clip(y, 0, 1)
+    # Add feature normalization
+    if args.normalize_features:
+        from sklearn.preprocessing import StandardScaler
+
+        scaler = StandardScaler()
+        X = scaler.fit_transform(X)
+
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
     )
@@ -771,6 +757,32 @@ def main():
     key, model_key = jax.random.split(key)
     v_theta = TimeVelocityField(
         model_key, input_dim=input_dim, hidden_dim=args.hidden_dim, depth=args.depth
+    )
+
+    # Handle logging hyperparameters
+    wandb.init(
+        project="continuous_liouville_blr",
+        config={
+            "input_dim": initial_density.dim,
+            "T": args.num_timesteps,
+            "N": args.num_samples,
+            "num_epochs": args.num_epochs,
+            "num_steps": args.num_steps,
+            "learning_rate": args.learning_rate,
+            "gradient_norm": 1.0,
+            "hidden_dim": v_theta.mlp.width_size,
+            "depth": v_theta.mlp.depth,
+            "mcmc_type": "hmc",
+            "num_mcmc_steps": args.mcmc_steps,
+            "num_mcmc_integration_steps": args.mcmc_integration_steps,
+            "eta": args.eta,
+            "schedule": args.schedule,
+            "gamma_range": args.gamma_min,
+            "optimizer": args.optimizer,
+            "normalize_features": args.normalize_features,
+        },
+        name="velocity_field_training",
+        reinit=True,
     )
 
     # Train model
