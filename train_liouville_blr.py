@@ -569,6 +569,7 @@ def train_velocity_field_for_blr(
     y_test: chex.Array = None,
     optimizer: str = "adamw",
     eval_samples: int = 25600,
+    with_rejection_sampling: bool = False,
     **kwargs: Any,
 ) -> Any:
     path_distribution = AnnealedDistribution(
@@ -620,7 +621,7 @@ def train_velocity_field_for_blr(
                 num_steps=num_mcmc_steps,
                 integration_steps=num_mcmc_integration_steps,
                 eta=eta,
-                rejection_sampling=False,
+                rejection_sampling=with_rejection_sampling,
             )
         else:
             samples = generate_samples(
@@ -724,6 +725,7 @@ def main():
         action="store_true",
         help="Normalize each feature dimension to zero mean and unit variance",
     )
+    parser.add_argument("--with-rejection-sampling", action="store_true")
     parser.add_argument("--gamma-min", type=float, default=0.4)
     parser.add_argument("--gamma-max", type=float, default=0.6)
     parser.add_argument("--seed", type=int, default=0)
@@ -784,6 +786,8 @@ def main():
             "optimizer": args.optimizer,
             "normalize_features": args.normalize_features,
             "eval_samples": args.eval_samples,
+            "integrator": args.integrator,
+            "with_rejection_sampling": args.with_rejection_sampling,
         },
         name="velocity_field_training",
         reinit=True,
@@ -812,6 +816,7 @@ def main():
         y_test=y_test,
         optimizer=args.optimizer,
         eval_samples=args.eval_samples,
+        with_rejection_sampling=args.with_rejection_sampling,
     )
 
 
