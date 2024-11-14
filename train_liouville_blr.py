@@ -701,6 +701,7 @@ def main():
     parser.add_argument("--mcmc-steps", type=int, default=5)
     parser.add_argument("--mcmc-integration-steps", type=int, default=3)
     parser.add_argument("--eta", type=float, default=0.2)
+    parser.add_argument("--initial-sigma", type=float, default=20.0)
     parser.add_argument(
         "--schedule",
         type=str,
@@ -750,7 +751,7 @@ def main():
     input_dim = X_train.shape[1]
 
     # Initialize distributions
-    initial_density = MultivariateGaussian(dim=input_dim, sigma=20.0)
+    initial_density = MultivariateGaussian(dim=input_dim, sigma=args.initial_sigma)
     target_density = BetaTarget(X=X_train, y=y_train, dim=input_dim)
 
     # Initialize velocity field
