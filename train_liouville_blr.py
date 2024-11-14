@@ -572,7 +572,7 @@ def train_velocity_field_for_blr(
 ) -> Any:
     # Handle logging hyperparameters
     wandb.init(
-        project="continuous_liouville",
+        project="continuous_liouville_blr",
         config={
             "input_dim": initial_density.dim,
             "T": T,
