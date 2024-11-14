@@ -3,7 +3,7 @@ name = "ebm-training"
 version = "0.1.1"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = "==3.11.5"
 dependencies = [
     "chex>=0.1.81",
     "distrax>=0.1.5",
@@ -16,6 +16,7 @@ dependencies = [
     "pandas>=2.2.3",
     "wandb>=0.18.3",
     "optax",
+    "scikit-learn>=1.5.2",
 ]
 
 [tool.uv.sources]
