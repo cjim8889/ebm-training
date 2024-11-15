@@ -705,6 +705,7 @@ def main():
     parser.add_argument("--eta", type=float, default=0.2)
     parser.add_argument("--initial-sigma", type=float, default=20.0)
     parser.add_argument("--eval-samples", type=int, default=25600)
+    parser.add_argument("--split", type=float, default=0.15)
     parser.add_argument(
         "--schedule",
         type=str,
@@ -748,7 +749,7 @@ def main():
         X = scaler.fit_transform(X)
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
+        X, y, test_size=args.split, random_state=42
     )
 
     # Input Dimension
