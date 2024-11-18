@@ -678,11 +678,10 @@ def train_velocity_field_for_blr(
             ts = inverse_power_schedule(T, gamma=gamma[0])
 
     # Save trained model to wandb
-    model_bytes = eqx.tree_serialise_leaves("v_theta.eqx", v_theta)
+    eqx.tree_serialise_leaves("v_theta.eqx", v_theta)
     artifact = wandb.Artifact(name=f"velocity_field_model_{wandb.run.id}", type="model")
-
-    with artifact.new_file("v_theta.eqx", mode="wb") as f:
-        f.write(model_bytes)
+    artifact.add_file(local_path="v_theta.eqx", name="model")
+    artifact.save()
 
     wandb.log_artifact(artifact)
     wandb.finish()
