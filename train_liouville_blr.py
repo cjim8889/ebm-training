@@ -776,8 +776,9 @@ def main():
         scaler = StandardScaler()
         X = scaler.fit_transform(X)
 
+    key, subkey = jax.random.split(key)
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=args.split, random_state=42
+        X, y, test_size=args.split, random_state=int(subkey[0])
     )
 
     # Input Dimension
