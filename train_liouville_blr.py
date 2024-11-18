@@ -505,6 +505,29 @@ def evaluate_predictive_prob(beta: chex.Array, X_test: chex.Array) -> chex.Array
 batched_evaluate_predictive_prob = jax.vmap(evaluate_predictive_prob, in_axes=(0, None))
 
 
+@eqx.filter_jit
+def sample_monotonic_uniform_ordered(
+    key: jax.random.PRNGKey, bounds: chex.Array, include_endpoints: bool = True
+) -> chex.Array:
+    def step(carry, info):
+        t_prev = carry
+        t_current = info
+
+        return t_current, jnp.array([t_prev, t_current])
+
+    _, ordered_pairs = jax.lax.scan(step, bounds[0], bounds[1:])
+
+    if include_endpoints:
+        ordered_pairs = jnp.concatenate(
+            [ordered_pairs, jnp.array([[1.0, 1.0]])], axis=0
+        )
+
+    samples = jax.random.uniform(
+        key, bounds.shape, minval=ordered_pairs[:, 0], maxval=ordered_pairs[:, 1]
+    )
+    return samples
+
+
 def evaluate_predictive_accuracy(
     betas: chex.Array, X_test: chex.Array, y_test: chex.Array
 ) -> chex.Array:
@@ -563,6 +586,7 @@ def train_velocity_field_for_blr(
     num_mcmc_integration_steps: int = 3,
     eta: float = 0.01,
     schedule: str = "inverse_power",
+    continuous_schedule: bool = False,
     gamma_range: Tuple[float, float] = (0.2, 0.8),
     integrator: str = "euler",
     X_test: chex.Array = None,
@@ -594,8 +618,10 @@ def train_velocity_field_for_blr(
     else:
         ts = jnp.linspace(0, 1, T)
 
+    sampled_ts = ts
+
     @eqx.filter_jit
-    def step(v_theta, opt_state, xs):
+    def step(v_theta, opt_state, xs, ts):
         loss, grads = eqx.filter_value_and_grad(loss_fn)(
             v_theta,
             xs,
@@ -616,7 +642,7 @@ def train_velocity_field_for_blr(
                 sample_fn=path_distribution.sample_initial,
                 time_dependent_log_density=path_distribution.time_dependent_log_prob,
                 num_samples=N,
-                ts=ts,
+                ts=sampled_ts,
                 integration_fn=integrator,
                 num_steps=num_mcmc_steps,
                 integration_steps=num_mcmc_integration_steps,
@@ -625,14 +651,19 @@ def train_velocity_field_for_blr(
             )
         else:
             samples = generate_samples(
-                subkey, v_theta, N, ts, path_distribution.sample_initial, integrator
+                subkey,
+                v_theta,
+                N,
+                sampled_ts,
+                path_distribution.sample_initial,
+                integrator,
             )
 
         epoch_loss = 0.0
         for s in range(num_steps):
             key, subkey = jax.random.split(key)
             samps = jax.random.choice(subkey, samples, (B,), replace=False, axis=1)
-            v_theta, opt_state, loss = step(v_theta, opt_state, samps)
+            v_theta, opt_state, loss = step(v_theta, opt_state, samps, sampled_ts)
             epoch_loss += loss
 
             if s % 20 == 0:
@@ -670,12 +701,9 @@ def train_velocity_field_for_blr(
                 )
 
         # Resample ts according to gamma range
-        key, subkey = jax.random.split(key)
-        gamma = jax.random.uniform(
-            subkey, (1,), minval=gamma_range[0], maxval=gamma_range[1]
-        )
-        if schedule == "inverse_power":
-            ts = inverse_power_schedule(T, gamma=gamma[0])
+        if continuous_schedule:
+            key, subkey = jax.random.split(key)
+            sampled_ts = sample_monotonic_uniform_ordered(subkey, ts, True)
 
     # Save trained model to wandb
     eqx.tree_serialise_leaves("v_theta.eqx", v_theta)
@@ -725,6 +753,7 @@ def main():
         action="store_true",
         help="Normalize each feature dimension to zero mean and unit variance",
     )
+    parser.add_argument("--continuous-schedule", action="store_true")
     parser.add_argument("--with-rejection-sampling", action="store_true")
     parser.add_argument("--gamma-min", type=float, default=0.4)
     parser.add_argument("--gamma-max", type=float, default=0.6)
@@ -789,6 +818,7 @@ def main():
             "eval_samples": args.eval_samples,
             "integrator": args.integrator,
             "with_rejection_sampling": args.with_rejection_sampling,
+            "continuous_schedule": args.continuous_schedule,
         },
         name="velocity_field_training",
         reinit=True,
@@ -818,6 +848,7 @@ def main():
         optimizer=args.optimizer,
         eval_samples=args.eval_samples,
         with_rejection_sampling=args.with_rejection_sampling,
+        continuous_schedule=args.continuous_schedule,
     )
 
 
