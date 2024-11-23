@@ -17,6 +17,7 @@ dependencies = [
     "wandb>=0.18.3",
     "optax",
     "scikit-learn>=1.5.2",
+    "blackjax>=1.2.4",
 ]
 
 [tool.uv.sources]
