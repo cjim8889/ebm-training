@@ -585,6 +585,29 @@ def evaluate_posterior_agreement(
     return agreement
 
 
+@eqx.filter_jit
+def estimate_mmd(X, Y, sigma=1.0):
+    def gaussian_kernel_matrix(X, Y, sigma):
+        X_norm = jnp.sum(X**2, axis=1).reshape(-1, 1)
+        Y_norm = jnp.sum(Y**2, axis=1).reshape(1, -1)
+        K = jnp.exp(-(X_norm + Y_norm - 2 * jnp.dot(X, Y.T)) / (2 * sigma**2))
+        return K
+
+    K_xx = gaussian_kernel_matrix(X, X, sigma)
+    K_yy = gaussian_kernel_matrix(Y, Y, sigma)
+    K_xy = gaussian_kernel_matrix(X, Y, sigma)
+
+    m = X.shape[0]
+    n = Y.shape[0]
+
+    mmd = (
+        (jnp.sum(K_xx) - jnp.trace(K_xx)) / (m * (m - 1))
+        + (jnp.sum(K_yy) - jnp.trace(K_yy)) / (n * (n - 1))
+        - 2 * jnp.sum(K_xy) / (m * n)
+    )
+    return mmd
+
+
 def inverse_power_schedule(T=64, gamma=0.5):
     x_pow = jnp.linspace(0, 1, T)
     t_pow = 1 - x_pow**gamma
@@ -776,7 +799,10 @@ def train_velocity_field_for_blr(
                         betas, betas_from_hmc, X_test
                     )
                     print(f"Posterior agreement with HMC: {agreement}")
-                    wandb.log({"posterior_agreement": agreement})
+
+                    mmd = estimate_mmd(betas, betas_from_hmc)
+
+                    wandb.log({"posterior_agreement": agreement, "mmd": mmd})
 
         # Resample ts according to gamma range
         if continuous_schedule:
