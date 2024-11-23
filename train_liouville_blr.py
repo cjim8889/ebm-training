@@ -898,6 +898,7 @@ def main():
             "integrator": args.integrator,
             "with_rejection_sampling": args.with_rejection_sampling,
             "continuous_schedule": args.continuous_schedule,
+            "eval_with_hmc": True,
         },
         name="velocity_field_training",
         reinit=True,
