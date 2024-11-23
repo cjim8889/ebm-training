@@ -572,9 +572,12 @@ def evaluate_predictive_accuracy(
     return accuracy, f1, recall, precision
 
 
-def evaluate_posterior_agreement(
+def evaluate_posterior_agreement_and_tv(
     betas: chex.Array, betas_hmc: chex.Array, X_test: chex.Array
 ) -> chex.Array:
+    """
+    Evaluate the agreement between the posterior samples from HMC and the trained model
+    """
     probs = jnp.mean(batched_evaluate_predictive_prob(betas, X_test), axis=0)
     probs_hmc = jnp.mean(batched_evaluate_predictive_prob(betas_hmc, X_test), axis=0)
     y_preds = probs > 0.5
@@ -582,7 +585,12 @@ def evaluate_posterior_agreement(
 
     agreement = jnp.mean(y_preds == y_preds_hmc)
 
-    return agreement
+    # Compute the absolute differences
+    abs_diff = jnp.abs(probs - probs_hmc)
+    # Average over samples
+    total_variation_distance = jnp.mean(abs_diff)
+
+    return agreement, total_variation_distance
 
 
 @eqx.filter_jit
@@ -795,14 +803,20 @@ def train_velocity_field_for_blr(
                 )
 
                 if eval_with_hmc:
-                    agreement = evaluate_posterior_agreement(
+                    agreement, total_variation = evaluate_posterior_agreement_and_tv(
                         betas, betas_from_hmc, X_test
                     )
                     print(f"Posterior agreement with HMC: {agreement}")
 
                     mmd = estimate_mmd(betas, betas_from_hmc)
 
-                    wandb.log({"posterior_agreement": agreement, "mmd": mmd})
+                    wandb.log(
+                        {
+                            "posterior_agreement": agreement,
+                            "mmd": mmd,
+                            "total_variation": total_variation,
+                        }
+                    )
 
         # Resample ts according to gamma range
         if continuous_schedule:
