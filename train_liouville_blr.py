@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 import equinox as eqx
 import distrax
+import blackjax
 import wandb
 import optax
 import chex
@@ -528,6 +529,37 @@ def sample_monotonic_uniform_ordered(
     return samples
 
 
+def run_nuts_chain(target, key, step_size=0.1, num_samples=1000, num_warmup=1000):
+    """Run HMC chain for BetaTarget"""
+    # Setup step size and mass matrix
+    inverse_mass_matrix = jnp.ones(target.dim)
+
+    # Initialize state
+    initial_position = jnp.zeros(target.dim)
+
+    # Create HMC kernel
+    hmc = blackjax.nuts(
+        target.log_prob,
+        step_size=step_size,
+        inverse_mass_matrix=inverse_mass_matrix,
+    )
+
+    state = hmc.init(initial_position)
+
+    @jax.jit
+    def one_step(state, key):
+        state, _ = hmc.step(key, state)
+        return state, state.position
+
+    # Generate random keys
+    keys = jax.random.split(key, num_samples + num_warmup)
+
+    # Run the chain
+    final_state, samples = jax.lax.scan(one_step, state, keys)
+
+    return samples[num_warmup:]  # Discard warmup samples
+
+
 def evaluate_predictive_accuracy(
     betas: chex.Array, X_test: chex.Array, y_test: chex.Array
 ) -> chex.Array:
@@ -538,6 +570,19 @@ def evaluate_predictive_accuracy(
     recall = recall_score(y_test, y_preds, average="weighted")
     precision = precision_score(y_test, y_preds, average="weighted")
     return accuracy, f1, recall, precision
+
+
+def evaluate_posterior_agreement(
+    betas: chex.Array, betas_hmc: chex.Array, X_test: chex.Array
+) -> chex.Array:
+    probs = jnp.mean(batched_evaluate_predictive_prob(betas, X_test), axis=0)
+    probs_hmc = jnp.mean(batched_evaluate_predictive_prob(betas_hmc, X_test), axis=0)
+    y_preds = probs > 0.5
+    y_preds_hmc = probs_hmc > 0.5
+
+    agreement = jnp.mean(y_preds == y_preds_hmc)
+
+    return agreement
 
 
 def inverse_power_schedule(T=64, gamma=0.5):
@@ -594,6 +639,7 @@ def train_velocity_field_for_blr(
     optimizer: str = "adamw",
     eval_samples: int = 25600,
     with_rejection_sampling: bool = False,
+    eval_with_hmc: bool = True,
     **kwargs: Any,
 ) -> Any:
     path_distribution = AnnealedDistribution(
@@ -601,6 +647,31 @@ def train_velocity_field_for_blr(
         target_distribution=target_density,
         dim=initial_density.dim,
     )
+
+    if eval_with_hmc:
+        # Eval with HMC
+        key, subkey = jax.random.split(key)
+        betas_from_hmc = run_nuts_chain(
+            target_density,
+            subkey,
+            num_samples=eval_samples * 5 + 10000,
+            num_warmup=10000,
+        )
+        # Discard warmup samples and thin
+        betas_from_hmc = betas_from_hmc[::5]
+
+        accuracy_hmc, f1_hmc, recall_hmc, precision_hmc = evaluate_predictive_accuracy(
+            betas_from_hmc, X_test, y_test
+        )
+
+        wandb.log(
+            {
+                "accuracy_hmc": accuracy_hmc,
+                "f1_hmc": f1_hmc,
+                "recall_hmc": recall_hmc,
+                "precision_hmc": precision_hmc,
+            }
+        )
 
     # Set up optimizer
     gradient_clipping = optax.clip_by_global_norm(gradient_norm)
@@ -699,6 +770,13 @@ def train_velocity_field_for_blr(
                         "precision": precision,
                     }
                 )
+
+                if eval_with_hmc:
+                    agreement = evaluate_posterior_agreement(
+                        betas, betas_from_hmc, X_test
+                    )
+                    print(f"Posterior agreement with HMC: {agreement}")
+                    wandb.log({"posterior_agreement": agreement})
 
         # Resample ts according to gamma range
         if continuous_schedule:
