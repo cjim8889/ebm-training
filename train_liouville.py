@@ -89,7 +89,7 @@ def train_velocity_field(
         },
         name=run_name,
         reinit=True,
-        mode="online",    # online disabled
+        mode="disabled",    # online disabled
     )
 
     # Set up various functions
