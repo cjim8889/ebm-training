@@ -2,6 +2,8 @@ import argparse
 import torch
 import numpy as np
 import wandb
+import hydra
+from omegaconf import DictConfig
 
 from torch import Tensor
 from typing import Optional, Callable, Union, Tuple, Dict, Any, Sequence, List
@@ -25,7 +27,7 @@ def train_velocity_field(
     momentum: float = 0.9,
     nestrov: bool = True,
     T: int = 32,
-    gradient_norm: float = 1.0,
+    gradient_norm_clip: float = 1.0,
     mcmc_type: str = "langevin",
     num_mcmc_steps: int = 5,
     num_mcmc_integration_steps: int = 3,
@@ -52,7 +54,7 @@ def train_velocity_field(
         num_steps (int, optional): Number of steps per epoch. Defaults to 100.
         learning_rate (float, optional): Learning rate for the optimizer. Defaults to 1e-03.
         T (int, optional): Number of time steps. Defaults to 32.
-        gradient_norm (float, optional): Gradient clipping norm. Defaults to 1.0.
+        gradient_norm_clip (float, optional): Gradient clipping norm. Defaults to 1.0.
         mcmc_type (str, optional): Type of MCMC sampler ('langevin' or 'hmc'). Defaults to "langevin".
         num_mcmc_steps (int, optional): Number of MCMC steps. Defaults to 5.
         num_mcmc_integration_steps (int, optional): Number of integration steps for MCMC. Defaults to 3.
@@ -77,7 +79,7 @@ def train_velocity_field(
             "learning_rate": learning_rate,
             "momentum": momentum,
             "nestrov": nestrov,
-            "gradient_norm": gradient_norm,
+            "gradient_norm_clip": gradient_norm_clip,
             "hidden_dim": hidden_dim,
             "depth": depth,
             "mcmc_type": mcmc_type,
@@ -109,7 +111,6 @@ def train_velocity_field(
         x = x.detach().requires_grad_(True)
         log_p = time_dependent_log_density(x, t)
         return torch.autograd.grad(log_p.sum(), x)[0]
-    
     
     ts = time_schedule(T, schedule_alpha, schedule_gamma)[schedule]()
 
@@ -165,222 +166,93 @@ def train_velocity_field(
         wandb.log({"epoch": epoch, "average_loss": avg_loss})
 
         if epoch % 20 == 0:
-            linear_ts = torch.linspace(0, 1, T)
-            val_samples = generate_samples(
-                v_theta, 10000, linear_ts, sample_initial
-            )[:, -1, :].detach().cpu()
+            for sample_steps in [4, 8, 16, T]:
+                linear_ts = torch.linspace(0, 1, sample_steps)
+                val_samples = generate_samples(
+                    v_theta, 10000, linear_ts, sample_initial
+                )[:, -1, :].detach().cpu()
 
-            fig = plot_MoG40(
-                log_prob_function=target_density.log_prob,
-                samples=val_samples, 
-            )
-            wandb.log({"validation_samples": wandb.Image(fig)})
+                fig = plot_MoG40(
+                    log_prob_function=target_density.log_prob,
+                    samples=val_samples, 
+                )
+                wandb.log({f"samples_T={sample_steps}": wandb.Image(fig)})
 
-def main(args):
+def run(cfg: DictConfig) -> None:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     gmm = GMM(
-        dim=args.input_dim, 
-        n_mixes=args.gmm_n_mixes, 
+        dim=cfg.target.input_dim, 
+        n_mixes=cfg.target.gmm_n_mixes, 
         loc_scaling=40, 
         log_var_scaling=1,
-        seed=args.seed,
-        device=args.device,
+        seed=cfg.seed,
+        device=device,
     )
 
     initial = MultivariateGaussian(
-        dim=args.input_dim,
-        sigma=args.initial_sigma,
-        device=args.device,
+        dim=cfg.target.input_dim,
+        sigma=cfg.flow.initial_sigma,
+        device=device,
     )
 
     v_theta = TimeVelocityField(
-        input_dim=args.input_dim,
-        hidden_dim=args.hidden_dim,
-        depth=args.depth,
-    ).to(args.device)
+        input_dim=cfg.target.input_dim,
+        hidden_dim=cfg.model.hidden_dim,
+        depth=cfg.model.depth,
+    ).to(device)
 
-    if args.optimiser == "adam":
+    opt_params = cfg.optimiser
+    if opt_params.name == "adam":
         optimizer = torch.optim.Adam(
-            v_theta.parameters(), lr=args.learning_rate
+            v_theta.parameters(), lr=opt_params.learning_rate
         )
-    elif args.optimiser == "sgd":
+    elif opt_params.name == "sgd":
         optimizer = torch.optim.SGD(
-            v_theta.parameters(), lr=args.learning_rate, momentum=args.momentum
+            v_theta.parameters(), lr=opt_params.learning_rate, momentum=opt_params.momentum
         )
-    elif args.optimiser == "adamw":
+    elif opt_params.name == "adamw":
         optimizer = torch.optim.AdamW(
-            v_theta.parameters(), lr=args.learning_rate
+            v_theta.parameters(), lr=opt_params.learning_rate
         )
-    elif args.optimiser == "adamax":
+    elif opt_params.name == "adamax":
         optimizer = torch.optim.Adamax(
-            v_theta.parameters(), lr=args.learning_rate
+            v_theta.parameters(), lr=opt_params.learning_rate
         )
     else:
-        raise ValueError(f"Unknown optimizer: {args.optimiser}")
-    
+        raise ValueError(f"Unknown optimizer: {opt_params.name}")
+
     train_velocity_field(
         initial_density=initial,
         target_density=gmm,
         v_theta=v_theta,
         optimiser=optimizer,
-        N=args.N,
-        B=args.B,
-        num_epochs=args.num_epochs,
-        num_steps=args.num_steps,
-        T=args.T,
-        gradient_norm=args.gradient_norm,
-        mcmc_type=args.mcmc_type,  # Added
-        num_mcmc_steps=args.num_mcmc_steps,  # Added
-        num_mcmc_integration_steps=args.num_mcmc_integration_steps,  # Added
-        eta=args.eta,
-        schedule=args.schedule,  # Added
-        schedule_alpha=args.schedule_alpha,  # Added
-        schedule_gamma=args.schedule_gamma,
+        N=cfg.training.N,
+        B=cfg.training.B,
+        num_epochs=cfg.training.num_epochs,
+        num_steps=cfg.training.num_steps,
+        T=cfg.flow.T,
+        gradient_norm_clip=cfg.training.gradient_norm_clip,
+        mcmc_type=cfg.flow.mcmc_type,  # Added
+        num_mcmc_steps=cfg.flow.num_mcmc_steps,  # Added
+        num_mcmc_integration_steps=cfg.flow.num_mcmc_integration_steps,  # Added
+        eta=cfg.flow.eta,
+        schedule=cfg.schedule.name,  # Added
+        schedule_alpha=cfg.schedule.schedule_alpha,  # Added
+        schedule_gamma=cfg.schedule.schedule_gamma,
         nestrov=True,
-        run_name=args.run_name,
+        run_name=cfg.wandb.run_name,
         input_dim=2,
         hidden_dim=128,
         depth=3,
     )
 
+@hydra.main(config_path="../configs", config_name="gmm.yaml", version_base=None)
+def main(cfg: DictConfig) -> None:
+    seed_everything(cfg.seed)
+    run(cfg)
 
-# Define Argument Parser
-def parse_arguments():
-    parser = argparse.ArgumentParser(
-        description="Train a Velocity Field with Configurable Hyperparameters"
-    )
 
-    # General Hyperparameters
-    parser.add_argument(
-        "--seed", type=int, default=80801, help="Random seed for reproducibility."
-    )
-    parser.add_argument(
-        "--wandb_project",
-        type=str,
-        default="liouville",
-        help="Weights & Biases project name.",
-    )
-    parser.add_argument(
-        "--run_name",
-        type=str,
-        default="velocity_field_training_torch",
-        help="Name of the WandB run.",
-    )
-
-    # Training Hyperparameters
-    parser.add_argument(
-        "--input_dim", type=int, default=2, help="Dimensionality of the problem."
-    )
-    parser.add_argument("--T", type=int, default=64, help="Number of time steps.")
-    parser.add_argument(
-        "--N",
-        type=int,
-        default=1024,
-        help="Number of samples for training at each time step.",
-    )
-    parser.add_argument(
-        "--B",
-        type=int,
-        default=64,
-        help="Number of samples to use for each training step",
-    )
-    parser.add_argument(
-        "--num_epochs", type=int, default=2000, help="Number of training epochs."
-    )
-    parser.add_argument(
-        "--num_steps", type=int, default=100, help="Number of training steps per epoch."
-    )
-    parser.add_argument(
-        "--optimiser",
-        type=str,
-        choices=["adam", "sgd", "adamw", "adamax"],
-        default="adam",
-        help="Optimizer to use for training.",
-    )
-    parser.add_argument(
-        "--learning_rate",
-        type=float,
-        default=1e-3,
-        help="Learning rate for the optimizer.",
-    )
-    parser.add_argument(
-        "--momentum", type=float, default=0.9, help="Momentum for the optimizer."
-    )
-    parser.add_argument(
-        "--hidden_dim", type=int, default=128, help="Hidden dimension size of the MLP."
-    )
-    parser.add_argument(
-        "--depth", type=int, default=3, help="Depth (number of layers) of the MLP."
-    )
-    parser.add_argument(
-        "--gradient_norm", type=float, default=1.0, help="Gradient clipping norm."
-    )
-
-    # GMM Hyperparameters
-    parser.add_argument(
-        "--gmm_n_mixes", type=int, default=40, help="Number of mixtures in the GMM."
-    )
-
-    # Initial Distribution Hyperparameters
-    parser.add_argument(
-        "--initial_sigma",
-        type=float,
-        default=20.0,
-        help="Sigma (standard deviation) for the initial Gaussian.",
-    )
-
-    # MCMC Hyperparameters
-    parser.add_argument(
-        "--mcmc_type",
-        type=str,
-        choices=["langevin", "hmc", "uniform"],
-        default="hmc",
-        help="Type of MCMC sampler to use ('langevin' or 'hmc').",
-    )
-    parser.add_argument(
-        "--num_mcmc_steps",
-        type=int,
-        default=5,
-        help="Number of MCMC steps to perform.",
-    )
-    parser.add_argument(
-        "--num_mcmc_integration_steps",
-        type=int,
-        default=5,
-        help="Number of integration steps for MCMC samplers (applicable for HMC).",
-    )
-    parser.add_argument(
-        "--eta",
-        type=float,
-        default=1.0,
-        help="Step size parameter for MCMC samplers.",
-    )
-
-    # Time Schedule Hyperparameters
-    parser.add_argument(
-        "--schedule",
-        type=str,
-        choices=["linear", "inverse_tangent", "inverse_power"],
-        default="linear",
-        help="Time schedule type ('linear', 'inverse_tangent', 'inverse_power'). Defaults to 'linear'.",
-    )
-    parser.add_argument(
-        "--schedule_alpha",
-        type=float,
-        default=5.0,
-        help="Alpha parameter for the inverse_tangent schedule. Applicable only if schedule is 'inverse_tangent'.",
-    )
-    parser.add_argument(
-        "--schedule_gamma",
-        type=float,
-        default=0.5,
-        help="Gamma parameter for the inverse_power schedule. Applicable only if schedule is 'inverse_power'.",
-    )
-
-    return parser.parse_args()
 
 if __name__ == '__main__':
-    args = parse_arguments()
-    seed_everything(args.seed)
-    args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    main(args)
+    pass
