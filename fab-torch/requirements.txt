@@ -1,0 +1,13 @@
+numpy
+torch==1.13.1
+normflows
+boltzgen @ git+https://github.com/VincentStimper/boltzmann-generators.git
+larsflow @ git+https://github.com/VincentStimper/resampled-base-flows.git
+mdtraj
+nflows
+pandas==1.5.3
+tqdm
+wandb
+hydra-core
+hydra-joblib-launcher
+joblib
