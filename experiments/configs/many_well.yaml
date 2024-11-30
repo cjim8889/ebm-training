@@ -20,7 +20,7 @@ flow:
   mcmc_type: hmc  # ["hmc", "langevin"]
   num_mcmc_steps: 5
   num_mcmc_integration_steps: 5 # Number of integration steps for MCMC samplers (applicable for HMC).
-  eta: 0.01 # Step size for MCMC samplers.
+  eta: 0.3 # Step size for MCMC samplers.
 
 model:
   hidden_dim: 256 # Hidden dimension size of the MLP.
