@@ -207,6 +207,7 @@ def train_velocity_field(
 
             fig = visualise_mw40(target_density, val_samples)
             wandb.log({f"generative_samples": wandb.Image(fig)})
+            plt.close(fig)
 
 def run(cfg: DictConfig) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
