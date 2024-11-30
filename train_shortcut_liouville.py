@@ -1004,7 +1004,6 @@ def main():
                 "continuous_schedule": args.continuous_schedule,
                 "d_distribution": args.d_distribution,
             },
-            name="velocity_field_training",
             reinit=True,
         )
 
