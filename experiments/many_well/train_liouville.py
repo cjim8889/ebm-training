@@ -1,18 +1,45 @@
-import argparse
 import torch
 import numpy as np
 import wandb
 import hydra
 from omegaconf import DictConfig
+from einops import rearrange
+import matplotlib.pyplot as plt
 
 from torch import Tensor
 from typing import Optional, Callable, Union, Tuple, Dict, Any, Sequence, List
 
 from flow_sampler.utils.torch_utils import seed_everything
-from flow_sampler.utils.mog_utils import GMM, MultivariateGaussian, plot_MoG40
+from flow_sampler.target_distributions.many_well import ManyWellEnergy
+from flow_sampler.utils.mog_utils import MultivariateGaussian
 from flow_sampler.models.mlp_models import TimeVelocityField
 from flow_sampler.utils.sampling_utils import time_schedule, generate_samples, generate_samples_with_hmc, generate_samples_with_langevin_dynamics
 from flow_sampler.utils.loss_utils import loss_fn
+
+from flow_sampler.utils.plotting import plot_contours, plot_marginal_pair
+from experiments.many_well.many_well_visualise_all_marginal_pairs import get_target_log_prob_marginal_pair
+
+def visualise_mw40(target, samples):
+    alpha = 0.3
+    plotting_bounds = (-3, 3)
+    dim = samples.shape[-1]
+    fig, axs = plt.subplots(2, 2, sharex="row", sharey="row")
+
+    for i in range(2):
+        for j in range(2):
+            target_log_prob = get_target_log_prob_marginal_pair(target.log_prob, i, j + 2, dim)
+            plot_contours(target_log_prob, bounds=plotting_bounds, ax=axs[i, j],
+                        n_contour_levels=20, grid_width_n_points=100)
+            plot_marginal_pair(samples, marginal_dims=(i, j+2),
+                            ax=axs[i, j], bounds=plotting_bounds, alpha=alpha)
+
+
+            if j == 0:
+                axs[i, j].set_ylabel(f"$x_{i + 1}$")
+            if i == 1:
+                axs[i, j].set_xlabel(f"$x_{j + 1 + 2}$")
+
+    return fig
 
 def train_velocity_field(
     initial_density,
@@ -91,7 +118,7 @@ def train_velocity_field(
         },
         name=run_name,
         reinit=True,
-        mode="disabled",    # online disabled
+        mode="online",    # online disabled
     )
 
     # Set up various functions
@@ -99,19 +126,26 @@ def train_velocity_field(
         return initial_density.sample((num_samples,))
     
     def time_dependent_log_density(x, t):
-        return (1 - t) * initial_density.log_prob(x) + t * target_density.log_prob(x)
-    
+        l, n, d = x.shape
+        x = rearrange(x, "l n d -> (l n) d")
+        t = rearrange(t, "l n -> (l n)")
+        log_prob = (1 - t) * initial_density.log_prob(x) + t * target_density.log_prob(x)
+        return rearrange(log_prob, "(l n) -> l n", l=l)
+
     def time_derivative_log_density(x, t):
         # t = t.requires_grad_(True)
         # log_p = time_dependent_log_density(x, t)
         # return torch.autograd.grad(log_p.sum(), t)[0]
-        return - initial_density.log_prob(x) + target_density.log_prob(x)
+        b, n, d = x.shape
+        x = rearrange(x, "b n d -> (b n) d")
+        dlog_prob = - initial_density.log_prob(x) + target_density.log_prob(x)
+        return rearrange(dlog_prob, "(b n) -> b n", b=b)
 
     def score_function(x, t):
         x = x.detach().requires_grad_(True)
         log_p = time_dependent_log_density(x, t)
         return torch.autograd.grad(log_p.sum(), x)[0]
-    
+
     ts = time_schedule(T, schedule_alpha, schedule_gamma)[schedule]()
 
     for epoch in range(num_epochs):
@@ -160,34 +194,25 @@ def train_velocity_field(
 
             if s % 20 == 0:
                 wandb.log({"loss": loss.item()})
-        
+
         avg_loss = epoch_loss / num_steps
         print(f"Epoch {epoch}, Average Loss: {avg_loss}")
         wandb.log({"epoch": epoch, "average_loss": avg_loss})
 
         if epoch % 20 == 0:
-            for sample_steps in [4, 8, 16, T]:
-                linear_ts = torch.linspace(0, 1, sample_steps)
-                val_samples = generate_samples(
-                    v_theta, 10000, linear_ts, sample_initial
-                )[:, -1, :].detach().cpu()
+            linear_ts = torch.linspace(0, 1, T)
+            val_samples = generate_samples(
+                v_theta, 200, linear_ts, sample_initial
+            )[:, -1, :].detach().cpu()
 
-                fig = plot_MoG40(
-                    log_prob_function=target_density.log_prob,
-                    samples=val_samples, 
-                )
-                wandb.log({f"samples_T={sample_steps}": wandb.Image(fig)})
+            fig = visualise_mw40(target_density, val_samples)
+            wandb.log({f"generative_samples": wandb.Image(fig)})
 
 def run(cfg: DictConfig) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    gmm = GMM(
+    gmm = ManyWellEnergy(
         dim=cfg.target.input_dim, 
-        n_mixes=cfg.target.gmm_n_mixes, 
-        loc_scaling=40, 
-        log_var_scaling=1,
-        seed=cfg.seed,
-        device=device,
     )
 
     initial = MultivariateGaussian(
@@ -247,11 +272,10 @@ def run(cfg: DictConfig) -> None:
         depth=3,
     )
 
-@hydra.main(config_path="../configs", config_name="gmm.yaml", version_base=None)
+@hydra.main(config_path="../configs", config_name="many_well.yaml", version_base=None)
 def main(cfg: DictConfig) -> None:
     seed_everything(cfg.seed)
     run(cfg)
-
 
 
 if __name__ == '__main__':
