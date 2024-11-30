@@ -984,7 +984,6 @@ def main():
             project="shortcut_continuous_liouville",
             config={
                 "input_dim": initial_density.dim,
-                "data_path": args.data_path,
                 "T": args.num_timesteps,
                 "N": args.num_samples,
                 "C": args.shortcut_size,
