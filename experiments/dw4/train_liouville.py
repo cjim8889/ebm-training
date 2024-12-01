@@ -94,7 +94,7 @@ def train_velocity_field(
         },
         name=run_name,
         reinit=True,
-        mode="disabled",    # online disabled
+        mode="online",    # online disabled
     )
 
     # Set up various functions
@@ -180,12 +180,8 @@ def train_velocity_field(
             val_samples = generate_samples(
                 v_theta, 200, linear_ts, sample_initial
             )[:, -1, :].detach().cpu()
-            print(val_samples.shape)
-            exit()
-
-            # fig = visualise_mw40(target_density, val_samples)
-            # wandb.log({f"generative_samples": wandb.Image(fig)})
-            # plt.close(fig)
+            fig = target_density.get_dataset_fig(val_samples)
+            wandb.log({f"generative_samples": wandb.Image(fig)})
 
 def run(cfg: DictConfig) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -193,6 +189,11 @@ def run(cfg: DictConfig) -> None:
     target = MultiDoubleWellEnergy(
         dimensionality=cfg.target.input_dim,
         n_particles=cfg.target.n_particles,
+        data_path=cfg.target.data_path,
+        data_path_train=cfg.target.data_path_train,
+        data_path_val=cfg.target.data_path_val,
+        data_from_efm=cfg.target.data_from_efm,
+        device=device,
     )
 
     initial = MultivariateGaussian(
