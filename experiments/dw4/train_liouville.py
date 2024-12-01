@@ -15,6 +15,7 @@ from flow_sampler.utils.mog_utils import MultivariateGaussian
 from flow_sampler.models.mlp_models import TimeVelocityField
 from flow_sampler.utils.sampling_utils import time_schedule, generate_samples, generate_samples_with_hmc, generate_samples_with_langevin_dynamics
 from flow_sampler.utils.loss_utils import loss_fn
+from flow_sampler.utils.data_utils import remove_mean
 
 
 def train_velocity_field(
@@ -178,8 +179,9 @@ def train_velocity_field(
         if epoch % 20 == 0:
             linear_ts = torch.linspace(0, 1, T)
             val_samples = generate_samples(
-                v_theta, 200, linear_ts, sample_initial
+                v_theta, 1024, linear_ts, sample_initial
             )[:, -1, :].detach().cpu()
+            val_samples = remove_mean(val_samples, target_density.n_particles, target_density.n_spatial_dim)
             fig = target_density.get_dataset_fig(val_samples)
             wandb.log({f"generative_samples": wandb.Image(fig)})
 
