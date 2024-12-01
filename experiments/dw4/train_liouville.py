@@ -10,36 +10,12 @@ from torch import Tensor
 from typing import Optional, Callable, Union, Tuple, Dict, Any, Sequence, List
 
 from flow_sampler.utils.torch_utils import seed_everything
-from flow_sampler.target_distributions.many_well import ManyWellEnergy
+from flow_sampler.target_distributions.multi_double_well import MultiDoubleWellEnergy
 from flow_sampler.utils.mog_utils import MultivariateGaussian
 from flow_sampler.models.mlp_models import TimeVelocityField
 from flow_sampler.utils.sampling_utils import time_schedule, generate_samples, generate_samples_with_hmc, generate_samples_with_langevin_dynamics
 from flow_sampler.utils.loss_utils import loss_fn
 
-from flow_sampler.utils.plotting import plot_contours, plot_marginal_pair
-from experiments.many_well.many_well_visualise_all_marginal_pairs import get_target_log_prob_marginal_pair
-
-def visualise_mw40(target, samples):
-    alpha = 0.3
-    plotting_bounds = (-3, 3)
-    dim = samples.shape[-1]
-    fig, axs = plt.subplots(2, 2, sharex="row", sharey="row")
-
-    for i in range(2):
-        for j in range(2):
-            target_log_prob = get_target_log_prob_marginal_pair(target.log_prob, i, j + 2, dim)
-            plot_contours(target_log_prob, bounds=plotting_bounds, ax=axs[i, j],
-                        n_contour_levels=20, grid_width_n_points=100)
-            plot_marginal_pair(samples, marginal_dims=(i, j+2),
-                            ax=axs[i, j], bounds=plotting_bounds, alpha=alpha)
-
-
-            if j == 0:
-                axs[i, j].set_ylabel(f"$x_{i + 1}$")
-            if i == 1:
-                axs[i, j].set_xlabel(f"$x_{j + 1 + 2}$")
-
-    return fig
 
 def train_velocity_field(
     initial_density,
@@ -118,7 +94,7 @@ def train_velocity_field(
         },
         name=run_name,
         reinit=True,
-        mode="online",    # online disabled
+        mode="disabled",    # online disabled
     )
 
     # Set up various functions
@@ -204,16 +180,19 @@ def train_velocity_field(
             val_samples = generate_samples(
                 v_theta, 200, linear_ts, sample_initial
             )[:, -1, :].detach().cpu()
+            print(val_samples.shape)
+            exit()
 
-            fig = visualise_mw40(target_density, val_samples)
-            wandb.log({f"generative_samples": wandb.Image(fig)})
-            plt.close(fig)
+            # fig = visualise_mw40(target_density, val_samples)
+            # wandb.log({f"generative_samples": wandb.Image(fig)})
+            # plt.close(fig)
 
 def run(cfg: DictConfig) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    gmm = ManyWellEnergy(
-        dim=cfg.target.input_dim, 
+    target = MultiDoubleWellEnergy(
+        dimensionality=cfg.target.input_dim,
+        n_particles=cfg.target.n_particles,
     )
 
     initial = MultivariateGaussian(
@@ -250,7 +229,7 @@ def run(cfg: DictConfig) -> None:
 
     train_velocity_field(
         initial_density=initial,
-        target_density=gmm,
+        target_density=target,
         v_theta=v_theta,
         optimiser=optimizer,
         N=cfg.training.N,
@@ -273,10 +252,8 @@ def run(cfg: DictConfig) -> None:
         depth=3,
     )
 
-@hydra.main(config_path="../configs", config_name="many_well.yaml", version_base=None)
+@hydra.main(config_path="../configs", config_name="dw4.yaml", version_base=None)
 def main(cfg: DictConfig) -> None:
-    print(111)
-    exit()
     seed_everything(cfg.seed)
     run(cfg)
 
