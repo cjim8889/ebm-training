@@ -1,0 +1,1 @@
+HYDRA_FULL_ERROR=1 python dem/train.py experiment=dw4_idem

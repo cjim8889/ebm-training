@@ -7,6 +7,7 @@ from lightning import Callback, LightningDataModule, LightningModule, Trainer
 from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig
 
+
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # ------------------------------------------------------------------------------------ #
 # the setup_root above is equivalent to:
@@ -34,6 +35,7 @@ from dem.utils import (
     log_hyperparameters,
     task_wrapper,
 )
+from dem.energies.gmm_energy import GMM
 
 log = RankedLogger(__name__, rank_zero_only=True)
 
