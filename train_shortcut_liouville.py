@@ -321,7 +321,7 @@ class ManyWellEnergy(Target):
             minval=0,
             maxval=self.double_well_samples.shape[0],
             key=key1,
-            shape=(sample_shape.shape[0] * self.n_wells,),
+            shape=(sample_shape[0] * self.n_wells,),
         )
         dw_samples = self.double_well_samples[dw_sample_indices]
         samples_p = jnp.reshape(dw_samples, (-1, self.dim))
