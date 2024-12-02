@@ -315,6 +315,19 @@ class ManyWellEnergy(Target):
         plt.tight_layout()
         return fig
 
+    def sample(self, key: chex.PRNGKey, sample_shape: chex.Shape) -> chex.Array:
+        key1, key2 = jax.random.split(key)
+        dw_sample_indices = jax.random.randint(
+            minval=0,
+            maxval=self.double_well_samples.shape[0],
+            key=key1,
+            shape=(sample_shape.shape[0] * self.n_wells,),
+        )
+        dw_samples = self.double_well_samples[dw_sample_indices]
+        samples_p = jnp.reshape(dw_samples, (-1, self.dim))
+
+        return samples_p
+
     def get_eval_samples(
         self, key: chex.PRNGKey, n: int
     ) -> Tuple[chex.Array, chex.Array]:
