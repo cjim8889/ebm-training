@@ -12,20 +12,19 @@ schedule:
   schedule_gamma: 0.5
 
 target:
-  input_dim: 8
-  n_particles: 4
-  data_from_efm: true
-  data_path: "data/test_split_DW4.npy"
-  data_path_train: "data/train_split_DW4.npy"
-  data_path_val: "data/val_split_DW4.npy"
+  input_dim: 39
+  n_particles: 13
+  data_path: "data/test_split_LJ13-1000.npy"
+  data_path_train: "data/train_split_LJ13-1000.npy"
+  data_path_val: "data/test_split_LJ13-1000.npy"
 
 flow:
   T: 128
-  initial_sigma: 2 # Sigma (standard deviation) for the initial Gaussian.
+  initial_sigma: .5 # Sigma (standard deviation) for the initial Gaussian.
   mcmc_type: hmc  # ["hmc", "langevin"]
-  num_mcmc_steps: 5
+  num_mcmc_steps: 50
   num_mcmc_integration_steps: 5 # Number of integration steps for MCMC samplers (applicable for HMC).
-  eta: 0.01 # Step size for MCMC samplers.
+  eta: 0.001 # Step size for MCMC samplers.
 
 model:
   hidden_dim: 256 # Hidden dimension size of the MLP.
@@ -40,7 +39,7 @@ training:
 
 optimiser:
   name: adam
-  learning_rate: 0.001
+  learning_rate: 0.0001
   momentum: .9
 
 wandb:

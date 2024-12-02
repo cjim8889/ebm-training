@@ -10,7 +10,7 @@ from torch import Tensor
 from typing import Optional, Callable, Union, Tuple, Dict, Any, Sequence, List
 
 from flow_sampler.utils.torch_utils import seed_everything
-from flow_sampler.target_distributions.multi_double_well import MultiDoubleWellEnergy
+from flow_sampler.target_distributions.lennardjones_energy import LennardJonesEnergy
 from flow_sampler.utils.mog_utils import MultivariateGaussian
 from flow_sampler.models.mlp_models import TimeVelocityField
 from flow_sampler.utils.sampling_utils import time_schedule, generate_samples, generate_samples_with_hmc, generate_samples_with_langevin_dynamics
@@ -146,7 +146,7 @@ def train_velocity_field(
                 num_mcmc_steps,
                 num_mcmc_integration_steps,
                 eta,
-                False,
+                True,
             )
         else:
             samples = generate_samples(v_theta, N, ts, sample_initial)
@@ -187,18 +187,23 @@ def train_velocity_field(
 
 def run(cfg: DictConfig) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(111)
-    exit()
 
-    target = MultiDoubleWellEnergy(
+    target = LennardJonesEnergy(
         dimensionality=cfg.target.input_dim,
         n_particles=cfg.target.n_particles,
         data_path=cfg.target.data_path,
         data_path_train=cfg.target.data_path_train,
         data_path_val=cfg.target.data_path_val,
-        data_from_efm=cfg.target.data_from_efm,
         device=device,
     )
+
+    x = target._test_set[110].unsqueeze(0)
+    # x = torch.randn(1, 39) * .5
+    x = x.detach().requires_grad_(True)
+    print(torch.autograd.grad(target.log_prob(x).sum(), x)[0])
+    exit()
+
+
 
     initial = MultivariateGaussian(
         dim=cfg.target.input_dim,

@@ -107,7 +107,7 @@ def time_batched_sample_hamiltonian_monte_carlo(
 
             # Accept or reject
             uniform_samples = torch.rand_like(accept_prob)
-            mask = rearrange(uniform_samples < accept_prob, 't n -> t n 1')
+            mask = rearrange(uniform_samples < accept_prob, 't n -> t n 1').float()
             xs = mask * xs + (1 - mask) * x_current
 
     return xs

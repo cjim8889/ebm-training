@@ -153,3 +153,112 @@ class LennardJonesEnergy(BaseEnergyFunction):
     def log_prob(self, samples: torch.Tensor) -> torch.Tensor:
         return self(samples)
     
+    def setup_test_set(self):
+        data = np.load(self.data_path_val, allow_pickle=True)
+        data = remove_mean(data, self.n_particles, self.n_spatial_dim)
+        data = torch.tensor(data, device=self.device)
+        return data
+
+    def setup_val_set(self):
+        if self.data_path_val is None:
+            raise ValueError("Data path for validation data is not provided")
+        data = np.load(self.data_path_val, allow_pickle=True)
+        data = remove_mean(data, self.n_particles, self.n_spatial_dim)
+        data = torch.tensor(data, device=self.device)
+        return data
+
+    def setup_train_set(self):
+        if self.data_path_train is None:
+            raise ValueError("Data path for training data is not provided")
+        data = np.load(self.data_path_val, allow_pickle=True)
+        data = remove_mean(data, self.n_particles, self.n_spatial_dim)
+        data = torch.tensor(data, device=self.device)
+        return data
+
+    def interatomic_dist(self, x):
+        batch_shape = x.shape[: -len(self.lennard_jones.event_shape)]
+        x = x.view(*batch_shape, self.n_particles, self.n_spatial_dim)
+
+        # Compute the pairwise interatomic distances
+        # removes duplicates and diagonal
+        distances = x[:, None, :, :] - x[:, :, None, :]
+        distances = distances[
+            :,
+            torch.triu(torch.ones((self.n_particles, self.n_particles)), diagonal=1) == 1,
+        ]
+        dist = torch.linalg.norm(distances, dim=-1)
+        return dist
+
+    def get_dataset_fig(self, samples):
+        test_data_smaller = self.sample_test_set(1000)
+
+        fig, axs = plt.subplots(1, 2, figsize=(12, 4))
+
+        dist_samples = self.interatomic_dist(samples).detach().cpu()
+        dist_test = self.interatomic_dist(test_data_smaller).detach().cpu()
+
+        if self.n_particles == 13:
+            bins = 100
+        elif self.n_particles == 55:
+            bins = 50
+
+        axs[0].hist(
+            dist_samples.view(-1),
+            bins=bins,
+            alpha=0.5,
+            density=True,
+            histtype="step",
+            linewidth=4,
+        )
+        axs[0].hist(
+            dist_test.view(-1),
+            bins=100,
+            alpha=0.5,
+            density=True,
+            histtype="step",
+            linewidth=4,
+        )
+        axs[0].set_xlabel("Interatomic distance")
+        axs[0].legend(["generated data", "test data"])
+
+        energy_samples = -self(samples).detach().detach().cpu()
+        energy_test = -self(test_data_smaller).detach().detach().cpu()
+
+        # min_energy = min(energy_test.min(), energy_samples.min()).item()
+        # max_energy = max(energy_test.max(), energy_samples.max()).item()
+        if self.n_particles == 13:
+            min_energy = -60
+            max_energy = 0
+
+        elif self.n_particles == 55:
+            min_energy = -380
+            max_energy = -180
+
+        axs[1].hist(
+            energy_test.cpu(),
+            bins=100,
+            density=True,
+            alpha=0.4,
+            range=(min_energy, max_energy),
+            color="g",
+            histtype="step",
+            linewidth=4,
+            label="test data",
+        )
+        axs[1].hist(
+            energy_samples.cpu(),
+            bins=100,
+            density=True,
+            alpha=0.4,
+            range=(min_energy, max_energy),
+            color="r",
+            histtype="step",
+            linewidth=4,
+            label="generated data",
+        )
+        axs[1].set_xlabel("Energy")
+        axs[1].legend()
+
+        fig.canvas.draw()
+        return PIL.Image.frombytes("RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb())
+
