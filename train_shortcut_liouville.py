@@ -1374,6 +1374,7 @@ def main():
         eval_steps=args.eval_steps,
         offline=args.offline,
         d_distribution=args.d_distribution,
+        target=args.target,
     )
 
 
