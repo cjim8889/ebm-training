@@ -981,6 +981,43 @@ def estimate_kl_div(
     return kl_divergence
 
 
+def imq_kernel(x, y, gamma=1.0):
+    """IMQ kernel function."""
+    return 1.0 / jnp.sqrt(1.0 + gamma * jnp.sum((x - y) ** 2))
+
+
+def kernelized_stein_discrepancy(X, score_function, kernel_func, gamma=1.0):
+    """
+    Optimized computation of kernelized Stein discrepancy between a sample X and a target distribution p.
+    X: Samples (n, d), where n is the number of samples, d is the dimension.
+    score_function: The gradient of the log of the target distribution p(x, t).
+    kernel_func: Kernel function (e.g., IMQ kernel).
+    """
+    n = X.shape[0]
+
+    # Compute pairwise kernel matrix for X, X
+    pairwise_kernel = jax.vmap(
+        lambda xi: jax.vmap(lambda xj: kernel_func(xi, xj, gamma))(X)
+    )(X)
+
+    # Compute score function gradients for each sample
+    scores = jax.vmap(score_function, in_axes=(0, None))(X, 1.0)
+
+    # Compute pairwise terms for the Stein discrepancy
+    # scores[i] * scores[j] computes the dot product of the scores for each pair
+    score_dots = jax.vmap(
+        lambda score_xi: jax.vmap(lambda score_xj: jnp.dot(score_xi, score_xj))(scores)
+    )(scores)
+
+    # Combine the pairwise kernel matrix and score dot products
+    stein_terms = jnp.sum(
+        pairwise_kernel * (score_dots + jnp.sum(scores**2, axis=1)[:, None])
+    )
+
+    # Return the discrepancy
+    return stein_terms / (n**2)
+
+
 def inverse_power_schedule(T=64, gamma=0.5):
     x_pow = jnp.linspace(0, 1, T)
     t_pow = 1 - x_pow**gamma
@@ -1035,6 +1072,7 @@ def train_velocity_field(
     eval_steps: List[int] = [4, 8, 16, 32],
     offline: bool = False,
     d_distribution: str = "uniform",
+    target: str = "gmm",
     **kwargs: Any,
 ) -> Any:
     path_distribution = AnnealedDistribution(
@@ -1147,30 +1185,53 @@ def train_velocity_field(
             )
 
             for i, es in enumerate(eval_steps):
-                fig = target_density.visualise(val_samples[i][-1])
+                if target == "gmm":
+                    fig = target_density.visualise(val_samples[i][-1])
 
-                key, subkey = jax.random.split(key)
-                kl_div = estimate_kl_div(
-                    v_theta,
-                    N,
-                    key,
-                    tss[i],
-                    target_density.log_prob,
-                    target_density.sample,
-                    initial_density.log_prob,
-                )
-
-                if not offline:
-                    wandb.log(
-                        {
-                            f"validation_samples_{es}_step": wandb.Image(fig),
-                            f"kl_div_{es}_step": kl_div,
-                        }
+                    key, subkey = jax.random.split(key)
+                    kl_div = estimate_kl_div(
+                        v_theta,
+                        N,
+                        key,
+                        tss[i],
+                        target_density.log_prob,
+                        target_density.sample,
+                        initial_density.log_prob,
                     )
-                else:
-                    plt.show()
 
-                plt.close(fig)
+                    if not offline:
+                        wandb.log(
+                            {
+                                f"validation_samples_{es}_step": wandb.Image(fig),
+                                f"kl_div_{es}_step": kl_div,
+                            }
+                        )
+                    else:
+                        plt.show()
+
+                    plt.close(fig)
+
+                elif target == "mw32":
+                    fig = target_density.visualise(val_samples[i][-1])
+
+                    key, subkey = jax.random.split(key)
+                    ksd_div = kernelized_stein_discrepancy(
+                        val_samples[i][-1][:1280],
+                        path_distribution.score_fn,
+                        imq_kernel,
+                    )
+
+                    if not offline:
+                        wandb.log(
+                            {
+                                f"validation_samples_{es}_step": wandb.Image(fig),
+                                f"ksd_div_{es}_step": ksd_div,
+                            }
+                        )
+                    else:
+                        plt.show()
+
+                    plt.close(fig)
 
         # Resample ts according to gamma range
         if continuous_schedule:
