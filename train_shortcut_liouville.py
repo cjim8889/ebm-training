@@ -162,7 +162,7 @@ class DoubleWellEnergy(Energy):
     def log_prob(self, x):
         if len(x.shape) == 1:
             x = jnp.expand_dims(x, axis=0)
-        return jnp.squeeze(-self.energy(x))
+        return jnp.squeeze(-self.energy(x) - self.log_Z)
 
     @property
     def log_Z(self):
