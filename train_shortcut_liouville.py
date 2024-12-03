@@ -1305,6 +1305,7 @@ def train_velocity_field(
     offline: bool = False,
     d_distribution: str = "uniform",
     target: str = "gmm",
+    eval_every: int = 20,
     **kwargs: Any,
 ) -> Any:
     path_distribution = AnnealedDistribution(
@@ -1409,7 +1410,7 @@ def train_velocity_field(
         else:
             print(f"Epoch {epoch}, Average Loss: {avg_loss}")
 
-        if epoch % 20 == 0:
+        if epoch % eval_every == 0:
             tss = [jnp.linspace(0, 1, eval_step) for eval_step in eval_steps]
             key, subkey = jax.random.split(key)
             val_samples = generate_samples_with_different_ts(
@@ -1540,7 +1541,7 @@ def main():
         "--schedule",
         type=str,
         choices=["linear", "inverse_power"],
-        default="inverse_power",
+        default="linear",
     )
     parser.add_argument(
         "--integrator", type=str, choices=["euler", "rk4"], default="euler"
@@ -1556,6 +1557,7 @@ def main():
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--eval-every", type=int, default=20)
     args = parser.parse_args()
 
     if args.debug:
@@ -1651,6 +1653,7 @@ def main():
         offline=args.offline,
         d_distribution=args.d_distribution,
         target=args.target,
+        eval_every=args.eval_every,
     )
 
 
