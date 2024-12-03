@@ -485,6 +485,238 @@ class GMM(Target):
         return fig
 
 
+def compute_distances(x, n_particles, n_dimensions, mask, epsilon=1e-8):
+    """
+    Computes the all pairwise distances for a given particle configuration x.
+
+    Parameters
+    ----------
+    x : jnp.ndarray
+        Positions of n_particles in n_dimensions.
+    n_particles : int
+        Number of particles.
+    n_dimensions : int
+        Number of spatial dimensions.
+    mask : jnp.ndarray
+        Boolean mask to filter valid pairs.
+    epsilon : float, optional
+        Small value to add to distances for numerical stability, by default 1e-8.
+
+    Returns
+    -------
+    distances : jnp.ndarray
+        All pairwise distances between particles in configuration.
+    """
+    x = x.reshape(n_particles, n_dimensions)
+
+    # Compute pairwise distances efficiently using broadcasting
+    # Shape of diffs: [n_particles, n_particles, n_dimensions]
+    diffs = x[:, jnp.newaxis, :] - x[jnp.newaxis, :, :]
+
+    # Compute squared distances and add epsilon for numerical stability
+    sq_dists = jnp.sum(diffs**2, axis=-1) + epsilon
+
+    # Compute the square root to get distances
+    distances = jnp.sqrt(sq_dists)
+
+    # Apply the mask to filter out invalid pairs (e.g., self-pairs)
+    distances = distances[mask]
+
+    return distances
+
+
+# Utility function
+def remove_mean(x, n_particles, n_spatial_dim):
+    x = x.reshape(-1, n_particles, n_spatial_dim)
+    x = x - jnp.mean(x, axis=1, keepdims=True)
+    return x.reshape(-1, n_particles * n_spatial_dim)
+
+
+# MultiDoubleWellEnergy class conforming to Target interface
+class MultiDoubleWellEnergy(Target):
+    def __init__(
+        self,
+        dim: int,
+        n_particles: int,
+        data_path: str,
+        data_path_train: Optional[str] = None,
+        data_path_val: Optional[str] = None,
+        data_from_efm: bool = True,
+        key: jax.random.PRNGKey = jax.random.PRNGKey(0),
+        a: float = 0.9,
+        b: float = -4.0,
+        c: float = 0.0,
+        offset: float = 4.0,
+    ):
+        super().__init__(
+            dim=dim,
+            log_Z=None,
+            can_sample=False,
+            n_plots=10,
+            n_model_samples_eval=1000,
+            n_target_samples_eval=None,
+        )
+        self.n_particles = n_particles
+        self.n_spatial_dim = dim // n_particles
+        self.data_from_efm = data_from_efm
+        self.key = key
+
+        if data_from_efm:
+            if data_path_train is None:
+                raise ValueError("DW4 is from EFM. No train data path provided")
+            if data_path_val is None:
+                raise ValueError("DW4 is from EFM. No val data path provided")
+
+        self.data_path = data_path
+        self.data_path_train = data_path_train
+        self.data_path_val = data_path_val
+
+        self.val_set_size = 1000
+        self.test_set_size = 1000
+        self.train_set_size = 100000
+
+        self.a = a
+        self.b = b
+        self.c = c
+        self.offset = offset
+
+        self._test_set = self.setup_test_set()
+        self._val_set = self.setup_val_set()
+        self._train_set = self.setup_train_set()
+
+        self._mask = jnp.triu(jnp.ones((n_particles, n_particles), dtype=bool), k=1)
+
+    def multi_double_well_energy(self, x):
+        x = x.reshape(self.n_particles, self.n_spatial_dim)
+        dists = compute_distances(x, self.n_particles, self.n_spatial_dim, self._mask)
+        dists = dists - self.offset
+
+        energies = self.a * dists**4 + self.b * dists**2 + self.c
+
+        total_energy = jnp.sum(energies)
+        return total_energy
+
+    def log_prob(self, x: chex.Array) -> chex.Array:
+        return -self.multi_double_well_energy(x)
+
+    def sample(
+        self, key: jax.random.PRNGKey, sample_shape: chex.Shape = ()
+    ) -> chex.Array:
+        raise NotImplementedError(
+            "Sampling is not implemented for MultiDoubleWellEnergy"
+        )
+
+    def setup_test_set(self):
+        if self.data_from_efm:
+            data = np.load(self.data_path, allow_pickle=True)
+        else:
+            all_data = np.load(self.data_path, allow_pickle=True)
+            data = all_data[0][-self.test_set_size :]
+            del all_data
+
+        data = remove_mean(jnp.array(data), self.n_particles, self.n_spatial_dim)
+        return data
+
+    def setup_train_set(self):
+        if self.data_from_efm:
+            data = np.load(self.data_path_train, allow_pickle=True)
+        else:
+            all_data = np.load(self.data_path, allow_pickle=True)
+            data = all_data[0][: self.train_set_size]
+            del all_data
+
+        data = remove_mean(jnp.array(data), self.n_particles, self.n_spatial_dim)
+        return data
+
+    def setup_val_set(self):
+        if self.data_from_efm:
+            data = np.load(self.data_path_val, allow_pickle=True)
+        else:
+            all_data = np.load(self.data_path, allow_pickle=True)
+            data = all_data[0][
+                -self.test_set_size - self.val_set_size : -self.test_set_size
+            ]
+            del all_data
+
+        data = remove_mean(jnp.array(data), self.n_particles, self.n_spatial_dim)
+        return data
+
+    def interatomic_dist(self, x):
+        x = x.reshape(-1, self.n_particles, self.n_spatial_dim)
+        diffs = x[:, :, None, :] - x[:, None, :, :]
+        mask = jnp.triu(jnp.ones((self.n_particles, self.n_particles)), k=1) == 1
+        distances = jnp.linalg.norm(diffs, axis=-1)
+        distances = distances[:, mask]
+        return distances
+
+    def batched_log_prob(self, xs):
+        return jax.vmap(self.log_prob)(xs)
+
+    def visualise(self, samples: chex.Array) -> plt.Figure:
+        self.key, subkey = jax.random.split(self.key)
+        test_data_smaller = jax.random.choice(
+            subkey, self._test_set, shape=(1000,), replace=False
+        )
+
+        fig, axs = plt.subplots(1, 2, figsize=(12, 4))
+
+        dist_samples = self.interatomic_dist(samples)
+        dist_test = self.interatomic_dist(test_data_smaller)
+
+        axs[0].hist(
+            dist_samples.flatten(),
+            bins=100,
+            alpha=0.5,
+            density=True,
+            histtype="step",
+            linewidth=4,
+        )
+        axs[0].hist(
+            dist_test.flatten(),
+            bins=100,
+            alpha=0.5,
+            density=True,
+            histtype="step",
+            linewidth=4,
+        )
+        axs[0].set_xlabel("Interatomic distance")
+        axs[0].legend(["Generated data", "Test data"])
+
+        energy_samples = -self.batched_log_prob(samples)
+        energy_test = -self.batched_log_prob(test_data_smaller)
+
+        min_energy = -26
+        max_energy = 0
+
+        axs[1].hist(
+            energy_test,
+            bins=100,
+            density=True,
+            alpha=0.4,
+            range=(min_energy, max_energy),
+            color="g",
+            histtype="step",
+            linewidth=4,
+            label="Test data",
+        )
+        axs[1].hist(
+            energy_samples,
+            bins=100,
+            density=True,
+            alpha=0.4,
+            range=(min_energy, max_energy),
+            color="r",
+            histtype="step",
+            linewidth=4,
+            label="Generated data",
+        )
+        axs[1].set_xlabel("Energy")
+        axs[1].legend()
+
+        fig.canvas.draw()
+        return fig
+
+
 class AnnealedDistribution(Target):
     def __init__(
         self, initial_distribution: Target, target_distribution: Target, dim: int = 2
@@ -1212,7 +1444,12 @@ def train_velocity_field(
                     plt.close(fig)
 
                 elif target == "mw32":
-                    fig = target_density.visualise(val_samples[i][-1])
+                    key, subkey = jax.random.split(key)
+                    fig = target_density.visualise(
+                        jax.random.choice(
+                            subkey, val_samples[i][-1], (100,), replace=False
+                        )
+                    )
 
                     key, subkey = jax.random.split(key)
                     ksd_div = kernelized_stein_discrepancy(
@@ -1232,6 +1469,31 @@ def train_velocity_field(
                         plt.show()
 
                     plt.close(fig)
+                elif target == "dw4":
+                    key, subkey = jax.random.split(key)
+                    v_samps = remove_mean(
+                        val_samples[i][-1],
+                        n_particles=target_density.n_particles,
+                        n_spatial_dim=target_density.n_spatial_dim,
+                    )
+
+                    fig = target_density.visualise(v_samps[:1024])
+                    key, subkey = jax.random.split(key)
+                    ksd_div = kernelized_stein_discrepancy(
+                        val_samples[i][-1][:1280],
+                        path_distribution.score_fn,
+                        imq_kernel,
+                    )
+
+                    if not offline:
+                        wandb.log(
+                            {
+                                f"validation_samples_{es}_step": wandb.Image(fig),
+                                f"ksd_div_{es}_step": ksd_div,
+                            }
+                        )
+                    else:
+                        plt.show()
 
         # Resample ts according to gamma range
         if continuous_schedule:
@@ -1268,7 +1530,9 @@ def main():
     parser.add_argument("--eta", type=float, default=0.2)
     parser.add_argument("--initial-sigma", type=float, default=20.0)
     parser.add_argument("--eval-steps", type=int, nargs="+", default=[4, 8, 16, 32])
-    parser.add_argument("--target", type=str, default="gmm", choices=["gmm", "mw32"])
+    parser.add_argument(
+        "--target", type=str, default="gmm", choices=["gmm", "mw32", "dw4"]
+    )
     parser.add_argument(
         "--d-distribution", type=str, choices=["uniform", "log"], default="uniform"
     )
@@ -1312,6 +1576,18 @@ def main():
         key, subkey = jax.random.split(key)
         initial_density = MultivariateGaussian(dim=input_dim, sigma=args.initial_sigma)
         target_density = ManyWellEnergy(dim=input_dim)
+    elif args.target == "dw4":
+        input_dim = 8
+        key, subkey = jax.random.split(key)
+        initial_density = MultivariateGaussian(dim=input_dim, sigma=args.initial_sigma)
+        target_density = MultiDoubleWellEnergy(
+            dim=input_dim,
+            n_particles=4,
+            data_path="test_split_DW4.npy",
+            data_path_train="train_split_DW4.npy",
+            data_path_val="val_split_DW4.npy",
+            key=subkey,
+        )
 
     # Initialize velocity field
     key, model_key = jax.random.split(key)
