@@ -772,6 +772,44 @@ class ShortcutTimeVelocityField(eqx.Module):
         return self.mlp(x_td)
 
 
+class ShortcutTimeVelocityFieldWithPairwiseFeature(eqx.Module):
+    mlp: eqx.nn.MLP
+    n_particles: int
+    n_spatial_dim: int
+
+    def __init__(self, key, n_particles, n_spatial_dim, hidden_dim, depth=3):
+        self.n_particles = n_particles
+        self.n_spatial_dim = n_spatial_dim
+        input_dim = n_particles * n_spatial_dim
+        num_pairwise = n_particles * (n_particles - 1) // 2
+        self.mlp = eqx.nn.MLP(
+            in_size=input_dim + 2 + num_pairwise,  # x, t, d, pairwise distances
+            out_size=input_dim,
+            width_size=hidden_dim,
+            activation=jax.nn.sigmoid,
+            depth=depth,
+            key=key,
+        )
+
+    def __call__(self, xs, t, d):
+        # Reshape xs to (n_particles, n_spatial_dim)
+        xs_reshaped = xs.reshape(self.n_particles, self.n_spatial_dim)
+        # Compute pairwise distances
+        diffs = (
+            xs_reshaped[:, None, :] - xs_reshaped[None, :, :]
+        )  # Shape (n_particles, n_particles, n_spatial_dim)
+        dists = jnp.linalg.norm(diffs, axis=-1)  # Shape (n_particles, n_particles)
+        # Get unique pairwise distances
+        idx_upper = jnp.triu_indices(self.n_particles, k=1)
+        pairwise_dists = dists[idx_upper]  # Shape (num_pairwise,)
+        # Flatten xs back to original shape
+        xs_flat = xs_reshaped.flatten()
+        # Concatenate xs_flat, t, d, pairwise_dists
+        t_d = jnp.array([t, d])
+        x_td = jnp.concatenate([xs_flat, t_d, pairwise_dists], axis=0)
+        return self.mlp(x_td)
+
+
 # Utility functions
 @eqx.filter_jit
 def euler_integrate(
@@ -1531,6 +1569,7 @@ def main():
     parser.add_argument("--eta", type=float, default=0.2)
     parser.add_argument("--initial-sigma", type=float, default=20.0)
     parser.add_argument("--eval-steps", type=int, nargs="+", default=[4, 8, 16, 32])
+    parser.add_argument("--network", type=str, default="mlp", choices=["mlp", "pdn"])
     parser.add_argument(
         "--target", type=str, default="gmm", choices=["gmm", "mw32", "dw4"]
     )
@@ -1593,9 +1632,18 @@ def main():
 
     # Initialize velocity field
     key, model_key = jax.random.split(key)
-    v_theta = ShortcutTimeVelocityField(
-        model_key, input_dim=input_dim, hidden_dim=args.hidden_dim, depth=args.depth
-    )
+    if args.network == "mlp":
+        v_theta = ShortcutTimeVelocityField(
+            model_key, input_dim=input_dim, hidden_dim=args.hidden_dim, depth=args.depth
+        )
+    elif args.network == "pdn":
+        v_theta = ShortcutTimeVelocityFieldWithPairwiseFeature(
+            model_key,
+            n_particles=4,
+            n_spatial_dim=2,
+            hidden_dim=args.hidden_dim,
+            depth=args.depth,
+        )
 
     if not args.offline:
         # Handle logging hyperparameters
@@ -1623,9 +1671,10 @@ def main():
                 "continuous_schedule": args.continuous_schedule,
                 "d_distribution": args.d_distribution,
                 "target": args.target,
+                "network": args.network,
             },
             reinit=True,
-            tags=[args.target],
+            tags=[args.target, args.network],
         )
 
     # Train model
@@ -1654,6 +1703,7 @@ def main():
         d_distribution=args.d_distribution,
         target=args.target,
         eval_every=args.eval_every,
+        network=args.network,
     )
 
 
