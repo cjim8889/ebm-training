@@ -13,6 +13,7 @@ from flow_sampler.utils.torch_utils import seed_everything
 from flow_sampler.target_distributions.multi_double_well import MultiDoubleWellEnergy
 from flow_sampler.utils.mog_utils import MultivariateGaussian
 from flow_sampler.models.mlp_models import TimeVelocityField
+from flow_sampler.models.egnn import EGNN_dynamics
 from flow_sampler.utils.sampling_utils import time_schedule, generate_samples, generate_samples_with_hmc, generate_samples_with_langevin_dynamics
 from flow_sampler.utils.loss_utils import loss_fn
 from flow_sampler.utils.data_utils import remove_mean
@@ -95,7 +96,7 @@ def train_velocity_field(
         },
         name=run_name,
         reinit=True,
-        mode="disabled",    # online disabled
+        mode="online",    # online disabled
     )
 
     # Set up various functions
@@ -204,10 +205,21 @@ def run(cfg: DictConfig) -> None:
         device=device,
     )
 
-    v_theta = TimeVelocityField(
-        input_dim=cfg.target.input_dim,
-        hidden_dim=cfg.model.hidden_dim,
-        depth=cfg.model.depth,
+    # v_theta = TimeVelocityField(
+    #     input_dim=cfg.target.input_dim,
+    #     hidden_dim=cfg.model.hidden_dim,
+    #     depth=cfg.model.depth,
+    # ).to(device)
+    v_theta = EGNN_dynamics(
+        n_particles=cfg.model.n_particles,
+        n_dimension=cfg.model.n_dimension,
+        hidden_nf=cfg.model.hidden_nf,
+        n_layers=cfg.model.n_layers,
+        recurrent=cfg.model.recurrent,
+        attention=cfg.model.attention,
+        condition_time=cfg.model.condition_time,
+        tanh=cfg.model.tanh,
+        agg=cfg.model.agg,
     ).to(device)
 
     opt_params = cfg.optimiser

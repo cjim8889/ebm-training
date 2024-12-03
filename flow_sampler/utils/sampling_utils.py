@@ -35,7 +35,8 @@ def generate_samples_with_euler_method(v_theta, initial_samples, ts):
     samples_list = [initial_samples]
     for t_p, t_n in zip(t_prev, t_next):
         t = torch.ones(samples.size(0), device=device).unsqueeze(1) * t_p
-        samples = samples + v_theta(samples, t) * (t_n - t_p)
+        with torch.no_grad():
+            samples = samples + v_theta(samples, t) * (t_n - t_p)
         samples_list.append(samples)
  
     samples = torch.stack(samples_list, dim=0)

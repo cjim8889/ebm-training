@@ -28,8 +28,15 @@ flow:
   eta: 0.01 # Step size for MCMC samplers.
 
 model:
-  hidden_dim: 256 # Hidden dimension size of the MLP.
-  depth: 3 # Number of layers in the MLP.
+  n_particles: 4
+  n_dimension: 2
+  hidden_nf: 128
+  n_layers: 3
+  recurrent: True
+  tanh: True
+  attention: True
+  condition_time: True
+  agg: "sum"
 
 training:
   N: 1024 # Number of samples for training at each time step
