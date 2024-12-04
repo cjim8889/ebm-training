@@ -31,7 +31,7 @@ training:
   N: 1024 # Number of samples for training at each time step
   B: 64 # Batch size
   num_epochs: 10000
-  num_steps: 50 # "Number of training steps per epoch
+  num_steps: 200 # "Number of training steps per epoch
   gradient_norm_clip: 1.0
 
 optimiser:

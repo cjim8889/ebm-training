@@ -160,9 +160,14 @@ def train_velocity_field(
                     torch.randperm(samples.size(0))[:B]
                 ].detach()   # (B, T, D)
 
+            # add random samples among the time steps
             optimiser.zero_grad(set_to_none=True)
+            idxs = torch.randperm(samps.size(1))[:32]
+            samps = samps[:, idxs, :]
+            ts_ = ts[idxs]
+
             loss = loss_fn(
-                v_theta, samps, ts, 
+                v_theta, samps, ts_, 
                 time_derivative_log_density=time_derivative_log_density,
                 score_fn=score_function
             )

@@ -38,7 +38,7 @@ def loss_fn(v_theta, xs, ts, time_derivative_log_density, score_fn):
     # Alternative way to calculate divergence
     div_v = torch.zeros(xs_detached.shape[:1], device=xs_detached.device)
     for i in range(xs_detached.shape[-1]):
-        div_v += torch.autograd.grad(v[..., i].sum(), xs_detached, retain_graph=True)[0][..., i]
+        div_v += torch.autograd.grad(v[..., i].sum(), xs_detached, create_graph=True, retain_graph=True)[0][..., i]
     
     div_v = rearrange(div_v, "(b t) -> b t", b=b)
     v = rearrange(v, "(b t) d -> b t d", b=b)
