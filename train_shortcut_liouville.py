@@ -1756,6 +1756,7 @@ def train_velocity_field(
                     else:
                         plt.show()
 
+                    plt.close(fig)
         # Resample ts according to gamma range
         if continuous_schedule:
             key, subkey = jax.random.split(key)
