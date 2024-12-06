@@ -7,6 +7,7 @@ import chex
 import wandb
 import numpy as np
 import argparse
+from jax_md import energy, space
 from matplotlib import pyplot as plt
 from itertools import product
 from typing import Optional, Callable, Union, Tuple, Any, List
@@ -354,6 +355,293 @@ class ManyWellEnergy(Target):
         return samples_p, samples_modes
 
 
+class LennardJonesEnergy(Target):
+    def __init__(
+        self,
+        dim: int,
+        n_particles: int,
+        data_path: str,
+        data_path_train: Optional[str] = None,
+        data_path_val: Optional[str] = None,
+        key: jax.random.PRNGKey = jax.random.PRNGKey(0),
+    ):
+        super().__init__(
+            dim=dim,
+            log_Z=None,
+            can_sample=False,
+            n_plots=10,
+            n_model_samples_eval=1000,
+            n_target_samples_eval=None,
+        )
+        self.n_particles = n_particles
+        self.n_spatial_dim = dim // n_particles
+        self.key = key
+
+        self.data_path = data_path
+        self.data_path_train = data_path_train
+        self.data_path_val = data_path_val
+
+        self._test_set = self.setup_test_set()
+        self._val_set = self.setup_val_set()
+        self._train_set = self.setup_train_set()
+
+        self._mask = jnp.triu(jnp.ones((n_particles, n_particles), dtype=bool), k=1)
+
+        displacement_fn, _ = space.periodic(5.0)
+        self.energy_fn = energy.lennard_jones_pair(
+            displacement_fn, sigma=1.0, epsilon=1.0
+        )
+
+    def log_prob(self, x: chex.Array) -> chex.Array:
+        return -self.energy_fn(x.reshape(self.n_particles, self.n_spatial_dim))
+
+    def sample(
+        self, key: jax.random.PRNGKey, sample_shape: chex.Shape = ()
+    ) -> chex.Array:
+        raise NotImplementedError(
+            "Sampling is not implemented for MultiDoubleWellEnergy"
+        )
+
+    def setup_test_set(self):
+        data = np.load(self.data_path, allow_pickle=True)
+        data = remove_mean(jnp.array(data), self.n_particles, self.n_spatial_dim)
+        return data
+
+    def setup_train_set(self):
+        data = np.load(self.data_path, allow_pickle=True)
+        data = remove_mean(jnp.array(data), self.n_particles, self.n_spatial_dim)
+        return data
+
+    def setup_val_set(self):
+        data = np.load(self.data_path, allow_pickle=True)
+        data = remove_mean(jnp.array(data), self.n_particles, self.n_spatial_dim)
+        return data
+
+    def interatomic_dist(self, x):
+        x = x.reshape(-1, self.n_particles, self.n_spatial_dim)
+        diffs = x[:, :, None, :] - x[:, None, :, :]
+        mask = jnp.triu(jnp.ones((self.n_particles, self.n_particles)), k=1) == 1
+        distances = jnp.linalg.norm(diffs, axis=-1)
+        distances = distances[:, mask]
+        return distances
+
+    def batched_log_prob(self, xs):
+        return jax.vmap(self.log_prob)(xs)
+
+    def visualise(self, samples: chex.Array) -> plt.Figure:
+        self.key, subkey = jax.random.split(self.key)
+        test_data_smaller = jax.random.choice(
+            subkey, self._test_set, shape=(1000,), replace=False
+        )
+
+        fig, axs = plt.subplots(1, 2, figsize=(12, 4))
+
+        dist_samples = self.interatomic_dist(samples)
+        dist_test = self.interatomic_dist(test_data_smaller)
+
+        axs[0].hist(
+            dist_samples.flatten(),
+            bins=100,
+            alpha=0.5,
+            density=True,
+            histtype="step",
+            linewidth=4,
+        )
+        axs[0].hist(
+            dist_test.flatten(),
+            bins=100,
+            alpha=0.5,
+            density=True,
+            histtype="step",
+            linewidth=4,
+        )
+        axs[0].set_xlabel("Interatomic distance")
+        axs[0].legend(["Generated data", "Test data"])
+
+        energy_samples = -self.batched_log_prob(samples)
+        energy_test = -self.batched_log_prob(test_data_smaller)
+
+        min_energy = -26
+        max_energy = 0
+
+        axs[1].hist(
+            energy_test,
+            bins=100,
+            density=True,
+            alpha=0.4,
+            range=(min_energy, max_energy),
+            color="g",
+            histtype="step",
+            linewidth=4,
+            label="Test data",
+        )
+        axs[1].hist(
+            energy_samples,
+            bins=100,
+            density=True,
+            alpha=0.4,
+            range=(min_energy, max_energy),
+            color="r",
+            histtype="step",
+            linewidth=4,
+            label="Generated data",
+        )
+        axs[1].set_xlabel("Energy")
+        axs[1].legend()
+
+        fig.canvas.draw()
+        return fig
+
+
+class WrappedMultivariateGaussian(Target):
+    def __init__(
+        self,
+        dim: int = 2,
+        sigma: float = 1.0,
+        box_size: float = 15.0,
+        plot_bound_factor: float = 3.0,
+        num_shift: int = 3,
+        **kwargs,
+    ):
+        super().__init__(
+            dim=dim,
+            log_Z=0.0,  # Not used since it's a wrapped Gaussian
+            can_sample=True,
+            n_plots=1,
+            n_model_samples_eval=1000,
+            n_target_samples_eval=1000,
+            **kwargs,
+        )
+
+        self.sigma = jnp.asarray(sigma)
+        if self.sigma.ndim == 0:
+            # Scalar sigma: isotropic covariance
+            self.scale_diag = jnp.full((dim,), self.sigma)
+        else:
+            # Per-dimension sigma
+            if self.sigma.shape[0] != dim:
+                raise ValueError(
+                    f"Sigma shape {self.sigma.shape} does not match dimension {dim}."
+                )
+            self.scale_diag = self.sigma
+
+        self.box_size = box_size
+        self.num_shift = num_shift  # Number of shifts per dimension
+
+        # Initialize the Multivariate Normal Distribution
+        self.distribution = distrax.MultivariateNormalDiag(
+            loc=jnp.zeros(dim), scale_diag=self.scale_diag
+        )
+
+        # Determine plot bounds based on sigma
+        if self.sigma.ndim == 0:
+            bound = self.sigma * plot_bound_factor
+        else:
+            bound = jnp.max(self.sigma) * plot_bound_factor
+        self._plot_bound = float(bound)
+
+        k = jnp.arange(-self.num_shift, self.num_shift + 1)
+        self.kL = k * self.box_size
+
+    def batch_log_prob(self, x: chex.Array) -> chex.Array:
+        return jax.vmap(self.log_prob)(x)
+
+    def log_prob(self, x: chex.Array) -> chex.Array:
+        mu = self.distribution.loc[0]
+        sigma = self.distribution.scale_diag[0]
+
+        x_expanded = x[:, None]  # Shape: (D, 1)
+        x_kL = x_expanded + self.kL  # Shape: (D, 2K + 1)
+
+        # Compute exponentials: -((y_i + kL - mu)^2) / (2*sigma^2)
+        exponent = -0.5 * ((x_kL - mu) / sigma) ** 2  # Shape: (D, 2K + 1)
+
+        # Compute log-sum-exp for each dimension
+        max_exponent = jnp.max(exponent, axis=1, keepdims=True)  # Shape: (D, 1)
+        sum_exp = jnp.sum(jnp.exp(exponent - max_exponent), axis=1)  # Shape: (D,)
+        log_sum_exp = jnp.squeeze(max_exponent, axis=1) + jnp.log(
+            sum_exp
+        )  # Shape: (D,)
+
+        # Compute the log_prob for each dimension
+        log_prob_dim = (
+            -jnp.log(sigma * jnp.sqrt(2 * jnp.pi)) + log_sum_exp
+        )  # Shape: (D,)
+
+        # Total log_prob is the sum over all dimensions
+        total_log_prob = jnp.sum(log_prob_dim)  # Scalar
+
+        return total_log_prob
+
+    def score(self, value: chex.Array) -> chex.Array:
+        # Compute the gradient
+        score = jax.grad(self.log_prob)(value)
+
+        return score
+
+    def sample(self, seed: chex.PRNGKey, sample_shape: chex.Shape = ()) -> chex.Array:
+        # Sample from the base Gaussian
+        samples = self.distribution.sample(seed=seed, sample_shape=sample_shape)
+
+        # Apply modulo operation to enforce PBC
+        wrapped_samples = jnp.mod(samples, self.box_size)
+
+        return wrapped_samples
+
+    def visualise(
+        self,
+        samples: chex.Array,
+    ) -> plt.Figure:
+        fig, ax = plt.subplots(1, figsize=(6, 6))
+        if self.dim == 2:
+            # Plot contour lines for the distribution within the box
+            # Create a grid within [0, box_size)
+            grid_size = 100
+            x_lin = jnp.linspace(0, self.box_size[0], grid_size)
+            y_lin = jnp.linspace(0, self.box_size[1], grid_size)
+            X, Y = jnp.meshgrid(x_lin, y_lin)
+            grid = jnp.stack([X, Y], axis=-1).reshape(-1, 2)  # Shape: (grid_size**2, 2)
+
+            # Compute log_prob for each grid point
+            log_probs = self.batch_log_prob(grid).reshape(grid_size, grid_size)
+
+            # Plot contours
+            ax.contour(X, Y, log_probs, levels=20, cmap="viridis")
+            ax.set_xlim(0, self.box_size[0])
+            ax.set_ylim(0, self.box_size[1])
+
+            # Overlay scatter plot of samples
+            ax.scatter(
+                samples[:, 0],
+                samples[:, 1],
+                alpha=0.5,
+                s=10,
+                color="red",
+                label="Samples",
+            )
+
+            # Draw box boundaries
+            rect = plt.Rectangle(
+                (0, 0),
+                self.box_size[0],
+                self.box_size[1],
+                linewidth=2,
+                edgecolor="black",
+                facecolor="none",
+            )
+            ax.add_patch(rect)
+
+            ax.set_title("Wrapped Multivariate Gaussian (2D)")
+            ax.set_xlabel("Dimension 1")
+            ax.set_ylabel("Dimension 2")
+            ax.legend()
+            ax.grid(True)
+
+            # Optionally, plot marginal distributions or scatter plots for selected pairs
+
+        return fig
+
+
 class MultivariateGaussian(Target):
     def __init__(
         self, dim: int = 2, sigma: float = 1.0, plot_bound_factor: float = 3.0
@@ -485,33 +773,15 @@ class GMM(Target):
         return fig
 
 
-def compute_distances(x, n_particles, n_dimensions, mask, epsilon=1e-8):
-    """
-    Computes the all pairwise distances for a given particle configuration x.
-
-    Parameters
-    ----------
-    x : jnp.ndarray
-        Positions of n_particles in n_dimensions.
-    n_particles : int
-        Number of particles.
-    n_dimensions : int
-        Number of spatial dimensions.
-    mask : jnp.ndarray
-        Boolean mask to filter valid pairs.
-    epsilon : float, optional
-        Small value to add to distances for numerical stability, by default 1e-8.
-
-    Returns
-    -------
-    distances : jnp.ndarray
-        All pairwise distances between particles in configuration.
-    """
+def compute_distances(x, n_particles, n_dimensions, mask, L, epsilon=1e-8):
     x = x.reshape(n_particles, n_dimensions)
 
     # Compute pairwise distances efficiently using broadcasting
     # Shape of diffs: [n_particles, n_particles, n_dimensions]
     diffs = x[:, jnp.newaxis, :] - x[jnp.newaxis, :, :]
+
+    # Apply Minimum Image Convention
+    diffs = diffs - L * jnp.round(diffs / L)
 
     # Compute squared distances and add epsilon for numerical stability
     sq_dists = jnp.sum(diffs**2, axis=-1) + epsilon
@@ -525,28 +795,20 @@ def compute_distances(x, n_particles, n_dimensions, mask, epsilon=1e-8):
     return distances
 
 
-# Utility function
-def remove_mean(x, n_particles, n_spatial_dim):
-    x = x.reshape(-1, n_particles, n_spatial_dim)
-    x = x - jnp.mean(x, axis=1, keepdims=True)
-    return x.reshape(-1, n_particles * n_spatial_dim)
-
-
 # MultiDoubleWellEnergy class conforming to Target interface
 class MultiDoubleWellEnergy(Target):
     def __init__(
         self,
         dim: int,
         n_particles: int,
-        data_path: str,
-        data_path_train: Optional[str] = None,
         data_path_val: Optional[str] = None,
-        data_from_efm: bool = True,
+        data_path_test: Optional[str] = None,
         key: jax.random.PRNGKey = jax.random.PRNGKey(0),
         a: float = 0.9,
         b: float = -4.0,
         c: float = 0.0,
         offset: float = 4.0,
+        L: float = 10.0,
     ):
         super().__init__(
             dim=dim,
@@ -558,37 +820,28 @@ class MultiDoubleWellEnergy(Target):
         )
         self.n_particles = n_particles
         self.n_spatial_dim = dim // n_particles
-        self.data_from_efm = data_from_efm
         self.key = key
 
-        if data_from_efm:
-            if data_path_train is None:
-                raise ValueError("DW4 is from EFM. No train data path provided")
-            if data_path_val is None:
-                raise ValueError("DW4 is from EFM. No val data path provided")
-
-        self.data_path = data_path
-        self.data_path_train = data_path_train
         self.data_path_val = data_path_val
+        self.data_path_test = data_path_test
 
         self.val_set_size = 1000
-        self.test_set_size = 1000
-        self.train_set_size = 100000
 
         self.a = a
         self.b = b
         self.c = c
         self.offset = offset
+        self.L = L
 
-        self._test_set = self.setup_test_set()
         self._val_set = self.setup_val_set()
-        self._train_set = self.setup_train_set()
+        self._test_set = self.setup_test_set()
 
         self._mask = jnp.triu(jnp.ones((n_particles, n_particles), dtype=bool), k=1)
 
     def multi_double_well_energy(self, x):
-        x = x.reshape(self.n_particles, self.n_spatial_dim)
-        dists = compute_distances(x, self.n_particles, self.n_spatial_dim, self._mask)
+        dists = compute_distances(
+            x, self.n_particles, self.n_spatial_dim, self._mask, self.L
+        )
         dists = dists - self.offset
 
         energies = self.a * dists**4 + self.b * dists**2 + self.c
@@ -599,6 +852,9 @@ class MultiDoubleWellEnergy(Target):
     def log_prob(self, x: chex.Array) -> chex.Array:
         return -self.multi_double_well_energy(x)
 
+    def score(self, x: chex.Array) -> chex.Array:
+        return jax.grad(self.log_prob)(x)
+
     def sample(
         self, key: jax.random.PRNGKey, sample_shape: chex.Shape = ()
     ) -> chex.Array:
@@ -607,46 +863,23 @@ class MultiDoubleWellEnergy(Target):
         )
 
     def setup_test_set(self):
-        if self.data_from_efm:
-            data = np.load(self.data_path, allow_pickle=True)
-        else:
-            all_data = np.load(self.data_path, allow_pickle=True)
-            data = all_data[0][-self.test_set_size :]
-            del all_data
-
-        data = remove_mean(jnp.array(data), self.n_particles, self.n_spatial_dim)
-        return data
-
-    def setup_train_set(self):
-        if self.data_from_efm:
-            data = np.load(self.data_path_train, allow_pickle=True)
-        else:
-            all_data = np.load(self.data_path, allow_pickle=True)
-            data = all_data[0][: self.train_set_size]
-            del all_data
-
-        data = remove_mean(jnp.array(data), self.n_particles, self.n_spatial_dim)
+        data = np.load(self.data_path_test, allow_pickle=True)
+        data = data % self.L
         return data
 
     def setup_val_set(self):
-        if self.data_from_efm:
-            data = np.load(self.data_path_val, allow_pickle=True)
-        else:
-            all_data = np.load(self.data_path, allow_pickle=True)
-            data = all_data[0][
-                -self.test_set_size - self.val_set_size : -self.test_set_size
-            ]
-            del all_data
-
-        data = remove_mean(jnp.array(data), self.n_particles, self.n_spatial_dim)
+        data = np.load(self.data_path_val, allow_pickle=True)
+        data = data % self.L
         return data
 
     def interatomic_dist(self, x):
         x = x.reshape(-1, self.n_particles, self.n_spatial_dim)
-        diffs = x[:, :, None, :] - x[:, None, :, :]
-        mask = jnp.triu(jnp.ones((self.n_particles, self.n_particles)), k=1) == 1
-        distances = jnp.linalg.norm(diffs, axis=-1)
-        distances = distances[:, mask]
+        distances = jax.vmap(
+            lambda x: compute_distances(
+                x, self.n_particles, self.n_spatial_dim, self._mask, self.L
+            )
+        )(x)
+
         return distances
 
     def batched_log_prob(self, xs):
@@ -719,7 +952,11 @@ class MultiDoubleWellEnergy(Target):
 
 class AnnealedDistribution(Target):
     def __init__(
-        self, initial_distribution: Target, target_distribution: Target, dim: int = 2
+        self,
+        initial_distribution: Target,
+        target_distribution: Target,
+        dim: int = 2,
+        max_score: float = 1.0,
     ):
         super().__init__(
             dim=dim,
@@ -731,6 +968,7 @@ class AnnealedDistribution(Target):
         )
         self.initial_distribution = initial_distribution
         self.target_distribution = target_distribution
+        self.max_score = max_score
 
     def log_prob(self, xs: chex.Array) -> chex.Array:
         return self.time_dependent_log_prob(xs, 1.0)
@@ -816,11 +1054,14 @@ def euler_integrate(
     v_theta: Callable[[jnp.ndarray, jnp.ndarray, jnp.ndarray], jnp.ndarray],
     initial_samples: jnp.ndarray,
     ts: jnp.ndarray,
+    shift_fn: Callable[[jnp.ndarray], jnp.ndarray] = lambda x: x,
 ) -> jnp.ndarray:
     def step(carry, t):
         x_prev, t_prev = carry
         d = t - t_prev
         samples = x_prev + d * jax.vmap(lambda x: v_theta(x, t, d))(x_prev)
+        samples = shift_fn(samples)
+
         return (samples, t), samples
 
     _, output = jax.lax.scan(step, (initial_samples, 0.0), ts)
@@ -836,22 +1077,8 @@ def sample_hamiltonian_monte_carlo(
     integration_steps: int = 3,
     eta: float = 0.1,
     rejection_sampling: bool = False,
+    shift_fn: Callable[[chex.Array], chex.Array] = lambda x: x,
 ) -> chex.Array:
-    """
-    Perform a single chain of Hamiltonian Monte Carlo sampling.
-
-    Args:
-        key (jax.random.PRNGKey): Random key for randomness.
-        time_dependent_log_density (Callable[[Array, float], float]): Function to compute log-density at given x and t.
-        x (Array): Initial sample of shape (D,).
-        t (float): Current time.
-        num_steps (int, optional): Number of HMC steps. Defaults to 10.
-        integration_steps (int, optional): Number of leapfrog integration steps. Defaults to 3.
-        eta (float, optional): Step size for integration. Defaults to 0.1.
-
-    Returns:
-        Array: The sample after HMC steps.
-    """
     dim = x.shape[-1]
     covariance = jnp.eye(dim)
     inv_covariance = covariance
@@ -866,6 +1093,9 @@ def sample_hamiltonian_monte_carlo(
     def integration_step(carry, _):
         x, v = carry
         x = x + eta * inv_covariance @ v
+        # Apply the modular wrapping to enforce PBC
+        x = shift_fn(x)
+
         v = v + eta * grad_log_prob(x)
         return (x, v), _
 
@@ -887,6 +1117,9 @@ def sample_hamiltonian_monte_carlo(
 
         # Final half step for momentum
         v = v + 0.5 * eta * grad_log_prob(x)
+
+        # Finalize the proposal
+        x = shift_fn(x)
 
         if rejection_sampling:
             # Compute acceptance probability
@@ -923,22 +1156,8 @@ def time_batched_sample_hamiltonian_monte_carlo(
     integration_steps: int = 3,
     eta: float = 0.1,
     rejection_sampling: bool = False,
+    shift_fn: Callable[[chex.Array], chex.Array] = lambda x: x,
 ) -> chex.Array:
-    """
-    Apply HMC sampling over batches of samples and times.
-
-    Args:
-        key (jax.random.PRNGKey): Random key.
-        time_dependent_log_density (Callable[[Array, float], float]): Log-density function.
-        xs (chex.Array): Samples array of shape (N, D).
-        ts (chex.Array): Times array of shape (N,).
-        num_steps (int, optional): Number of HMC steps. Defaults to 10.
-        integration_steps (int, optional): Number of leapfrog steps. Defaults to 3.
-        eta (float, optional): Step size. Defaults to 0.1.
-
-    Returns:
-        chex.Array: Samples after HMC steps.
-    """
     keys = jax.random.split(key, xs.shape[0] * xs.shape[1])
 
     final_xs = jax.vmap(
@@ -952,6 +1171,7 @@ def time_batched_sample_hamiltonian_monte_carlo(
                 integration_steps,
                 eta,
                 rejection_sampling,
+                shift_fn,
             )
         )(xs, keys)
     )(xs, ts, keys.reshape((xs.shape[0], xs.shape[1], -1)))
@@ -970,10 +1190,11 @@ def generate_samples(
         [Callable[[jnp.ndarray, float], jnp.ndarray], jnp.ndarray, jnp.ndarray],
         jnp.ndarray,
     ] = euler_integrate,
+    shift_fn: Callable[[jnp.ndarray], jnp.ndarray] = lambda x: x,
 ) -> jnp.ndarray:
     key, subkey = jax.random.split(key)
     initial_samples = sample_fn(subkey, (num_samples,))
-    samples = integration_fn(v_theta, initial_samples, ts)
+    samples = integration_fn(v_theta, initial_samples, ts, shift_fn)
     return samples
 
 
@@ -988,11 +1209,12 @@ def generate_samples_with_different_ts(
         [Callable[[jnp.ndarray, float], jnp.ndarray], jnp.ndarray, jnp.ndarray],
         jnp.ndarray,
     ] = euler_integrate,
+    shift_fn: Callable[[jnp.ndarray], jnp.ndarray] = lambda x: x,
 ) -> jnp.ndarray:
     key, subkey = jax.random.split(key)
     initial_samples = sample_fn(subkey, (num_samples,))
 
-    samples = [integration_fn(v_theta, initial_samples, ts) for ts in tss]
+    samples = [integration_fn(v_theta, initial_samples, ts, shift_fn) for ts in tss]
     return samples
 
 
@@ -1012,10 +1234,11 @@ def generate_samples_with_hmc_correction(
     integration_steps: int = 3,
     eta: float = 0.01,
     rejection_sampling: bool = False,
+    shift_fn: Callable[[jnp.ndarray], jnp.ndarray] = lambda x: x,
 ) -> jnp.ndarray:
     key, subkey = jax.random.split(key)
     initial_samples = generate_samples(
-        subkey, v_theta, num_samples, ts, sample_fn, integration_fn
+        subkey, v_theta, num_samples, ts, sample_fn, integration_fn, shift_fn
     )
 
     key, subkey = jax.random.split(key)
@@ -1028,6 +1251,7 @@ def generate_samples_with_hmc_correction(
         integration_steps,
         eta,
         rejection_sampling,
+        shift_fn,
     )
 
     return final_samples
@@ -1098,11 +1322,12 @@ def shortcut(
     x: chex.Array,
     t: chex.Array,
     d: chex.Array,
+    shift_fn: Callable[[chex.Array], chex.Array],
 ):
     real_d = (jnp.clip(t + 2 * d, 0.0, 1.0) - t) / 2.0
 
     s_t = v_theta(x, t, real_d)
-    x_t = x + s_t * real_d
+    x_t = shift_fn(x + s_t * real_d)
 
     s_td = v_theta(x_t, t + real_d, real_d)
     s_target = jax.lax.stop_gradient(s_t + s_td) / 2.0
@@ -1112,7 +1337,7 @@ def shortcut(
     return error
 
 
-batched_shortcut = jax.vmap(shortcut, in_axes=(None, 0, None, 0))
+batched_shortcut = jax.vmap(shortcut, in_axes=(None, 0, None, 0, None))
 
 
 @eqx.filter_jit
@@ -1121,9 +1346,12 @@ def time_batched_shortcut_loss(
     xs: chex.Array,
     ts: chex.Array,
     ds: chex.Array,
+    shift_fn: Callable[[chex.Array], chex.Array],
 ) -> chex.Array:
     return jnp.mean(
-        jax.vmap(batched_shortcut, in_axes=(None, 0, 0, 0))(v_theta, xs, ts, ds)
+        jax.vmap(batched_shortcut, in_axes=(None, 0, 0, 0, None))(
+            v_theta, xs, ts, ds, shift_fn
+        )
     )
 
 
@@ -1135,19 +1363,8 @@ def loss_fn(
     ds: chex.Array,
     time_derivative_log_density: Callable[[chex.Array, float], float],
     score_fn: Callable[[chex.Array, float], chex.Array],
+    shift_fn: Callable[[chex.Array], chex.Array],
 ) -> float:
-    """Computes the loss for training the velocity field.
-
-    Args:
-        v_theta: The velocity field function taking (x, t) and returning velocity vector
-        xs: Batch of points, shape (batch_size, num_samples, dim)
-        ts: Batch of times, shape (batch_size,)
-        time_derivative_log_density: Function computing time derivative of log density
-        score_fn: Score function taking (x, t) and returning gradient of log density
-
-    Returns:
-        float: Mean squared error in satisfying the Liouville equation
-    """
     dt_log_unormalised_density = jax.vmap(
         lambda xs, t: jax.vmap(lambda x: time_derivative_log_density(x, t))(xs),
         in_axes=(0, 0),
@@ -1159,7 +1376,7 @@ def loss_fn(
     dss = jnp.diff(ts, append=1.0)
     epsilons = time_batched_epsilon(v_theta, xs, dt_log_density, ts, dss, score_fn)
 
-    short_cut_loss = time_batched_shortcut_loss(v_theta, cxs, ts, ds)
+    short_cut_loss = time_batched_shortcut_loss(v_theta, cxs, ts, ds, shift_fn)
 
     return jnp.mean(epsilons**2) + short_cut_loss
 
@@ -1322,9 +1539,11 @@ def train_velocity_field(
     initial_density: Target,
     target_density: Target,
     v_theta: Callable[[chex.Array, float], chex.Array],
+    shift_fn: Callable[[chex.Array], chex.Array] = lambda x: x,
     N: int = 512,
     B: int = 256,
     C: int = 64,
+    L: float = 10.0,
     num_epochs: int = 200,
     num_steps: int = 100,
     learning_rate: float = 1e-03,
@@ -1384,6 +1603,7 @@ def train_velocity_field(
             ds,
             time_derivative_log_density=path_distribution.time_derivative,
             score_fn=path_distribution.score_fn,
+            shift_fn=shift_fn,
         )
         updates, opt_state = optimizer.update(grads, opt_state, v_theta)
         v_theta = eqx.apply_updates(v_theta, updates)
@@ -1404,6 +1624,7 @@ def train_velocity_field(
                 integration_steps=num_mcmc_integration_steps,
                 eta=eta,
                 rejection_sampling=with_rejection_sampling,
+                shift_fn=shift_fn,
             )
         else:
             samples = generate_samples(
@@ -1413,6 +1634,7 @@ def train_velocity_field(
                 sampled_ts,
                 path_distribution.sample_initial,
                 integrator,
+                shift_fn,
             )
 
         epoch_loss = 0.0
@@ -1452,7 +1674,13 @@ def train_velocity_field(
             tss = [jnp.linspace(0, 1, eval_step) for eval_step in eval_steps]
             key, subkey = jax.random.split(key)
             val_samples = generate_samples_with_different_ts(
-                subkey, v_theta, N, tss, path_distribution.sample_initial, integrator
+                subkey,
+                v_theta,
+                N,
+                tss,
+                path_distribution.sample_initial,
+                integrator,
+                shift_fn,
             )
 
             for i, es in enumerate(eval_steps):
@@ -1508,27 +1736,21 @@ def train_velocity_field(
                         plt.show()
 
                     plt.close(fig)
-                elif target == "dw4":
+                elif target == "dw4" or target == "lj13":
                     key, subkey = jax.random.split(key)
-                    v_samps = remove_mean(
-                        val_samples[i][-1],
-                        n_particles=target_density.n_particles,
-                        n_spatial_dim=target_density.n_spatial_dim,
-                    )
-
-                    fig = target_density.visualise(v_samps[:1024])
-                    key, subkey = jax.random.split(key)
-                    ksd_div = kernelized_stein_discrepancy(
-                        val_samples[i][-1][:1280],
-                        path_distribution.score_fn,
-                        imq_kernel,
-                    )
+                    fig = target_density.visualise(val_samples[i][-1][:1024])
+                    # key, subkey = jax.random.split(key)
+                    # ksd_div = kernelized_stein_discrepancy(
+                    #     val_samples[i][-1][:1280],
+                    #     path_distribution.score_fn,
+                    #     imq_kernel,
+                    # )
 
                     if not offline:
                         wandb.log(
                             {
                                 f"validation_samples_{es}_step": wandb.Image(fig),
-                                f"ksd_div_{es}_step": ksd_div,
+                                # f"ksd_div_{es}_step": ksd_div,
                             }
                         )
                     else:
@@ -1560,6 +1782,13 @@ def main():
     parser.add_argument("--shortcut-size", type=int, default=64)
     parser.add_argument("--num-samples", type=int, default=5120)
     parser.add_argument("--num-steps", type=int, default=100)
+    parser.add_argument(
+        "--box-size",
+        "-L",
+        type=float,
+        default=10.0,
+        help="Size of the box",
+    )
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--hidden-dim", type=int, default=256)
     parser.add_argument("--depth", type=int, default=3)
@@ -1571,7 +1800,7 @@ def main():
     parser.add_argument("--eval-steps", type=int, nargs="+", default=[4, 8, 16, 32])
     parser.add_argument("--network", type=str, default="mlp", choices=["mlp", "pdn"])
     parser.add_argument(
-        "--target", type=str, default="gmm", choices=["gmm", "mw32", "dw4"]
+        "--target", type=str, default="gmm", choices=["gmm", "mw32", "dw4", "lj13"]
     )
     parser.add_argument(
         "--d-distribution", type=str, choices=["uniform", "log"], default="uniform"
@@ -1601,9 +1830,11 @@ def main():
 
     if args.debug:
         jax.config.update("jax_debug_nans", True)
+        jax.config.update("jax_debug_infs", True)
 
     # Set random seed
     key = jax.random.PRNGKey(args.seed)
+    shift_fn = lambda x: x
 
     # Set up distributions
     if args.target == "gmm":
@@ -1620,13 +1851,30 @@ def main():
     elif args.target == "dw4":
         input_dim = 8
         key, subkey = jax.random.split(key)
-        initial_density = MultivariateGaussian(dim=input_dim, sigma=args.initial_sigma)
+        # initial_density = MultivariateGaussian(dim=input_dim, sigma=args.initial_sigma)
+        initial_density = WrappedMultivariateGaussian(
+            dim=input_dim, sigma=args.initial_sigma, box_size=args.box_size, num_shift=3
+        )
         target_density = MultiDoubleWellEnergy(
             dim=input_dim,
             n_particles=4,
-            data_path="test_split_DW4.npy",
-            data_path_train="train_split_DW4.npy",
+            data_path_test="test_split_DW4.npy",
             data_path_val="val_split_DW4.npy",
+            key=subkey,
+            L=args.box_size,
+        )
+        shift_fn = lambda x: jnp.mod(x, args.box_size)
+
+    elif args.target == "lj13":
+        input_dim = 39
+        key, subkey = jax.random.split(key)
+        initial_density = MultivariateGaussian(dim=input_dim, sigma=args.initial_sigma)
+        target_density = LennardJonesEnergy(
+            dim=input_dim,
+            n_particles=13,
+            data_path="test_split_LJ13-1000.npy",
+            data_path_train="train_split_LJ13-1000.npy",
+            data_path_val="val_split_LJ13-1000.npy",
             key=subkey,
         )
 
@@ -1639,8 +1887,8 @@ def main():
     elif args.network == "pdn":
         v_theta = ShortcutTimeVelocityFieldWithPairwiseFeature(
             model_key,
-            n_particles=4,
-            n_spatial_dim=2,
+            n_particles=4 if args.target == "dw4" else 13,
+            n_spatial_dim=2 if args.target == "dw4" else 3,
             hidden_dim=args.hidden_dim,
             depth=args.depth,
         )
@@ -1654,8 +1902,10 @@ def main():
                 "T": args.num_timesteps,
                 "N": args.num_samples,
                 "C": args.shortcut_size,
+                "L": args.box_size,
                 "num_epochs": args.num_epochs,
                 "num_steps": args.num_steps,
+                "num_shifts": 3,
                 "learning_rate": args.learning_rate,
                 "gradient_norm": 1.0,
                 "hidden_dim": v_theta.mlp.width_size,
@@ -1683,8 +1933,10 @@ def main():
         initial_density=initial_density,
         target_density=target_density,
         v_theta=v_theta,
+        shift_fn=shift_fn,
         N=args.num_samples,
         B=args.batch_size,
+        L=args.box_size,
         num_epochs=args.num_epochs,
         num_steps=args.num_steps,
         learning_rate=args.learning_rate,
