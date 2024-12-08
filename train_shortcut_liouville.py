@@ -1017,7 +1017,7 @@ class ShortcutTimeVelocityFieldWithPairwiseFeature(eqx.Module):
     L: float
     mask: jnp.ndarray
 
-    def __init__(self, key, n_particles, n_spatial_dim, hidden_dim, L=10., depth=3):
+    def __init__(self, key, n_particles, n_spatial_dim, hidden_dim, mask, L=10., depth=3):
         self.n_particles = n_particles
         self.n_spatial_dim = n_spatial_dim
         input_dim = n_particles * n_spatial_dim
@@ -1032,7 +1032,7 @@ class ShortcutTimeVelocityFieldWithPairwiseFeature(eqx.Module):
         )
 
         # Compute the mask for pairwise distances
-        self.mask = jnp.triu(jnp.ones((n_particles, n_particles), dtype=bool), k=1)
+        self.mask = mask
         self.L = L
 
     def __call__(self, xs, t, d):
@@ -1908,6 +1908,7 @@ def main():
             n_spatial_dim=2 if args.target == "dw4" else 3,
             hidden_dim=args.hidden_dim,
             depth=args.depth,
+            mask=jnp.triu(jnp.ones((4, 4), dtype=bool), k=1)
             L=args.box_size,
         )
 
