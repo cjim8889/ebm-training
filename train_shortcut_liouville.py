@@ -1928,6 +1928,7 @@ def main():
                 "schedule": args.schedule,
                 "optimizer": args.optimizer,
                 "integrator": args.integrator,
+                "initial_sigma": args.initial_sigma,
                 "with_rejection_sampling": args.with_rejection_sampling,
                 "continuous_schedule": args.continuous_schedule,
                 "d_distribution": args.d_distribution,
