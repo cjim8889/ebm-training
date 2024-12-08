@@ -773,24 +773,20 @@ class GMM(Target):
         return fig
 
 
-def compute_distances(x, n_particles, n_dimensions, mask, L, epsilon=1e-8):
+def compute_distances(x, n_particles, n_dimensions, L, epsilon=1e-8):
     x = x.reshape(n_particles, n_dimensions)
 
-    # Compute pairwise distances efficiently using broadcasting
-    # Shape of diffs: [n_particles, n_particles, n_dimensions]
-    diffs = x[:, jnp.newaxis, :] - x[jnp.newaxis, :, :]
-
-    # Apply Minimum Image Convention
-    diffs = diffs - L * jnp.round(diffs / L)
-
-    # Compute squared distances and add epsilon for numerical stability
-    sq_dists = jnp.sum(diffs**2, axis=-1) + epsilon
-
-    # Compute the square root to get distances
-    distances = jnp.sqrt(sq_dists)
-
-    # Apply the mask to filter out invalid pairs (e.g., self-pairs)
-    distances = distances[mask]
+    # Get indices of upper triangular pairs
+    i, j = jnp.triu_indices(n_particles, k=1)
+    
+    # Calculate displacements between pairs
+    dx = x[i] - x[j]
+    
+    # Apply minimum image convention 
+    dx = dx - L * jnp.round(dx / L)
+    
+    # Compute distances
+    distances = jnp.sqrt(jnp.sum(dx**2, axis=-1) + epsilon)
 
     return distances
 
@@ -836,11 +832,9 @@ class MultiDoubleWellEnergy(Target):
         self._val_set = self.setup_val_set()
         self._test_set = self.setup_test_set()
 
-        self._mask = jnp.triu(jnp.ones((n_particles, n_particles), dtype=bool), k=1)
-
     def multi_double_well_energy(self, x):
         dists = compute_distances(
-            x, self.n_particles, self.n_spatial_dim, self._mask, self.L
+            x, self.n_particles, self.n_spatial_dim, self.L
         )
         dists = dists - self.offset
 
@@ -876,7 +870,7 @@ class MultiDoubleWellEnergy(Target):
         x = x.reshape(-1, self.n_particles, self.n_spatial_dim)
         distances = jax.vmap(
             lambda x: compute_distances(
-                x, self.n_particles, self.n_spatial_dim, self._mask, self.L
+                x, self.n_particles, self.n_spatial_dim, self.L
             )
         )(x)
 
@@ -1037,10 +1031,9 @@ class ShortcutTimeVelocityFieldWithPairwiseFeature(eqx.Module):
         # Reshape xs to (n_particles, n_spatial_dim)
         xs_reshaped = xs.reshape(self.n_particles, self.n_spatial_dim)
 
-        mask = jnp.triu(jnp.ones((self.n_particles, self.n_particles), dtype=bool), k=1)
         # Compute pairwise distances
         dists = compute_distances(
-            xs_reshaped, self.n_particles, self.n_spatial_dim, mask, self.L
+            xs_reshaped, self.n_particles, self.n_spatial_dim, self.L
         )
 
         xs_flat = xs_reshaped.flatten()
