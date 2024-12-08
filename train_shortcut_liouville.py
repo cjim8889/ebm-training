@@ -1908,7 +1908,7 @@ def main():
             n_spatial_dim=2 if args.target == "dw4" else 3,
             hidden_dim=args.hidden_dim,
             depth=args.depth,
-            mask=jnp.triu(jnp.ones((4, 4), dtype=bool), k=1)
+            mask=jnp.triu(jnp.ones((4, 4), dtype=bool), k=1),
             L=args.box_size,
         )
 
