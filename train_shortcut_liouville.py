@@ -1014,8 +1014,10 @@ class ShortcutTimeVelocityFieldWithPairwiseFeature(eqx.Module):
     mlp: eqx.nn.MLP
     n_particles: int
     n_spatial_dim: int
+    L: float
+    mask: jnp.ndarray
 
-    def __init__(self, key, n_particles, n_spatial_dim, hidden_dim, depth=3):
+    def __init__(self, key, n_particles, n_spatial_dim, hidden_dim, L=10., depth=3):
         self.n_particles = n_particles
         self.n_spatial_dim = n_spatial_dim
         input_dim = n_particles * n_spatial_dim
@@ -1029,22 +1031,22 @@ class ShortcutTimeVelocityFieldWithPairwiseFeature(eqx.Module):
             key=key,
         )
 
+        # Compute the mask for pairwise distances
+        self.mask = jnp.triu(jnp.ones((n_particles, n_particles), dtype=bool), k=1)
+        self.L = L
+
     def __call__(self, xs, t, d):
         # Reshape xs to (n_particles, n_spatial_dim)
         xs_reshaped = xs.reshape(self.n_particles, self.n_spatial_dim)
         # Compute pairwise distances
-        diffs = (
-            xs_reshaped[:, None, :] - xs_reshaped[None, :, :]
-        )  # Shape (n_particles, n_particles, n_spatial_dim)
-        dists = jnp.linalg.norm(diffs, axis=-1)  # Shape (n_particles, n_particles)
-        # Get unique pairwise distances
-        idx_upper = jnp.triu_indices(self.n_particles, k=1)
-        pairwise_dists = dists[idx_upper]  # Shape (num_pairwise,)
-        # Flatten xs back to original shape
+        dists = compute_distances(
+            xs_reshaped, self.n_particles, self.n_spatial_dim, self.mask, self.L
+        )
+
         xs_flat = xs_reshaped.flatten()
         # Concatenate xs_flat, t, d, pairwise_dists
         t_d = jnp.array([t, d])
-        x_td = jnp.concatenate([xs_flat, t_d, pairwise_dists], axis=0)
+        x_td = jnp.concatenate([xs_flat, t_d, dists.flatten()], axis=0)
         return self.mlp(x_td)
 
 
@@ -1906,6 +1908,7 @@ def main():
             n_spatial_dim=2 if args.target == "dw4" else 3,
             hidden_dim=args.hidden_dim,
             depth=args.depth,
+            L=args.box_size,
         )
 
     if not args.offline:
