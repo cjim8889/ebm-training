@@ -1364,6 +1364,7 @@ def loss_fn(
     time_derivative_log_density: Callable[[chex.Array, float], float],
     score_fn: Callable[[chex.Array, float], chex.Array],
     shift_fn: Callable[[chex.Array], chex.Array],
+    enable_shortcut: bool = True,
 ) -> float:
     dt_log_unormalised_density = jax.vmap(
         lambda xs, t: jax.vmap(lambda x: time_derivative_log_density(x, t))(xs),
@@ -1376,9 +1377,12 @@ def loss_fn(
     dss = jnp.diff(ts, append=1.0)
     epsilons = time_batched_epsilon(v_theta, xs, dt_log_density, ts, dss, score_fn)
 
-    short_cut_loss = time_batched_shortcut_loss(v_theta, cxs, ts, ds, shift_fn)
+    if enable_shortcut:
+        short_cut_loss = time_batched_shortcut_loss(v_theta, cxs, ts, ds, shift_fn)
 
-    return jnp.mean(epsilons**2) + short_cut_loss
+        return jnp.mean(epsilons**2) + short_cut_loss
+    else:
+        return jnp.mean(epsilons**2)
 
 
 @eqx.filter_jit
@@ -1563,8 +1567,13 @@ def train_velocity_field(
     d_distribution: str = "uniform",
     target: str = "gmm",
     eval_every: int = 20,
+    shortcut: bool = True,
     **kwargs: Any,
 ) -> Any:
+    if not shortcut:
+        eval_steps = [T]
+
+
     path_distribution = AnnealedDistribution(
         initial_distribution=initial_density,
         target_distribution=target_density,
@@ -1604,6 +1613,7 @@ def train_velocity_field(
             time_derivative_log_density=path_distribution.time_derivative,
             score_fn=path_distribution.score_fn,
             shift_fn=shift_fn,
+            enable_shortcut=shortcut,
         )
         updates, opt_state = optimizer.update(grads, opt_state, v_theta)
         v_theta = eqx.apply_updates(v_theta, updates)
@@ -1640,10 +1650,13 @@ def train_velocity_field(
         epoch_loss = 0.0
 
         key, subkey = jax.random.split(key)
-        if d_distribution == "uniform":
-            sampled_ds = jax.random.uniform(subkey, (T, C), minval=0.0, maxval=1.0)
+        if shortcut:
+            if d_distribution == "uniform":
+                sampled_ds = jax.random.uniform(subkey, (T, C), minval=0.0, maxval=1.0)
+            elif d_distribution == "log":
+                sampled_ds = jax.random.choice(subkey, d_dis, (T, C), replace=True)
         else:
-            sampled_ds = jax.random.choice(subkey, d_dis, (T, C), replace=True)
+            sampled_ds = jnp.ones((T, C)) * (1.0 / T)
 
         for s in range(num_steps):
             key, subkey = jax.random.split(key)
@@ -1825,6 +1838,7 @@ def main():
     parser.add_argument("--with-rejection-sampling", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--offline", action="store_true")
+    parser.add_argument("--shortcut", action="store_true")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--eval-every", type=int, default=20)
     args = parser.parse_args()
@@ -1923,9 +1937,10 @@ def main():
                 "d_distribution": args.d_distribution,
                 "target": args.target,
                 "network": args.network,
+                "shortcut": args.shortcut,
             },
             reinit=True,
-            tags=[args.target, args.network],
+            tags=[args.target, args.network, "shortcut" if args.shortcut else "no_shortcut"],
         )
 
     # Train model
@@ -1957,6 +1972,7 @@ def main():
         target=args.target,
         eval_every=args.eval_every,
         network=args.network,
+        shortcut=args.shortcut,
     )
 
 
