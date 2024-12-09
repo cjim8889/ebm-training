@@ -1664,7 +1664,7 @@ def epsilon(
     v = v_theta(x, t, d)
     lhs = div_v + jnp.dot(v, score)
 
-    return (jnp.nan_to_num(lhs + dt_log_density, posinf=1.0, neginf=-1.0),)
+    return jnp.nan_to_num(lhs + dt_log_density, posinf=1.0, neginf=-1.0)
 
 
 batched_epsilon = jax.vmap(epsilon, in_axes=(None, 0, 0, None, None, None))
