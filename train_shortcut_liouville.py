@@ -1943,7 +1943,7 @@ def train_velocity_field(
                         plt.show()
 
                     plt.close(fig)
-                elif target == "dw4" or target == "lj13":
+                elif target == "dw4" or target == "dw4o" or target == "lj13":
                     key, subkey = jax.random.split(key)
                     fig = target_density.visualise(val_samples[i][-1][:1024])
                     # key, subkey = jax.random.split(key)
@@ -2071,7 +2071,17 @@ def main():
         )
         def shift_fn(x):
             return x - jnp.mean(x, axis=0, keepdims=True)
-
+    elif args.target == "dw4o":
+        input_dim = 8
+        key, subkey = jax.random.split(key)
+        initial_density = MultivariateGaussian(dim=input_dim, sigma=args.initial_sigma)
+        target_density = MultiDoubleWellEnergy(
+            dim=input_dim,
+            n_particles=4,
+            data_path_test="test_split_DW4.npy",
+            data_path_val="val_split_DW4.npy",
+            key=subkey,
+        )
     elif args.target == "lj13":
         input_dim = 39
         key, subkey = jax.random.split(key)
@@ -2085,6 +2095,7 @@ def main():
         )
         def shift_fn(x):
             return x - jnp.mean(x, axis=0, keepdims=True)
+    
 
     # Initialize velocity field
     key, model_key = jax.random.split(key)
