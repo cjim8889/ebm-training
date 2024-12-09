@@ -2008,7 +2008,7 @@ def main():
     parser.add_argument("--eval-steps", type=int, nargs="+", default=[4, 8, 16, 32])
     parser.add_argument("--network", type=str, default="mlp", choices=["mlp", "pdn"])
     parser.add_argument(
-        "--target", type=str, default="gmm", choices=["gmm", "mw32", "dw4", "lj13"]
+        "--target", type=str, default="gmm", choices=["gmm", "mw32", "dw4", "lj13", "dw4o"]
     )
     parser.add_argument(
         "--d-distribution", type=str, choices=["uniform", "log"], default="uniform"
