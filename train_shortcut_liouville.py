@@ -976,7 +976,7 @@ class GMM(Target):
         return fig
 
 
-def compute_distances(x, n_particles, n_dimensions, L, epsilon=1e-8):
+def compute_distances(x, n_particles, n_dimensions, epsilon=1e-8):
     x = x.reshape(n_particles, n_dimensions)
 
     # Get indices of upper triangular pairs
@@ -984,9 +984,6 @@ def compute_distances(x, n_particles, n_dimensions, L, epsilon=1e-8):
     
     # Calculate displacements between pairs
     dx = x[i] - x[j]
-    
-    # Apply minimum image convention 
-    dx = dx - L * jnp.round(dx / L)
     
     # Compute distances
     distances = jnp.sqrt(jnp.sum(dx**2, axis=-1) + epsilon)
@@ -1240,7 +1237,7 @@ class ShortcutTimeVelocityFieldWithPairwiseFeature(eqx.Module):
 
         # Compute pairwise distances
         dists = compute_distances(
-            xs_reshaped, self.n_particles, self.n_spatial_dim, self.L
+            xs_reshaped, self.n_particles, self.n_spatial_dim
         )
 
         xs_flat = xs_reshaped.flatten()
