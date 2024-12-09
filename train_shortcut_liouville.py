@@ -7,7 +7,6 @@ import chex
 import wandb
 import numpy as np
 import argparse
-from jax_md import energy, space
 from matplotlib import pyplot as plt
 from itertools import product
 from typing import Optional, Callable, Union, Tuple, Any, List
@@ -360,7 +359,6 @@ def remove_mean(x, n_particles, n_spatial_dim):
     x = x - jnp.mean(x, axis=1, keepdims=True)
     return x.reshape(-1, n_particles * n_spatial_dim)
 
-
 class LennardJonesEnergy(Target):
     def __init__(
         self,
@@ -388,13 +386,75 @@ class LennardJonesEnergy(Target):
         self._test_set = self.setup_test_set()
         self._val_set = self.setup_val_set()
 
-        self._mask = jnp.triu(jnp.ones((n_particles, n_particles), dtype=bool), k=1)
+    def safe_lennard_jones_potential(
+        self,
+        pairwise_dr: jnp.ndarray,
+        sigma: float = 1.0,
+        epsilon_val: float = 1.0,
+    ) -> jnp.ndarray:
+        """
+        Compute the Lennard-Jones potential in a safe manner to prevent numerical instability.
 
-        displacement_fn, _ = space.free()
-        self.energy_fn = energy.lennard_jones_pair(displacement_fn, sigma=1., epsilon=1.)
+        Args:
+            pairwise_dr (jnp.ndarray): Pairwise distances of shape [n_pairs].
+            sigma (float): Finite distance at which the inter-particle potential is zero.
+            epsilon_val (float): Depth of the potential well.
+
+        Returns:
+            jnp.ndarray: Lennard-Jones potential energy of shape [].
+        """
+        # Compute (sigma / r)^6 and (sigma / r)^12
+        inv_r = sigma / pairwise_dr
+        inv_r6 = inv_r ** 6
+        inv_r12 = inv_r6 ** 2
+
+        # Compute LJ potential: 4 * epsilon * (inv_r12 - inv_r6)
+        lj_energy = 4 * epsilon_val * (inv_r12 - inv_r6)
+
+        # Sum over all pairs to get total energy per sample
+        total_lj_energy = jnp.sum(lj_energy, axis=-1)
+
+        return total_lj_energy
+    
+    def compute_distances(self, x, epsilon=1e-8, min_dr: float = 1e-2):
+        x = x.reshape(self.n_particles, self.n_spatial_dim)
+
+        # Get indices of upper triangular pairs
+        i, j = jnp.triu_indices(self.n_particles, k=1)
+        
+        # Calculate displacements between pairs
+        dx = x[i] - x[j]
+        
+        # Compute distances
+        distances = jnp.maximum(jnp.sqrt(jnp.sum(dx**2, axis=-1) + epsilon), min_dr)
+
+        return distances
+    
+    def compute_safe_lj_energy(
+        self,
+        x: jnp.ndarray,
+        sigma: float = 1.0,
+        epsilon_val: float = 1.0,
+        min_dr: float = 1e-2,
+    ) -> jnp.ndarray:
+        """
+        Compute the total Lennard-Jones energy for a batch of samples in a safe manner.
+
+        Args:
+            x (jnp.ndarray): Input array of shape [n_particles * n_spatial_dim].
+            sigma (float): Finite distance at which the inter-particle potential is zero.
+            epsilon_val (float): Depth of the potential well.
+            min_dr (float): Minimum allowed distance to prevent division by zero.
+
+        Returns:
+            jnp.ndarray: Total Lennard-Jones energy for each sample, shape [batch_size].
+        """
+        pairwise_dr = self.compute_distances(x.reshape(self.n_particles, self.n_spatial_dim), min_dr)
+        lj_energy = self.safe_lennard_jones_potential(pairwise_dr, sigma, epsilon_val)
+        return lj_energy
 
     def log_prob(self, x: chex.Array) -> chex.Array:
-        return -self.energy_fn(x.reshape(self.n_particles, self.n_spatial_dim))
+        return -self.compute_safe_lj_energy(x)
 
     def score(self, x: chex.Array) -> chex.Array:
         return jax.grad(self.log_prob)(x)
@@ -414,10 +474,8 @@ class LennardJonesEnergy(Target):
 
     def interatomic_dist(self, x):
         x = x.reshape(-1, self.n_particles, self.n_spatial_dim)
-        diffs = x[:, :, None, :] - x[:, None, :, :]
-        mask = jnp.triu(jnp.ones((self.n_particles, self.n_particles)), k=1) == 1
-        distances = jnp.linalg.norm(diffs, axis=-1)
-        distances = distances[:, mask]
+        distances = jax.vmap(lambda x: self.compute_distances(x))(x)
+
         return distances
 
     def batched_log_prob(self, xs):
@@ -425,7 +483,7 @@ class LennardJonesEnergy(Target):
     
     def visualise(self, samples: chex.Array) -> plt.Figure:
         self.key, subkey = jax.random.split(self.key)
-        test_data_smaller = jax.random.choice(subkey, self._test_set, shape=(4000,), replace=False)
+        test_data_smaller = jax.random.choice(subkey, self._test_set, shape=(1000,), replace=False)
 
         fig, axs = plt.subplots(1, 2, figsize=(12, 4))
 
@@ -840,7 +898,7 @@ class WrappedMultivariateGaussian(Target):
 
 class MultivariateGaussian(Target):
     def __init__(
-        self, dim: int = 2, sigma: float = 1.0, plot_bound_factor: float = 3.0
+        self, dim: int = 2, mean: float = 0.0, sigma: float = 1.0, plot_bound_factor: float = 3.0
     ):
         super().__init__(
             dim=dim,
@@ -860,8 +918,10 @@ class MultivariateGaussian(Target):
                 )
             scale_diag = self.sigma
 
+        self.mean = jnp.asarray(mean)
+
         self.distribution = distrax.MultivariateNormalDiag(
-            loc=jnp.zeros(dim), scale_diag=scale_diag
+            loc=self.mean, scale_diag=scale_diag
         )
 
     def log_prob(self, x: chex.Array) -> chex.Array:
@@ -1502,6 +1562,7 @@ def epsilon(
     div_v = divergence_velocity(v_theta, x, t, d)
     v = v_theta(x, t, d)
     lhs = div_v + jnp.dot(v, score)
+
     return jnp.nan_to_num(lhs + dt_log_density, posinf=1.0, neginf=-1.0)
 
 
@@ -1570,7 +1631,8 @@ def loss_fn(
 
     dss = jnp.diff(ts, append=1.0)
     epsilons = time_batched_epsilon(v_theta, xs, dt_log_density, ts, dss, score_fn)
-
+    
+    # jax.debug.print("dt_log_density {dt_log_density}, dt_log_unormalised_density {dt_log_unormalised_density}", dt_log_density=dt_log_density, dt_log_unormalised_density=dt_log_unormalised_density)
     if enable_shortcut:
         short_cut_loss = time_batched_shortcut_loss(v_theta, cxs, ts, ds, shift_fn)
 
@@ -2050,12 +2112,12 @@ def main():
         input_dim = 2
         key, subkey = jax.random.split(key)
         # Initialize distributions
-        initial_density = MultivariateGaussian(dim=input_dim, sigma=args.initial_sigma)
+        initial_density = MultivariateGaussian(mean=jnp.zeros(input_dim), dim=input_dim, sigma=args.initial_sigma)
         target_density = GMM(subkey, dim=input_dim)
     elif args.target == "mw32":
         input_dim = 32
         key, subkey = jax.random.split(key)
-        initial_density = MultivariateGaussian(dim=input_dim, sigma=args.initial_sigma)
+        initial_density = MultivariateGaussian(mean=jnp.zeros(input_dim), dim=input_dim, sigma=args.initial_sigma)
         target_density = ManyWellEnergy(dim=input_dim)
     elif args.target == "dw4":
         input_dim = 8
@@ -2074,7 +2136,7 @@ def main():
     elif args.target == "dw4o":
         input_dim = 8
         key, subkey = jax.random.split(key)
-        initial_density = MultivariateGaussian(dim=input_dim, sigma=args.initial_sigma)
+        initial_density = MultivariateGaussian(mean=jnp.zeros(input_dim), dim=input_dim, sigma=args.initial_sigma)
         target_density = MultiDoubleWellEnergy(
             dim=input_dim,
             n_particles=4,
@@ -2085,7 +2147,6 @@ def main():
     elif args.target == "lj13":
         input_dim = 39
         key, subkey = jax.random.split(key)
-        initial_density = TranslationInvariantGaussian(N=13, D=3, sigma=args.initial_sigma, wrap=False)
         target_density = LennardJonesEnergy(
             dim=input_dim,
             n_particles=13,
@@ -2093,8 +2154,12 @@ def main():
             data_path_val="val_split_LJ13-1000.npy",
             key=subkey,
         )
-        def shift_fn(x):
-            return x - jnp.mean(x, axis=0, keepdims=True)
+
+        mean = target_density._test_set.reshape(-1, 39).mean(axis=0)
+        initial_density = MultivariateGaussian(mean=mean, dim=39, sigma=args.initial_sigma)
+
+        # def shift_fn(x):
+            # return x - jnp.mean(x, axis=0, keepdims=True)
     
 
     # Initialize velocity field
