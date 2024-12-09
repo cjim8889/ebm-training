@@ -2083,6 +2083,8 @@ def main():
             data_path_val="val_split_LJ13-1000.npy",
             key=subkey,
         )
+        def shift_fn(x):
+            return x - jnp.mean(x, axis=0, keepdims=True)
 
     # Initialize velocity field
     key, model_key = jax.random.split(key)
