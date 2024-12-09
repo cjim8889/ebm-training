@@ -354,14 +354,19 @@ class ManyWellEnergy(Target):
             samples_modes = self.modes_test_set
         return samples_p, samples_modes
 
+# Utility function
+def remove_mean(x, n_particles, n_spatial_dim):
+    x = x.reshape(-1, n_particles, n_spatial_dim)
+    x = x - jnp.mean(x, axis=1, keepdims=True)
+    return x.reshape(-1, n_particles * n_spatial_dim)
+
 
 class LennardJonesEnergy(Target):
     def __init__(
         self,
         dim: int,
         n_particles: int,
-        data_path: str,
-        data_path_train: Optional[str] = None,
+        data_path_test: str,
         data_path_val: Optional[str] = None,
         key: jax.random.PRNGKey = jax.random.PRNGKey(0),
     ):
@@ -377,43 +382,33 @@ class LennardJonesEnergy(Target):
         self.n_spatial_dim = dim // n_particles
         self.key = key
 
-        self.data_path = data_path
-        self.data_path_train = data_path_train
+        self.data_path_test = data_path_test
         self.data_path_val = data_path_val
 
         self._test_set = self.setup_test_set()
         self._val_set = self.setup_val_set()
-        self._train_set = self.setup_train_set()
 
         self._mask = jnp.triu(jnp.ones((n_particles, n_particles), dtype=bool), k=1)
 
-        displacement_fn, _ = space.periodic(5.0)
-        self.energy_fn = energy.lennard_jones_pair(
-            displacement_fn, sigma=1.0, epsilon=1.0
-        )
+        displacement_fn, _ = space.free()
+        self.energy_fn = energy.lennard_jones_pair(displacement_fn, sigma=1., epsilon=1.)
 
     def log_prob(self, x: chex.Array) -> chex.Array:
         return -self.energy_fn(x.reshape(self.n_particles, self.n_spatial_dim))
 
-    def sample(
-        self, key: jax.random.PRNGKey, sample_shape: chex.Shape = ()
-    ) -> chex.Array:
-        raise NotImplementedError(
-            "Sampling is not implemented for MultiDoubleWellEnergy"
-        )
+    def score(self, x: chex.Array) -> chex.Array:
+        return jax.grad(self.log_prob)(x)
+    
+    def sample(self, key: jax.random.PRNGKey, sample_shape: chex.Shape = ()) -> chex.Array:
+        raise NotImplementedError("Sampling is not implemented for MultiDoubleWellEnergy")
 
     def setup_test_set(self):
-        data = np.load(self.data_path, allow_pickle=True)
-        data = remove_mean(jnp.array(data), self.n_particles, self.n_spatial_dim)
-        return data
-
-    def setup_train_set(self):
-        data = np.load(self.data_path, allow_pickle=True)
+        data = np.load(self.data_path_test, allow_pickle=True)
         data = remove_mean(jnp.array(data), self.n_particles, self.n_spatial_dim)
         return data
 
     def setup_val_set(self):
-        data = np.load(self.data_path, allow_pickle=True)
+        data = np.load(self.data_path_val, allow_pickle=True)
         data = remove_mean(jnp.array(data), self.n_particles, self.n_spatial_dim)
         return data
 
@@ -427,12 +422,10 @@ class LennardJonesEnergy(Target):
 
     def batched_log_prob(self, xs):
         return jax.vmap(self.log_prob)(xs)
-
+    
     def visualise(self, samples: chex.Array) -> plt.Figure:
         self.key, subkey = jax.random.split(self.key)
-        test_data_smaller = jax.random.choice(
-            subkey, self._test_set, shape=(1000,), replace=False
-        )
+        test_data_smaller = jax.random.choice(subkey, self._test_set, shape=(4000,), replace=False)
 
         fig, axs = plt.subplots(1, 2, figsize=(12, 4))
 
@@ -2082,12 +2075,11 @@ def main():
     elif args.target == "lj13":
         input_dim = 39
         key, subkey = jax.random.split(key)
-        initial_density = MultivariateGaussian(dim=input_dim, sigma=args.initial_sigma)
+        initial_density = TranslationInvariantGaussian(N=13, D=3, sigma=args.initial_sigma, wrap=False)
         target_density = LennardJonesEnergy(
             dim=input_dim,
             n_particles=13,
-            data_path="test_split_LJ13-1000.npy",
-            data_path_train="train_split_LJ13-1000.npy",
+            data_path_test="test_split_LJ13-1000.npy",
             data_path_val="val_split_LJ13-1000.npy",
             key=subkey,
         )
