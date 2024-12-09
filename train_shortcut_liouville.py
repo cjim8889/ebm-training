@@ -353,11 +353,13 @@ class ManyWellEnergy(Target):
             samples_modes = self.modes_test_set
         return samples_p, samples_modes
 
+
 # Utility function
 def remove_mean(x, n_particles, n_spatial_dim):
     x = x.reshape(-1, n_particles, n_spatial_dim)
     x = x - jnp.mean(x, axis=1, keepdims=True)
     return x.reshape(-1, n_particles * n_spatial_dim)
+
 
 class LennardJonesEnergy(Target):
     def __init__(
@@ -408,8 +410,8 @@ class LennardJonesEnergy(Target):
         """
         # Compute (sigma / r)^6 and (sigma / r)^12
         inv_r = sigma / pairwise_dr
-        inv_r6 = inv_r ** 6
-        inv_r12 = inv_r6 ** 2
+        inv_r6 = inv_r**6
+        inv_r12 = inv_r6**2
 
         # Compute LJ potential: 4 * epsilon * (inv_r12 - inv_r6)
         lj_energy = 4 * epsilon_val * (inv_r12 - inv_r6)
@@ -418,21 +420,21 @@ class LennardJonesEnergy(Target):
         total_lj_energy = jnp.sum(lj_energy, axis=-1)
 
         return total_lj_energy
-    
+
     def compute_distances(self, x, epsilon=1e-8, min_dr: float = 1e-2):
         x = x.reshape(self.n_particles, self.n_spatial_dim)
 
         # Get indices of upper triangular pairs
         i, j = jnp.triu_indices(self.n_particles, k=1)
-        
+
         # Calculate displacements between pairs
         dx = x[i] - x[j]
-        
+
         # Compute distances
         distances = jnp.maximum(jnp.sqrt(jnp.sum(dx**2, axis=-1) + epsilon), min_dr)
 
         return distances
-    
+
     def compute_safe_lj_energy(
         self,
         x: jnp.ndarray,
@@ -452,7 +454,9 @@ class LennardJonesEnergy(Target):
         Returns:
             jnp.ndarray: Total Lennard-Jones energy for each sample, shape [batch_size].
         """
-        pairwise_dr = self.compute_distances(x.reshape(self.n_particles, self.n_spatial_dim), min_dr)
+        pairwise_dr = self.compute_distances(
+            x.reshape(self.n_particles, self.n_spatial_dim), min_dr
+        )
         lj_energy = self.safe_lennard_jones_potential(pairwise_dr, sigma, epsilon_val)
         return lj_energy
 
@@ -461,15 +465,19 @@ class LennardJonesEnergy(Target):
 
     def score(self, x: chex.Array) -> chex.Array:
         return jax.grad(self.log_prob)(x)
-    
-    def sample(self, key: jax.random.PRNGKey, sample_shape: chex.Shape = ()) -> chex.Array:
-        raise NotImplementedError("Sampling is not implemented for MultiDoubleWellEnergy")
+
+    def sample(
+        self, key: jax.random.PRNGKey, sample_shape: chex.Shape = ()
+    ) -> chex.Array:
+        raise NotImplementedError(
+            "Sampling is not implemented for MultiDoubleWellEnergy"
+        )
 
     def setup_train_set(self):
         data = np.load(self.data_path_train, allow_pickle=True)
         data = remove_mean(jnp.array(data), self.n_particles, self.n_spatial_dim)
         return data
-    
+
     def setup_test_set(self):
         data = np.load(self.data_path_test, allow_pickle=True)
         data = remove_mean(jnp.array(data), self.n_particles, self.n_spatial_dim)
@@ -488,10 +496,12 @@ class LennardJonesEnergy(Target):
 
     def batched_log_prob(self, xs):
         return jax.vmap(self.log_prob)(xs)
-    
+
     def visualise(self, samples: chex.Array) -> plt.Figure:
         self.key, subkey = jax.random.split(self.key)
-        test_data_smaller = jax.random.choice(subkey, self._test_set, shape=(1000,), replace=False)
+        test_data_smaller = jax.random.choice(
+            subkey, self._test_set, shape=(1000,), replace=False
+        )
 
         fig, axs = plt.subplots(1, 2, figsize=(12, 4))
 
@@ -624,16 +634,15 @@ class TranslationInvariantGaussian(Target):
         self.degrees_of_freedom = (self.N - 1) * self.D
 
         # Normalizing constant
-        self.log_normalizing_constant = (
-            -0.5 * self.degrees_of_freedom * jnp.log(2 * jnp.pi)
-            - jnp.sum(jnp.log(self.scale_diag))
-        )
+        self.log_normalizing_constant = -0.5 * self.degrees_of_freedom * jnp.log(
+            2 * jnp.pi
+        ) - jnp.sum(jnp.log(self.scale_diag))
 
         # Initialize the Multivariate Normal Distribution
         # We model the N*D variables, but enforce mean zero in log_prob and sampling
         self.distribution = distrax.MultivariateNormalDiag(
             loc=jnp.zeros(self.N * self.D),
-            scale_diag=jnp.tile(self.scale_diag, (self.N,))
+            scale_diag=jnp.tile(self.scale_diag, (self.N,)),
         )
 
         # Determine plot bounds based on sigma
@@ -647,8 +656,10 @@ class TranslationInvariantGaussian(Target):
             # Prepare shifts for periodic boundary conditions
             # For simplicity, assume shifts are the same across all dimensions
             k = jnp.arange(-self.num_shift, self.num_shift + 1)
-            shifts = jnp.stack(jnp.meshgrid(*([k] * self.D), indexing='ij'), axis=-1)
-            self.kL = shifts.reshape(-1, self.D) * self.box_size  # Shape: [(2*num_shift+1)^D, D]
+            shifts = jnp.stack(jnp.meshgrid(*([k] * self.D), indexing="ij"), axis=-1)
+            self.kL = (
+                shifts.reshape(-1, self.D) * self.box_size
+            )  # Shape: [(2*num_shift+1)^D, D]
         else:
             self.kL = None
 
@@ -680,7 +691,7 @@ class TranslationInvariantGaussian(Target):
         x_centered = self.remove_mean(x)  # Shape: [N, D]
 
         # Compute sum of squares
-        r2 = jnp.sum(x_centered ** 2)  # Scalar
+        r2 = jnp.sum(x_centered**2)  # Scalar
 
         # Compute log-probability
         log_px = -0.5 * r2 + self.log_normalizing_constant  # Scalar
@@ -695,19 +706,25 @@ class TranslationInvariantGaussian(Target):
             x_shifted = x_centered[None, :, :] + self.kL[:, None, :]  # Broadcasting
 
             # Remove mean again after shifting
-            x_shifted = self.remove_mean(x_shifted.reshape(-1, self.D))  # Shape: [num_shifts^D, D]
+            x_shifted = self.remove_mean(
+                x_shifted.reshape(-1, self.D)
+            )  # Shape: [num_shifts^D, D]
             # Reshape back to [num_shifts^D, N, D]
             x_shifted = x_shifted.reshape(-1, self.N, self.D)
 
             # Compute sum of squares for each shifted sample
-            r2_shifted = jnp.sum(x_shifted ** 2, axis=(1, 2))  # Shape: [num_shifts^D]
+            r2_shifted = jnp.sum(x_shifted**2, axis=(1, 2))  # Shape: [num_shifts^D]
 
             # Compute log_prob for shifted samples
-            log_px_shifted = -0.5 * r2_shifted + self.log_normalizing_constant  # Shape: [num_shifts^D]
+            log_px_shifted = (
+                -0.5 * r2_shifted + self.log_normalizing_constant
+            )  # Shape: [num_shifts^D]
 
             # Use log-sum-exp to aggregate probabilities
             max_log_px = jnp.max(log_px_shifted)  # Scalar
-            log_px = max_log_px + jnp.log(jnp.sum(jnp.exp(log_px_shifted - max_log_px)))  # Scalar
+            log_px = max_log_px + jnp.log(
+                jnp.sum(jnp.exp(log_px_shifted - max_log_px))
+            )  # Scalar
 
         return log_px
 
@@ -723,8 +740,12 @@ class TranslationInvariantGaussian(Target):
             chex.Array: Sampled array of shape [sample_shape, N, D].
         """
         # Total number of variables: N * D
-        total_sample_shape = sample_shape if isinstance(sample_shape, tuple) else (sample_shape,)
-        samples = self.distribution.sample(seed=seed, sample_shape=total_sample_shape)  # Shape: [*sample_shape, N*D]
+        total_sample_shape = (
+            sample_shape if isinstance(sample_shape, tuple) else (sample_shape,)
+        )
+        samples = self.distribution.sample(
+            seed=seed, sample_shape=total_sample_shape
+        )  # Shape: [*sample_shape, N*D]
 
         # Reshape to [*sample_shape, N, D]
         samples = samples.reshape(*total_sample_shape, self.N, self.D)
@@ -734,7 +755,6 @@ class TranslationInvariantGaussian(Target):
         if self.wrap:
             # Apply periodic boundary conditions using modulo operation
             samples_centered = jnp.mod(samples_centered, self.box_size)
-
 
         return samples_centered.reshape(total_sample_shape[0], -1)
 
@@ -750,7 +770,7 @@ class TranslationInvariantGaussian(Target):
         """
         # Compute gradient
         return jax.grad(self.log_prob)(value)
-    
+
     def visualise(self, samples) -> plt.Figure:
         raise NotImplementedError
 
@@ -906,7 +926,11 @@ class WrappedMultivariateGaussian(Target):
 
 class MultivariateGaussian(Target):
     def __init__(
-        self, dim: int = 2, mean: float = 0.0, sigma: float = 1.0, plot_bound_factor: float = 3.0
+        self,
+        dim: int = 2,
+        mean: float = 0.0,
+        sigma: float = 1.0,
+        plot_bound_factor: float = 3.0,
     ):
         super().__init__(
             dim=dim,
@@ -1042,10 +1066,10 @@ def compute_distances(x, n_particles, n_dimensions, epsilon=1e-8):
 
     # Get indices of upper triangular pairs
     i, j = jnp.triu_indices(n_particles, k=1)
-    
+
     # Calculate displacements between pairs
     dx = x[i] - x[j]
-    
+
     # Compute distances
     distances = jnp.sqrt(jnp.sum(dx**2, axis=-1) + epsilon)
 
@@ -1098,41 +1122,45 @@ class MultiDoubleWellEnergy(Target):
 
         # Get indices of upper triangular pairs
         i, j = jnp.triu_indices(self.n_particles, k=1)
-        
+
         # Calculate displacements between pairs
         dx = x[i] - x[j]
-        
+
         # Compute distances
         distances = jnp.sqrt(jnp.sum(dx**2, axis=-1) + epsilon)
 
         return distances
-    
+
     def batched_remove_mean(self, x):
         return x - jnp.mean(x, axis=1, keepdims=True)
-     
+
     def multi_double_well_energy(self, x):
         dists = self.compute_distances(x)
-        dists = dists - self.offset        
+        dists = dists - self.offset
 
-        energies = self.a * dists ** 4 + self.b * dists ** 2 + self.c
+        energies = self.a * dists**4 + self.b * dists**2 + self.c
 
         total_energy = jnp.sum(energies)
         return total_energy
 
     def log_prob(self, x: chex.Array) -> chex.Array:
         return -self.multi_double_well_energy(x)
-    
+
     def score(self, x: chex.Array) -> chex.Array:
         return jax.grad(self.log_prob)(x)
 
-    def sample(self, key: jax.random.PRNGKey, sample_shape: chex.Shape = ()) -> chex.Array:
-        raise NotImplementedError("Sampling is not implemented for MultiDoubleWellEnergy")
+    def sample(
+        self, key: jax.random.PRNGKey, sample_shape: chex.Shape = ()
+    ) -> chex.Array:
+        raise NotImplementedError(
+            "Sampling is not implemented for MultiDoubleWellEnergy"
+        )
 
     def setup_test_set(self):
         data = np.load(self.data_path_test, allow_pickle=True)
         data = self.batched_remove_mean(data)
         return data
-    
+
     def setup_val_set(self):
         data = np.load(self.data_path_val, allow_pickle=True)
         data = self.batched_remove_mean(data)
@@ -1141,15 +1169,17 @@ class MultiDoubleWellEnergy(Target):
     def interatomic_dist(self, x):
         x = x.reshape(-1, self.n_particles, self.n_spatial_dim)
         distances = jax.vmap(lambda x: self.compute_distances(x))(x)
-        
+
         return distances
 
     def batched_log_prob(self, xs):
         return jax.vmap(self.log_prob)(xs)
-    
+
     def visualise(self, samples: chex.Array) -> plt.Figure:
         self.key, subkey = jax.random.split(self.key)
-        test_data_smaller = jax.random.choice(subkey, self._test_set, shape=(1000,), replace=False)
+        test_data_smaller = jax.random.choice(
+            subkey, self._test_set, shape=(1000,), replace=False
+        )
 
         fig, axs = plt.subplots(1, 2, figsize=(12, 4))
 
@@ -1208,15 +1238,16 @@ class MultiDoubleWellEnergy(Target):
 
         fig.canvas.draw()
         return fig
-    
+
+
 class GMMPrior(Target):
     def __init__(
-        self, 
+        self,
         key: chex.PRNGKey,
-        dim: int, 
-        n_mixes: int, 
+        dim: int,
+        n_mixes: int,
         prior_data: chex.Array,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(
             dim=dim,
@@ -1230,9 +1261,11 @@ class GMMPrior(Target):
 
         self.prior_data = prior_data
 
-        indices = jax.random.choice(key, jnp.arange(self.prior_data.shape[0]), shape=(n_mixes,), replace=False)
+        indices = jax.random.choice(
+            key, jnp.arange(self.prior_data.shape[0]), shape=(n_mixes,), replace=False
+        )
         means = self.prior_data[indices]
-        
+
         # Compute global covariance and scale it down to control spread
         global_cov = jnp.var(self.prior_data, axis=0)  # Shape: (M*D,)
         # Scale covariance to ensure controlled spread; adjust scaling factor as needed
@@ -1242,18 +1275,20 @@ class GMMPrior(Target):
         # Define mixture weights uniformly
         mixture_weights = jnp.ones(n_mixes) / n_mixes
         mixture_distribution = distrax.Categorical(probs=mixture_weights)
-        
+
         # Define component distributions with diagonal covariance
-        components_distribution = distrax.MultivariateNormalDiag(loc=means, scale_diag=covariances)
-        
+        components_distribution = distrax.MultivariateNormalDiag(
+            loc=means, scale_diag=covariances
+        )
+
         # Create the mixture distribution
-        self.gmm = distrax.MixtureSameFamily(mixture_distribution, components_distribution)
-        
-    
+        self.gmm = distrax.MixtureSameFamily(
+            mixture_distribution, components_distribution
+        )
 
     def log_prob(self, xs: chex.Array) -> chex.Array:
         return self.gmm.log_prob(xs)
-    
+
     def score(self, value: chex.Array) -> chex.Array:
         return jax.grad(self.log_prob)(value)
 
@@ -1267,6 +1302,7 @@ class GMMPrior(Target):
         samples: chex.Array,
     ) -> None:
         raise NotImplementedError
+
 
 class AnnealedDistribution(Target):
     def __init__(
@@ -1334,7 +1370,7 @@ class ShortcutTimeVelocityFieldWithPairwiseFeature(eqx.Module):
     n_spatial_dim: int
     L: float
 
-    def __init__(self, key, n_particles, n_spatial_dim, hidden_dim, L=10., depth=3):
+    def __init__(self, key, n_particles, n_spatial_dim, hidden_dim, L=10.0, depth=3):
         self.n_particles = n_particles
         self.n_spatial_dim = n_spatial_dim
         input_dim = n_particles * n_spatial_dim
@@ -1356,9 +1392,7 @@ class ShortcutTimeVelocityFieldWithPairwiseFeature(eqx.Module):
         xs_reshaped = xs.reshape(self.n_particles, self.n_spatial_dim)
 
         # Compute pairwise distances
-        dists = compute_distances(
-            xs_reshaped, self.n_particles, self.n_spatial_dim
-        )
+        dists = compute_distances(xs_reshaped, self.n_particles, self.n_spatial_dim)
 
         xs_flat = xs_reshaped.flatten()
         # Concatenate xs_flat, t, d, pairwise_dists
@@ -1687,18 +1721,21 @@ def loss_fn(
     score_fn: Callable[[chex.Array, float], chex.Array],
     shift_fn: Callable[[chex.Array], chex.Array],
     enable_shortcut: bool = True,
+    dt_log_density_clip: float = 1000.0,
 ) -> float:
     dt_log_unormalised_density = jax.vmap(
         lambda xs, t: jax.vmap(lambda x: time_derivative_log_density(x, t))(xs),
         in_axes=(0, 0),
     )(xs, ts)
+
     dt_log_density = dt_log_unormalised_density - jnp.mean(
         dt_log_unormalised_density, axis=-1, keepdims=True
     )
+    dt_log_density = jnp.clip(dt_log_density, -dt_log_density_clip, dt_log_density_clip)
 
     dss = jnp.diff(ts, append=1.0)
     epsilons = time_batched_epsilon(v_theta, xs, dt_log_density, ts, dss, score_fn)
-    
+
     # jax.debug.print("dt_log_density {dt_log_density}, dt_log_unormalised_density {dt_log_unormalised_density}", dt_log_density=dt_log_density, dt_log_unormalised_density=dt_log_unormalised_density)
     if enable_shortcut:
         short_cut_loss = time_batched_shortcut_loss(v_theta, cxs, ts, ds, shift_fn)
@@ -1891,11 +1928,11 @@ def train_velocity_field(
     target: str = "gmm",
     eval_every: int = 20,
     shortcut: bool = True,
+    dt_log_density_clip: float = 1000.0,
     **kwargs: Any,
 ) -> Any:
     if not shortcut:
         eval_steps = [T]
-
 
     path_distribution = AnnealedDistribution(
         initial_distribution=initial_density,
@@ -1937,6 +1974,7 @@ def train_velocity_field(
             score_fn=path_distribution.score_fn,
             shift_fn=shift_fn,
             enable_shortcut=shortcut,
+            dt_log_density_clip=dt_log_density_clip,
         )
         updates, opt_state = optimizer.update(grads, opt_state, v_theta)
         v_theta = eqx.apply_updates(v_theta, updates)
@@ -2136,8 +2174,12 @@ def main():
     parser.add_argument("--initial-sigma", type=float, default=20.0)
     parser.add_argument("--eval-steps", type=int, nargs="+", default=[4, 8, 16, 32])
     parser.add_argument("--network", type=str, default="mlp", choices=["mlp", "pdn"])
+    parser.add_argument("--dt-pt-clip", type=float, default=1000.0)
     parser.add_argument(
-        "--target", type=str, default="gmm", choices=["gmm", "mw32", "dw4", "lj13", "dw4o"]
+        "--target",
+        type=str,
+        default="gmm",
+        choices=["gmm", "mw32", "dw4", "lj13", "dw4o"],
     )
     parser.add_argument(
         "--d-distribution", type=str, choices=["uniform", "log"], default="uniform"
@@ -2179,18 +2221,24 @@ def main():
         input_dim = 2
         key, subkey = jax.random.split(key)
         # Initialize distributions
-        initial_density = MultivariateGaussian(mean=jnp.zeros(input_dim), dim=input_dim, sigma=args.initial_sigma)
+        initial_density = MultivariateGaussian(
+            mean=jnp.zeros(input_dim), dim=input_dim, sigma=args.initial_sigma
+        )
         target_density = GMM(subkey, dim=input_dim)
     elif args.target == "mw32":
         input_dim = 32
         key, subkey = jax.random.split(key)
-        initial_density = MultivariateGaussian(mean=jnp.zeros(input_dim), dim=input_dim, sigma=args.initial_sigma)
+        initial_density = MultivariateGaussian(
+            mean=jnp.zeros(input_dim), dim=input_dim, sigma=args.initial_sigma
+        )
         target_density = ManyWellEnergy(dim=input_dim)
     elif args.target == "dw4":
         input_dim = 8
         key, subkey = jax.random.split(key)
         # initial_density = MultivariateGaussian(dim=input_dim, sigma=args.initial_sigma)
-        initial_density = TranslationInvariantGaussian(N=4, D=2, sigma=args.initial_sigma, wrap=False)
+        initial_density = TranslationInvariantGaussian(
+            N=4, D=2, sigma=args.initial_sigma, wrap=False
+        )
         target_density = MultiDoubleWellEnergy(
             dim=input_dim,
             n_particles=4,
@@ -2198,12 +2246,15 @@ def main():
             data_path_val="val_split_DW4.npy",
             key=subkey,
         )
+
         def shift_fn(x):
             return x - jnp.mean(x, axis=0, keepdims=True)
     elif args.target == "dw4o":
         input_dim = 8
         key, subkey = jax.random.split(key)
-        initial_density = MultivariateGaussian(mean=jnp.zeros(input_dim), dim=input_dim, sigma=args.initial_sigma)
+        initial_density = MultivariateGaussian(
+            mean=jnp.zeros(input_dim), dim=input_dim, sigma=args.initial_sigma
+        )
         target_density = MultiDoubleWellEnergy(
             dim=input_dim,
             n_particles=4,
@@ -2214,6 +2265,7 @@ def main():
     elif args.target == "lj13":
         input_dim = 39
         key, subkey = jax.random.split(key)
+
         target_density = LennardJonesEnergy(
             dim=input_dim,
             n_particles=13,
@@ -2224,10 +2276,12 @@ def main():
         )
 
         key, subkey = jax.random.split(key)
-        initial_density = GMMPrior(key=subkey, dim=input_dim, n_mixes=40, prior_data=target_density._train_set)
+        initial_density = GMMPrior(
+            key=subkey, dim=input_dim, n_mixes=40, prior_data=target_density._train_set
+        )
 
         # def shift_fn(x):
-            # return x - jnp.mean(x, axis=0, keepdims=True)
+        # return x - jnp.mean(x, axis=0, keepdims=True)
 
     # Initialize velocity field
     key, model_key = jax.random.split(key)
@@ -2276,9 +2330,14 @@ def main():
                 "target": args.target,
                 "network": args.network,
                 "shortcut": args.shortcut,
+                "dt_log_density_clip": args.dt_pt_clip,
             },
             reinit=True,
-            tags=[args.target, args.network, "shortcut" if args.shortcut else "no_shortcut"],
+            tags=[
+                args.target,
+                args.network,
+                "shortcut" if args.shortcut else "no_shortcut",
+            ],
         )
 
     # Train model
@@ -2311,6 +2370,7 @@ def main():
         eval_every=args.eval_every,
         network=args.network,
         shortcut=args.shortcut,
+        dt_log_density_clip=args.dt_pt_clip,
     )
 
 
