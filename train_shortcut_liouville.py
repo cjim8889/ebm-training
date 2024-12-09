@@ -493,6 +493,209 @@ class LennardJonesEnergy(Target):
         return fig
 
 
+class TranslationInvariantGaussian(Target):
+    def __init__(
+        self,
+        N: int = 3,
+        D: int = 2,
+        sigma: float = 1.0,
+        box_size: Optional[jnp.ndarray] = None,  # [D] or scalar for isotropic
+        plot_bound_factor: float = 3.0,
+        num_shift: int = 3,
+        wrap: bool = False,
+        **kwargs,
+    ):
+        """
+        Initializes the Translation-Invariant Gaussian distribution.
+
+        Args:
+            N (int): Number of points.
+            D (int): Dimensionality of each point.
+            sigma (float or array-like): Standard deviation. Scalar for isotropic, or array of shape [D].
+            box_size (Optional[jnp.ndarray]): Size of the periodic box. If None, wrapping is disabled.
+            plot_bound_factor (float): Factor to determine plot boundaries based on sigma.
+            num_shift (int): Number of shifts per dimension for wrapping.
+            wrap (bool): Whether to apply periodic boundary conditions.
+            **kwargs: Additional keyword arguments.
+        """
+        super().__init__(
+            dim=N * D,
+            log_Z=0.0,  # Not used since it's a wrapped Gaussian
+            can_sample=True,
+            n_plots=1,
+            n_model_samples_eval=1000,
+            n_target_samples_eval=1000,
+            **kwargs,
+        )
+
+        self.N = N
+        self.D = D
+        self.wrap = wrap
+        self.num_shift = num_shift
+
+        # Handle sigma
+        self.sigma = jnp.asarray(sigma)
+        if self.sigma.ndim == 0:
+            # Scalar sigma: isotropic covariance
+            self.scale_diag = jnp.full((D,), self.sigma)
+        else:
+            # Per-dimension sigma
+            if self.sigma.shape[0] != D:
+                raise ValueError(
+                    f"Sigma shape {self.sigma.shape} does not match dimension {D}."
+                )
+            self.scale_diag = self.sigma
+
+        # Handle box_size
+        if self.wrap:
+            if box_size is None:
+                raise ValueError("box_size must be provided if wrap is True.")
+            self.box_size = jnp.asarray(box_size)
+            if self.box_size.shape == ():
+                # Scalar box size: same for all dimensions
+                self.box_size = jnp.full((D,), self.box_size)
+            elif self.box_size.shape[0] != D:
+                raise ValueError(
+                    f"box_size shape {self.box_size.shape} does not match dimension {D}."
+                )
+        else:
+            self.box_size = None
+
+        # Degrees of freedom: (N-1)*D
+        self.degrees_of_freedom = (self.N - 1) * self.D
+
+        # Normalizing constant
+        self.log_normalizing_constant = (
+            -0.5 * self.degrees_of_freedom * jnp.log(2 * jnp.pi)
+            - jnp.sum(jnp.log(self.scale_diag))
+        )
+
+        # Initialize the Multivariate Normal Distribution
+        # We model the N*D variables, but enforce mean zero in log_prob and sampling
+        self.distribution = distrax.MultivariateNormalDiag(
+            loc=jnp.zeros(self.N * self.D),
+            scale_diag=jnp.tile(self.scale_diag, (self.N,))
+        )
+
+        # Determine plot bounds based on sigma
+        if self.sigma.ndim == 0:
+            bound = self.sigma * plot_bound_factor
+        else:
+            bound = jnp.max(self.sigma) * plot_bound_factor
+        self._plot_bound = float(bound)
+
+        if self.wrap:
+            # Prepare shifts for periodic boundary conditions
+            # For simplicity, assume shifts are the same across all dimensions
+            k = jnp.arange(-self.num_shift, self.num_shift + 1)
+            shifts = jnp.stack(jnp.meshgrid(*([k] * self.D), indexing='ij'), axis=-1)
+            self.kL = shifts.reshape(-1, self.D) * self.box_size  # Shape: [(2*num_shift+1)^D, D]
+        else:
+            self.kL = None
+
+    def remove_mean(self, x: chex.Array) -> chex.Array:
+        """
+        Removes the mean across the N points.
+
+        Args:
+            x (chex.Array): Input array of shape [N, D].
+
+        Returns:
+            chex.Array: Mean-zero projected array of shape [N, D].
+        """
+        mean = jnp.mean(x, axis=0, keepdims=True)  # Shape: [1, D]
+        return x - mean  # Broadcasting
+
+    def log_prob(self, x: chex.Array) -> float:
+        """
+        Computes the log-probability of the input under the translation-invariant Gaussian.
+
+        Args:
+            x (chex.Array): Input array of shape [N, D].
+
+        Returns:
+            float: Log-probability of the input.
+        """
+        x = x.reshape(self.N, self.D)  # Shape: [N, D]
+        # Remove mean to enforce mean-zero constraint
+        x_centered = self.remove_mean(x)  # Shape: [N, D]
+
+        # Compute sum of squares
+        r2 = jnp.sum(x_centered ** 2)  # Scalar
+
+        # Compute log-probability
+        log_px = -0.5 * r2 + self.log_normalizing_constant  # Scalar
+
+        if self.wrap:
+            # If wrapping is enabled, sum over all possible shifts
+            # This accounts for periodic boundary conditions
+            # Compute log_prob for each shifted configuration and use log-sum-exp
+
+            # Add shifts to the sample
+            # x_shifted has shape [(num_shifts)^D, N, D]
+            x_shifted = x_centered[None, :, :] + self.kL[:, None, :]  # Broadcasting
+
+            # Remove mean again after shifting
+            x_shifted = self.remove_mean(x_shifted.reshape(-1, self.D))  # Shape: [num_shifts^D, D]
+            # Reshape back to [num_shifts^D, N, D]
+            x_shifted = x_shifted.reshape(-1, self.N, self.D)
+
+            # Compute sum of squares for each shifted sample
+            r2_shifted = jnp.sum(x_shifted ** 2, axis=(1, 2))  # Shape: [num_shifts^D]
+
+            # Compute log_prob for shifted samples
+            log_px_shifted = -0.5 * r2_shifted + self.log_normalizing_constant  # Shape: [num_shifts^D]
+
+            # Use log-sum-exp to aggregate probabilities
+            max_log_px = jnp.max(log_px_shifted)  # Scalar
+            log_px = max_log_px + jnp.log(jnp.sum(jnp.exp(log_px_shifted - max_log_px)))  # Scalar
+
+        return log_px
+
+    def sample(self, seed: chex.PRNGKey, sample_shape: chex.Shape = ()) -> chex.Array:
+        """
+        Generates samples from the translation-invariant Gaussian.
+
+        Args:
+            seed (chex.PRNGKey): Random seed.
+            sample_shape (chex.Shape): Shape of the samples to generate.
+
+        Returns:
+            chex.Array: Sampled array of shape [sample_shape, N, D].
+        """
+        # Total number of variables: N * D
+        total_sample_shape = sample_shape if isinstance(sample_shape, tuple) else (sample_shape,)
+        samples = self.distribution.sample(seed=seed, sample_shape=total_sample_shape)  # Shape: [*sample_shape, N*D]
+
+        # Reshape to [*sample_shape, N, D]
+        samples = samples.reshape(*total_sample_shape, self.N, self.D)
+
+        samples_centered = samples - jnp.mean(samples, axis=1, keepdims=True)
+
+        if self.wrap:
+            # Apply periodic boundary conditions using modulo operation
+            samples_centered = jnp.mod(samples_centered, self.box_size)
+
+
+        return samples_centered.reshape(total_sample_shape[0], -1)
+
+    def score(self, value: chex.Array) -> chex.Array:
+        """
+        Computes the gradient of the log-probability with respect to the input.
+
+        Args:
+            value (chex.Array): Input array of shape [N, D].
+
+        Returns:
+            chex.Array: Gradient array of shape [N, D].
+        """
+        # Compute gradient
+        return jax.grad(self.log_prob)(value)
+    
+    def visualise(self, samples) -> plt.Figure:
+        raise NotImplementedError
+
+
 class WrappedMultivariateGaussian(Target):
     def __init__(
         self,
@@ -804,7 +1007,6 @@ class MultiDoubleWellEnergy(Target):
         b: float = -4.0,
         c: float = 0.0,
         offset: float = 4.0,
-        L: float = 10.0,
     ):
         super().__init__(
             dim=dim,
@@ -827,63 +1029,69 @@ class MultiDoubleWellEnergy(Target):
         self.b = b
         self.c = c
         self.offset = offset
-        self.L = L
 
         self._val_set = self.setup_val_set()
         self._test_set = self.setup_test_set()
 
-    def multi_double_well_energy(self, x):
-        dists = compute_distances(
-            x, self.n_particles, self.n_spatial_dim, self.L
-        )
-        dists = dists - self.offset
+        self._mask = jnp.triu(jnp.ones((n_particles, n_particles), dtype=bool), k=1)
 
-        energies = self.a * dists**4 + self.b * dists**2 + self.c
+    def compute_distances(self, x, epsilon=1e-8):
+        x = x.reshape(self.n_particles, self.n_spatial_dim)
+
+        # Get indices of upper triangular pairs
+        i, j = jnp.triu_indices(self.n_particles, k=1)
+        
+        # Calculate displacements between pairs
+        dx = x[i] - x[j]
+        
+        # Compute distances
+        distances = jnp.sqrt(jnp.sum(dx**2, axis=-1) + epsilon)
+
+        return distances
+    
+    def batched_remove_mean(self, x):
+        return x - jnp.mean(x, axis=1, keepdims=True)
+     
+    def multi_double_well_energy(self, x):
+        dists = self.compute_distances(x)
+        dists = dists - self.offset        
+
+        energies = self.a * dists ** 4 + self.b * dists ** 2 + self.c
 
         total_energy = jnp.sum(energies)
         return total_energy
 
     def log_prob(self, x: chex.Array) -> chex.Array:
         return -self.multi_double_well_energy(x)
-
+    
     def score(self, x: chex.Array) -> chex.Array:
         return jax.grad(self.log_prob)(x)
 
-    def sample(
-        self, key: jax.random.PRNGKey, sample_shape: chex.Shape = ()
-    ) -> chex.Array:
-        raise NotImplementedError(
-            "Sampling is not implemented for MultiDoubleWellEnergy"
-        )
+    def sample(self, key: jax.random.PRNGKey, sample_shape: chex.Shape = ()) -> chex.Array:
+        raise NotImplementedError("Sampling is not implemented for MultiDoubleWellEnergy")
 
     def setup_test_set(self):
         data = np.load(self.data_path_test, allow_pickle=True)
-        data = data % self.L
+        data = self.batched_remove_mean(data)
         return data
-
+    
     def setup_val_set(self):
         data = np.load(self.data_path_val, allow_pickle=True)
-        data = data % self.L
+        data = self.batched_remove_mean(data)
         return data
 
     def interatomic_dist(self, x):
         x = x.reshape(-1, self.n_particles, self.n_spatial_dim)
-        distances = jax.vmap(
-            lambda x: compute_distances(
-                x, self.n_particles, self.n_spatial_dim, self.L
-            )
-        )(x)
-
+        distances = jax.vmap(lambda x: self.compute_distances(x))(x)
+        
         return distances
 
     def batched_log_prob(self, xs):
         return jax.vmap(self.log_prob)(xs)
-
+    
     def visualise(self, samples: chex.Array) -> plt.Figure:
         self.key, subkey = jax.random.split(self.key)
-        test_data_smaller = jax.random.choice(
-            subkey, self._test_set, shape=(1000,), replace=False
-        )
+        test_data_smaller = jax.random.choice(subkey, self._test_set, shape=(1000,), replace=False)
 
         fig, axs = plt.subplots(1, 2, figsize=(12, 4))
 
@@ -942,7 +1150,6 @@ class MultiDoubleWellEnergy(Target):
 
         fig.canvas.draw()
         return fig
-
 
 class AnnealedDistribution(Target):
     def __init__(
@@ -1051,11 +1258,13 @@ def euler_integrate(
     ts: jnp.ndarray,
     shift_fn: Callable[[jnp.ndarray], jnp.ndarray] = lambda x: x,
 ) -> jnp.ndarray:
+    batched_shift_fn = jax.vmap(shift_fn)
+
     def step(carry, t):
         x_prev, t_prev = carry
         d = t - t_prev
         samples = x_prev + d * jax.vmap(lambda x: v_theta(x, t, d))(x_prev)
-        samples = shift_fn(samples)
+        samples = batched_shift_fn(samples)
 
         return (samples, t), samples
 
@@ -1862,18 +2071,16 @@ def main():
         input_dim = 8
         key, subkey = jax.random.split(key)
         # initial_density = MultivariateGaussian(dim=input_dim, sigma=args.initial_sigma)
-        initial_density = WrappedMultivariateGaussian(
-            dim=input_dim, sigma=args.initial_sigma, box_size=args.box_size, num_shift=3
-        )
+        initial_density = TranslationInvariantGaussian(N=4, D=2, sigma=args.initial_sigma, wrap=False)
         target_density = MultiDoubleWellEnergy(
             dim=input_dim,
             n_particles=4,
             data_path_test="test_split_DW4.npy",
             data_path_val="val_split_DW4.npy",
             key=subkey,
-            L=args.box_size,
         )
-        shift_fn = lambda x: jnp.mod(x, args.box_size)
+        def shift_fn(x):
+            return x - jnp.mean(x, axis=0, keepdims=True)
 
     elif args.target == "lj13":
         input_dim = 39
