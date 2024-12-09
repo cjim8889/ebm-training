@@ -2107,7 +2107,7 @@ def main():
         v_theta = ShortcutTimeVelocityFieldWithPairwiseFeature(
             model_key,
             n_particles=4 if args.target in ["dw4", "dw4o"] else 13,
-            n_spatial_dim=2 if args.target == ["dw4", "dw4o"] else 3,
+            n_spatial_dim=2 if args.target in ["dw4", "dw4o"] else 3,
             hidden_dim=args.hidden_dim,
             depth=args.depth,
             L=args.box_size,
