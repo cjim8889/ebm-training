@@ -1664,7 +1664,7 @@ def epsilon(
     v = v_theta(x, t, d)
     lhs = div_v + jnp.dot(v, score)
 
-    return jnp.nan_to_num(lhs + dt_log_density, posinf=1.0, neginf=-1.0)
+    return (jnp.nan_to_num(lhs + dt_log_density, posinf=1.0, neginf=-1.0),)
 
 
 batched_epsilon = jax.vmap(epsilon, in_axes=(None, 0, 0, None, None, None))
@@ -1736,13 +1736,19 @@ def loss_fn(
     dss = jnp.diff(ts, append=1.0)
     epsilons = time_batched_epsilon(v_theta, xs, dt_log_density, ts, dss, score_fn)
 
-    # jax.debug.print("dt_log_density {dt_log_density}, dt_log_unormalised_density {dt_log_unormalised_density}", dt_log_density=dt_log_density, dt_log_unormalised_density=dt_log_unormalised_density)
+    # jax.debug.print(
+    #     "Epsilons: {epsilons} dt_log_density: {dt_log_density}",
+    #     epsilons=epsilons[:5, :5],
+    #     dt_log_density=dt_log_density[:5, :5],
+    # )
+
+    num_elements = epsilons.size
     if enable_shortcut:
         short_cut_loss = time_batched_shortcut_loss(v_theta, cxs, ts, ds, shift_fn)
 
-        return jnp.mean(epsilons**2) + short_cut_loss
+        return jnp.sqrt(jnp.sum(epsilons**2)) / num_elements + short_cut_loss
     else:
-        return jnp.mean(epsilons**2)
+        return jnp.sqrt(jnp.sum(epsilons**2)) / num_elements
 
 
 @eqx.filter_jit
@@ -1929,6 +1935,7 @@ def train_velocity_field(
     eval_every: int = 20,
     shortcut: bool = True,
     dt_log_density_clip: float = 1000.0,
+    debug: bool = False,
     **kwargs: Any,
 ) -> Any:
     if not shortcut:
@@ -2266,6 +2273,9 @@ def main():
         input_dim = 39
         key, subkey = jax.random.split(key)
 
+        initial_density = MultivariateGaussian(
+            dim=input_dim, mean=jnp.zeros(input_dim), sigma=args.initial_sigma
+        )
         target_density = LennardJonesEnergy(
             dim=input_dim,
             n_particles=13,
@@ -2275,10 +2285,10 @@ def main():
             key=subkey,
         )
 
-        key, subkey = jax.random.split(key)
-        initial_density = GMMPrior(
-            key=subkey, dim=input_dim, n_mixes=40, prior_data=target_density._train_set
-        )
+        # key, subkey = jax.random.split(key)
+        # initial_density = GMMPrior(
+        #     key=subkey, dim=input_dim, n_mixes=40, prior_data=target_density._train_set
+        # )
 
         # def shift_fn(x):
         # return x - jnp.mean(x, axis=0, keepdims=True)
