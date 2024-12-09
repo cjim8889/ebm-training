@@ -364,6 +364,7 @@ class LennardJonesEnergy(Target):
         self,
         dim: int,
         n_particles: int,
+        data_path_train: str,
         data_path_test: str,
         data_path_val: Optional[str] = None,
         key: jax.random.PRNGKey = jax.random.PRNGKey(0),
@@ -382,7 +383,9 @@ class LennardJonesEnergy(Target):
 
         self.data_path_test = data_path_test
         self.data_path_val = data_path_val
+        self.data_path_train = data_path_train
 
+        self._train_set = self.setup_train_set()
         self._test_set = self.setup_test_set()
         self._val_set = self.setup_val_set()
 
@@ -462,6 +465,11 @@ class LennardJonesEnergy(Target):
     def sample(self, key: jax.random.PRNGKey, sample_shape: chex.Shape = ()) -> chex.Array:
         raise NotImplementedError("Sampling is not implemented for MultiDoubleWellEnergy")
 
+    def setup_train_set(self):
+        data = np.load(self.data_path_train, allow_pickle=True)
+        data = remove_mean(jnp.array(data), self.n_particles, self.n_spatial_dim)
+        return data
+    
     def setup_test_set(self):
         data = np.load(self.data_path_test, allow_pickle=True)
         data = remove_mean(jnp.array(data), self.n_particles, self.n_spatial_dim)
@@ -1200,6 +1208,65 @@ class MultiDoubleWellEnergy(Target):
 
         fig.canvas.draw()
         return fig
+    
+class GMMPrior(Target):
+    def __init__(
+        self, 
+        key: chex.PRNGKey,
+        dim: int, 
+        n_mixes: int, 
+        prior_data: chex.Array,
+        **kwargs
+    ):
+        super().__init__(
+            dim=dim,
+            log_Z=0.0,  # Not used since it's a single Gaussian
+            can_sample=False,
+            n_plots=1,
+            n_model_samples_eval=1000,
+            n_target_samples_eval=1000,
+            **kwargs,
+        )
+
+        self.prior_data = prior_data
+
+        indices = jax.random.choice(key, jnp.arange(self.prior_data.shape[0]), shape=(n_mixes,), replace=False)
+        means = self.prior_data[indices]
+        
+        # Compute global covariance and scale it down to control spread
+        global_cov = jnp.var(self.prior_data, axis=0)  # Shape: (M*D,)
+        # Scale covariance to ensure controlled spread; adjust scaling factor as needed
+        scaling_factor = 0.5
+        covariances = jnp.tile(global_cov * scaling_factor, (n_mixes, 1))
+
+        # Define mixture weights uniformly
+        mixture_weights = jnp.ones(n_mixes) / n_mixes
+        mixture_distribution = distrax.Categorical(probs=mixture_weights)
+        
+        # Define component distributions with diagonal covariance
+        components_distribution = distrax.MultivariateNormalDiag(loc=means, scale_diag=covariances)
+        
+        # Create the mixture distribution
+        self.gmm = distrax.MixtureSameFamily(mixture_distribution, components_distribution)
+        
+    
+
+    def log_prob(self, xs: chex.Array) -> chex.Array:
+        return self.gmm.log_prob(xs)
+    
+    def score(self, value: chex.Array) -> chex.Array:
+        return jax.grad(self.log_prob)(value)
+
+    def sample(self, key: chex.PRNGKey, sample_shape: chex.Shape = ()) -> chex.Array:
+        xs = self.gmm.sample(seed=key, sample_shape=sample_shape)
+
+        return xs
+
+    def visualise(
+        self,
+        samples: chex.Array,
+    ) -> None:
+        raise NotImplementedError
 
 class AnnealedDistribution(Target):
     def __init__(
@@ -2152,15 +2219,15 @@ def main():
             n_particles=13,
             data_path_test="test_split_LJ13-1000.npy",
             data_path_val="val_split_LJ13-1000.npy",
+            data_path_train="train_split_LJ13-1000.npy",
             key=subkey,
         )
 
-        mean = target_density._test_set.reshape(-1, 39).mean(axis=0)
-        initial_density = MultivariateGaussian(mean=mean, dim=39, sigma=args.initial_sigma)
+        key, subkey = jax.random.split(key)
+        initial_density = GMMPrior(key=subkey, dim=input_dim, n_mixes=40, prior_data=target_density._train_set)
 
         # def shift_fn(x):
             # return x - jnp.mean(x, axis=0, keepdims=True)
-    
 
     # Initialize velocity field
     key, model_key = jax.random.split(key)
