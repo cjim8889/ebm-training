@@ -2071,7 +2071,11 @@ def train_velocity_field(
                     shift_fn,
                 )
         else:
-            initials = jax.random.choice(subkey, target_density._train_set, (N,))
+            initials = jax.random.choice(subkey, target_density._train_set, (N // 2,))
+            key, subkey = jax.random.split(key)
+            random_initials = path_distribution.sample_initial(subkey, ((N - N // 2),))
+
+            initials = jnp.concatenate([initials, random_initials], axis=0)
             key, subkey = jax.random.split(key)
             samples = generate_samples_with_hmc_correction_and_initial_values(
                 key=subkey,
