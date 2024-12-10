@@ -1554,6 +1554,21 @@ def generate_samples(
 
 
 @eqx.filter_jit
+def generate_samples_with_initial_values(
+    v_theta: Callable[[jnp.ndarray, float], jnp.ndarray],
+    initial_samples: jnp.ndarray,
+    ts: jnp.ndarray,
+    integration_fn: Callable[
+        [Callable[[jnp.ndarray, float], jnp.ndarray], jnp.ndarray, jnp.ndarray],
+        jnp.ndarray,
+    ] = euler_integrate,
+    shift_fn: Callable[[jnp.ndarray], jnp.ndarray] = lambda x: x,
+):
+    samples = integration_fn(v_theta, initial_samples, ts, shift_fn)
+    return samples
+
+
+@eqx.filter_jit
 def generate_samples_with_different_ts(
     key: jax.random.PRNGKey,
     v_theta: Callable[[jnp.ndarray, float], jnp.ndarray],
@@ -1571,6 +1586,46 @@ def generate_samples_with_different_ts(
 
     samples = [integration_fn(v_theta, initial_samples, ts, shift_fn) for ts in tss]
     return samples
+
+
+@eqx.filter_jit
+def generate_samples_with_hmc_correction_and_initial_values(
+    key: jax.random.PRNGKey,
+    v_theta: Callable[[jnp.ndarray, float], jnp.ndarray],
+    initial_samples: jnp.ndarray,
+    ts: jnp.ndarray,
+    time_dependent_log_density: Callable[[jnp.ndarray, float], float],
+    integration_fn: Callable[
+        [Callable[[jnp.ndarray, float], jnp.ndarray], jnp.ndarray, jnp.ndarray],
+        jnp.ndarray,
+    ] = euler_integrate,
+    num_steps: int = 3,
+    integration_steps: int = 3,
+    eta: float = 0.01,
+    rejection_sampling: bool = False,
+    shift_fn: Callable[[jnp.ndarray], jnp.ndarray] = lambda x: x,
+) -> jnp.ndarray:
+    initial_samps = generate_samples_with_initial_values(
+        v_theta=v_theta,
+        initial_samples=initial_samples,
+        ts=ts,
+        integration_fn=integration_fn,
+        shift_fn=shift_fn,
+    )
+
+    final_samples = time_batched_sample_hamiltonian_monte_carlo(
+        key,
+        time_dependent_log_density,
+        initial_samps,
+        ts,
+        num_steps,
+        integration_steps,
+        eta,
+        rejection_sampling,
+        shift_fn,
+    )
+
+    return final_samples
 
 
 @eqx.filter_jit
@@ -1989,30 +2044,47 @@ def train_velocity_field(
 
     for epoch in range(num_epochs):
         key, subkey = jax.random.split(key)
-        if mcmc_type == "hmc":
-            samples = generate_samples_with_hmc_correction(
+        if epoch >= 100 or target not in ["dw4", "dw4o", "lj13"]:
+            if mcmc_type == "hmc":
+                samples = generate_samples_with_hmc_correction(
+                    key=subkey,
+                    v_theta=v_theta,
+                    sample_fn=path_distribution.sample_initial,
+                    time_dependent_log_density=path_distribution.time_dependent_log_prob,
+                    num_samples=N,
+                    ts=sampled_ts,
+                    integration_fn=integrator,
+                    num_steps=num_mcmc_steps,
+                    integration_steps=num_mcmc_integration_steps,
+                    eta=eta,
+                    rejection_sampling=with_rejection_sampling,
+                    shift_fn=shift_fn,
+                )
+            else:
+                samples = generate_samples(
+                    subkey,
+                    v_theta,
+                    N,
+                    sampled_ts,
+                    path_distribution.sample_initial,
+                    integrator,
+                    shift_fn,
+                )
+        else:
+            initials = jax.random.choice(subkey, target_density._train_set, (N,))
+            key, subkey = jax.random.split(key)
+            samples = generate_samples_with_hmc_correction_and_initial_values(
                 key=subkey,
                 v_theta=v_theta,
-                sample_fn=path_distribution.sample_initial,
-                time_dependent_log_density=path_distribution.time_dependent_log_prob,
-                num_samples=N,
+                initial_samples=initials,
                 ts=sampled_ts,
+                time_dependent_log_density=path_distribution.time_dependent_log_prob,
                 integration_fn=integrator,
                 num_steps=num_mcmc_steps,
                 integration_steps=num_mcmc_integration_steps,
                 eta=eta,
                 rejection_sampling=with_rejection_sampling,
                 shift_fn=shift_fn,
-            )
-        else:
-            samples = generate_samples(
-                subkey,
-                v_theta,
-                N,
-                sampled_ts,
-                path_distribution.sample_initial,
-                integrator,
-                shift_fn,
             )
 
         epoch_loss = 0.0
