@@ -368,7 +368,8 @@ class LennardJonesEnergy(Target):
         n_particles: int,
         data_path_train: str,
         data_path_test: str,
-        data_path_val: Optional[str] = None,
+        data_path_val: str,
+        log_prob_clip: float = 100.0,
         key: jax.random.PRNGKey = jax.random.PRNGKey(0),
     ):
         super().__init__(
@@ -386,6 +387,8 @@ class LennardJonesEnergy(Target):
         self.data_path_test = data_path_test
         self.data_path_val = data_path_val
         self.data_path_train = data_path_train
+
+        self.log_prob_clip = log_prob_clip
 
         self._train_set = self.setup_train_set()
         self._test_set = self.setup_test_set()
@@ -461,7 +464,7 @@ class LennardJonesEnergy(Target):
         return lj_energy
 
     def log_prob(self, x: chex.Array) -> chex.Array:
-        return -self.compute_safe_lj_energy(x)
+        return jnp.clip(jnp.nan_to_num(-self.compute_safe_lj_energy(x), nan=0., posinf=self.log_prob_clip, neginf=-self.log_prob_clip), min=-self.log_prob_clip, max=self.log_prob_clip)
 
     def score(self, x: chex.Array) -> chex.Array:
         return jax.grad(self.log_prob)(x)
@@ -1791,19 +1794,12 @@ def loss_fn(
     dss = jnp.diff(ts, append=1.0)
     epsilons = time_batched_epsilon(v_theta, xs, dt_log_density, ts, dss, score_fn)
 
-    # jax.debug.print(
-    #     "Epsilons: {epsilons} dt_log_density: {dt_log_density}",
-    #     epsilons=epsilons[:5, :5],
-    #     dt_log_density=dt_log_density[:5, :5],
-    # )
-
-    num_elements = epsilons.size
     if enable_shortcut:
         short_cut_loss = time_batched_shortcut_loss(v_theta, cxs, ts, ds, shift_fn)
 
-        return jnp.sqrt(jnp.sum(epsilons**2)) / num_elements + short_cut_loss
+        return jnp.mean(epsilons**2) + short_cut_loss
     else:
-        return jnp.sqrt(jnp.sum(epsilons**2)) / num_elements
+        return jnp.mean(epsilons**2)
 
 
 @eqx.filter_jit
@@ -2044,7 +2040,7 @@ def train_velocity_field(
 
     for epoch in range(num_epochs):
         key, subkey = jax.random.split(key)
-        if epoch >= 100 or target not in ["dw4", "dw4o", "lj13"]:
+        if epoch >= 10 or target not in ["dw4", "dw4o", "lj13"]:
             if mcmc_type == "hmc":
                 samples = generate_samples_with_hmc_correction(
                     key=subkey,
@@ -2258,6 +2254,7 @@ def main():
     parser.add_argument("--eval-steps", type=int, nargs="+", default=[4, 8, 16, 32])
     parser.add_argument("--network", type=str, default="mlp", choices=["mlp", "pdn"])
     parser.add_argument("--dt-pt-clip", type=float, default=1000.0)
+    parser.add_argument("--pt-clip", type=float, default=100.0)
     parser.add_argument(
         "--target",
         type=str,
@@ -2358,6 +2355,7 @@ def main():
             data_path_test="test_split_LJ13-1000.npy",
             data_path_val="val_split_LJ13-1000.npy",
             data_path_train="train_split_LJ13-1000.npy",
+            log_prob_clip=args.pt_clip,
             key=subkey,
         )
 
@@ -2417,6 +2415,7 @@ def main():
                 "network": args.network,
                 "shortcut": args.shortcut,
                 "dt_log_density_clip": args.dt_pt_clip,
+                "log_density_clip": args.pt_clip,
             },
             reinit=True,
             tags=[
