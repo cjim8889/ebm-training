@@ -19,6 +19,8 @@ from typing import Optional, Callable, Union, Tuple, Any, List
 class Target:
     """Base class for distributions"""
 
+    TIME_DEPENDENT = False
+
     def __init__(
         self,
         dim: int,
@@ -52,6 +54,12 @@ class Target:
         return self._log_Z
 
     def log_prob(self, value: chex.Array) -> chex.Array:
+        raise NotImplementedError
+
+    def time_dependent_log_prob(self, value: chex.Array, time: float) -> chex.Array:
+        raise NotImplementedError
+
+    def visualise(self, samples: chex.Array) -> plt.Figure:
         raise NotImplementedError
 
 
@@ -145,6 +153,8 @@ class Energy:
 
 
 class DoubleWellEnergy(Energy):
+    TIME_DEPENDENT = False
+
     def __init__(self):
         dim = 2
         a = -0.5
@@ -222,6 +232,8 @@ class DoubleWellEnergy(Energy):
 
 
 class ManyWellEnergy(Target):
+    TIME_DEPENDENT = False
+
     def __init__(self, dim: int = 32):
         assert dim % 2 == 0
         self.n_wells = dim // 2
@@ -358,6 +370,8 @@ class ManyWellEnergy(Target):
 
 
 class SoftCoreLennardJonesEnergy(Target):
+    TIME_DEPENDENT = False
+
     def __init__(
         self,
         key: jax.random.PRNGKey,
@@ -400,46 +414,45 @@ class SoftCoreLennardJonesEnergy(Target):
         self.min_dr = min_dr
         self.shift_fn = shift_fn
 
-
         # Generate validation set using NUTS
         # initial_position = self.initialize_position(key)
         # self._val_set, _ = self._generate_validation_set(key, initial_position)
 
     def filter_samples(self, samples, max_energy=None, max_interatomic_dist=None):
         """Filter samples based on energy and interatomic distance thresholds.
-        
+
         Args:
             samples (jnp.ndarray): Array of shape (n_samples, n_particles * n_spatial_dim)
                 containing the samples to filter
-            max_energy (float, optional): Maximum allowed energy. Samples with higher 
+            max_energy (float, optional): Maximum allowed energy. Samples with higher
                 energy will be filtered out. Defaults to None (no energy filtering).
             max_interatomic_dist (float, optional): Maximum allowed interatomic distance.
                 Samples with any pairwise distance greater than this will be filtered out.
                 Defaults to None (no distance filtering).
-                
+
         Returns:
             jnp.ndarray: Filtered samples array
             jnp.ndarray: Boolean mask indicating which samples passed the filters
         """
         n_samples = len(samples)
         mask = jnp.ones(n_samples, dtype=bool)
-        
+
         # Filter by energy if threshold provided
         if max_energy is not None:
             energies = jax.vmap(self.compute_soft_core_lj_energy)(samples)
             energy_mask = energies <= max_energy
             mask = mask & energy_mask
-            
+
         # Filter by interatomic distances if threshold provided
         if max_interatomic_dist is not None:
             # Compute pairwise distances for all samples
             distances = jax.vmap(self.compute_distances)(samples)
-            # Create mask for samples where all distances are below threshold  
+            # Create mask for samples where all distances are below threshold
             distance_mask = jnp.all(distances <= max_interatomic_dist, axis=1)
             mask = mask & distance_mask
-            
+
         return samples[mask], mask
-    
+
     def find_min_energy_position(self, initial_position, tol=1e-6):
         energy_fn = lambda x: self.compute_soft_core_lj_energy(x)
         result = minimize(energy_fn, initial_position, method="BFGS", tol=tol)
@@ -455,11 +468,24 @@ class SoftCoreLennardJonesEnergy(Target):
 
         # Center the initial position
         optimized_position = self.shift_fn(optimized_position)
-        optimized_position = remove_mean(optimized_position, self.n_particles, self.n_spatial_dim)
-        
+        optimized_position = remove_mean(
+            optimized_position, self.n_particles, self.n_spatial_dim
+        )
+
         return optimized_position
 
-    def multichain_sampling(self, key: jax.random.PRNGKey, inverse_mass_matrix=None, num_chains=10, step_size=0.01, num_samples=1000, num_warmup=1000, thinning=10, num_integration_steps=10, divergence_threshold=10000):
+    def multichain_sampling(
+        self,
+        key: jax.random.PRNGKey,
+        inverse_mass_matrix=None,
+        num_chains=10,
+        step_size=0.01,
+        num_samples=1000,
+        num_warmup=1000,
+        thinning=10,
+        num_integration_steps=10,
+        divergence_threshold=10000,
+    ):
         """Generate multiple chains using NUTS sampler"""
 
         keys = jax.random.split(key, num_chains)
@@ -469,21 +495,50 @@ class SoftCoreLennardJonesEnergy(Target):
             inverse_mass_matrix = jnp.ones(self.dim)
 
         keys = jax.random.split(keys[0], num_chains)
-        samples = jax.vmap(lambda key, initial_position: self._generate_validation_set(key, initial_position, inverse_mass_matrix, step_size, num_samples, num_warmup, thinning, num_integration_steps, divergence_threshold)[0])(keys, initial_positions)
-        
+        samples = jax.vmap(
+            lambda key, initial_position: self._generate_validation_set(
+                key,
+                initial_position,
+                inverse_mass_matrix,
+                step_size,
+                num_samples,
+                num_warmup,
+                thinning,
+                num_integration_steps,
+                divergence_threshold,
+            )[0]
+        )(keys, initial_positions)
+
         return samples.reshape(-1, self.dim)
-    
+
     @eqx.filter_jit
-    def _generate_validation_set(self, key: jax.random.PRNGKey, initial_position, inverse_mass_matrix=None, step_size=0.01, num_samples=1000, num_warmup=1000, thinning=10, num_integration_steps=10, divergence_threshold=10000):
+    def _generate_validation_set(
+        self,
+        key: jax.random.PRNGKey,
+        initial_position,
+        inverse_mass_matrix=None,
+        step_size=0.01,
+        num_samples=1000,
+        num_warmup=1000,
+        thinning=10,
+        num_integration_steps=10,
+        divergence_threshold=10000,
+    ):
         """Generate validation set using NUTS sampler"""
         if inverse_mass_matrix is None:
             inverse_mass_matrix = jnp.ones(self.dim)
         # Setup NUTS sampler
-        nuts = blackjax.hmc(self.log_prob, inverse_mass_matrix=inverse_mass_matrix, divergence_threshold=divergence_threshold, step_size=step_size, num_integration_steps=num_integration_steps)
+        nuts = blackjax.hmc(
+            self.log_prob,
+            inverse_mass_matrix=inverse_mass_matrix,
+            divergence_threshold=divergence_threshold,
+            step_size=step_size,
+            num_integration_steps=num_integration_steps,
+        )
         nuts = nuts._replace(
             step=remove_mean_decorator(nuts.step, self.n_particles, self.n_spatial_dim)
         )
-        
+
         initial_state = nuts.init(initial_position)
 
         @jax.jit
@@ -496,16 +551,20 @@ class SoftCoreLennardJonesEnergy(Target):
         keys = jax.random.split(key, num_samples + num_warmup)
 
         initial_state, initial_info = nuts.step(keys[0], initial_state)
-        (final_state, final_info), samples = jax.lax.scan(one_step, (initial_state, initial_info), keys)
-        
+        (final_state, final_info), samples = jax.lax.scan(
+            one_step, (initial_state, initial_info), keys
+        )
+
         # Apply thinning and discard warmup
         samples = samples[num_warmup:]
         samples = samples[::thinning]
 
         # Apply shift function and center of mass correction
         samples = self.shift_fn(samples)
-        samples = jax.vmap(lambda samples: remove_mean(samples, self.n_particles, self.n_spatial_dim))(samples)
-        
+        samples = jax.vmap(
+            lambda samples: remove_mean(samples, self.n_particles, self.n_spatial_dim)
+        )(samples)
+
         return samples, final_info
 
     def compute_distances(self, x, epsilon=1e-8):
@@ -517,10 +576,12 @@ class SoftCoreLennardJonesEnergy(Target):
         dx = x[i] - x[j]
 
         # Compute distances with minimum cutoff
-        distances = jnp.maximum(jnp.sqrt(jnp.sum(dx**2, axis=-1) + epsilon), self.min_dr)
+        distances = jnp.maximum(
+            jnp.sqrt(jnp.sum(dx**2, axis=-1) + epsilon), self.min_dr
+        )
 
         return distances
-        
+
     def soft_core_lennard_jones_potential(
         self, pairwise_dr: jnp.ndarray
     ) -> jnp.ndarray:
@@ -551,7 +612,7 @@ class SoftCoreLennardJonesEnergy(Target):
 
     def batched_log_prob(self, xs):
         return jax.vmap(self.log_prob)(xs)
-    
+
     def sample(self, key: jax.random.PRNGKey, sample_shape: chex.Shape) -> chex.Array:
         """Not implemented as sampling directly is difficult."""
         raise NotImplementedError("Direct sampling from LJ potential not implemented")
@@ -561,7 +622,7 @@ class SoftCoreLennardJonesEnergy(Target):
         x = x.reshape(-1, self.n_particles * self.n_spatial_dim)
         distances = jax.vmap(lambda x: self.compute_distances(x))(x)
         return distances
-    
+
     def visualise(self, samples: chex.Array, compare: bool = False) -> plt.Figure:
         """Visualize samples against validation set"""
         dist_samples = self.interatomic_dist(samples)
@@ -609,7 +670,7 @@ class SoftCoreLennardJonesEnergy(Target):
             axs[1].hist(
                 energy_samples,
                 bins=100,
-                density=True, 
+                density=True,
                 alpha=0.4,
                 range=(energy_test.min(), energy_test.max()),
                 color="r",
@@ -656,6 +717,8 @@ def remove_mean(x, n_particles, n_spatial_dim):
 
 
 class LennardJonesEnergy(Target):
+    TIME_DEPENDENT = False
+
     def __init__(
         self,
         dim: int,
@@ -758,7 +821,16 @@ class LennardJonesEnergy(Target):
         return lj_energy
 
     def log_prob(self, x: chex.Array) -> chex.Array:
-        return jnp.clip(jnp.nan_to_num(-self.compute_safe_lj_energy(x), nan=0., posinf=self.log_prob_clip, neginf=-self.log_prob_clip), min=-self.log_prob_clip, max=self.log_prob_clip)
+        return jnp.clip(
+            jnp.nan_to_num(
+                -self.compute_safe_lj_energy(x),
+                nan=0.0,
+                posinf=self.log_prob_clip,
+                neginf=-self.log_prob_clip,
+            ),
+            min=-self.log_prob_clip,
+            max=self.log_prob_clip,
+        )
 
     def score(self, x: chex.Array) -> chex.Array:
         return jax.grad(self.log_prob)(x)
@@ -860,6 +932,8 @@ class LennardJonesEnergy(Target):
 
 
 class TranslationInvariantGaussian(Target):
+    TIME_DEPENDENT = False
+
     def __init__(
         self,
         N: int = 3,
@@ -1073,6 +1147,8 @@ class TranslationInvariantGaussian(Target):
 
 
 class WrappedMultivariateGaussian(Target):
+    TIME_DEPENDENT = False
+
     def __init__(
         self,
         dim: int = 2,
@@ -1222,6 +1298,8 @@ class WrappedMultivariateGaussian(Target):
 
 
 class MultivariateGaussian(Target):
+    TIME_DEPENDENT = False
+
     def __init__(
         self,
         dim: int = 2,
@@ -1261,6 +1339,8 @@ class MultivariateGaussian(Target):
 
 
 class GMM(Target):
+    TIME_DEPENDENT = False
+
     def __init__(
         self,
         key: chex.PRNGKey,
@@ -1375,6 +1455,8 @@ def compute_distances(x, n_particles, n_dimensions, epsilon=1e-8):
 
 # MultiDoubleWellEnergy class conforming to Target interface
 class MultiDoubleWellEnergy(Target):
+    TIME_DEPENDENT = False
+
     def __init__(
         self,
         dim: int,
@@ -1537,7 +1619,166 @@ class MultiDoubleWellEnergy(Target):
         return fig
 
 
+class TimeDependentLennardJonesEnergy(Target):
+    TIME_DEPENDENT = True
+
+    def __init__(
+        self,
+        dim: int,
+        n_particles: int,
+        alpha: float = 0.5,
+        sigma: float = 1.0,
+        epsilon_val: float = 1.0,
+        min_dr: float = 1e-4,
+    ):
+        super().__init__(
+            dim=dim,
+            log_Z=None,
+            can_sample=False,
+            n_plots=10,
+            n_model_samples_eval=1000,
+            n_target_samples_eval=None,
+        )
+        self.n_particles = n_particles
+        self.n_spatial_dim = dim // n_particles
+
+        self.alpha = alpha
+        self.sigma = sigma
+        self.epsilon_val = epsilon_val
+        self.min_dr = min_dr
+
+    def time_dependent_lennard_jones_potential(
+        self,
+        pairwise_dr: jnp.ndarray,
+        t: float,
+    ) -> jnp.ndarray:
+        """
+        Compute the time-dependent Lennard-Jones potential.
+
+        Args:
+            pairwise_dr (jnp.ndarray): Pairwise distances of shape [n_pairs].
+            t (float): Time parameter, influencing the strength of the potential.
+
+        Returns:
+            jnp.ndarray: Time-dependent Lennard-Jones potential energy of shape [].
+        """
+        # Compute (sigma / r)^6 and (sigma / r)^12
+        inv_r6 = (self.sigma / (pairwise_dr + self.alpha * (1 - t))) ** 6
+        inv_r12 = inv_r6**2
+
+        # Compute LJ potential: 4 * epsilon * (inv_r12 - inv_r6)
+        lj_energy = 4 * self.epsilon_val * (inv_r12 - inv_r6)
+
+        # Sum over all pairs to get total energy per sample
+        total_lj_energy = jnp.sum(lj_energy, axis=-1)
+
+        return total_lj_energy
+
+    def compute_distances(self, x, epsilon=1e-8):
+        x = x.reshape(self.n_particles, self.n_spatial_dim)
+
+        # Get indices of upper triangular pairs
+        i, j = jnp.triu_indices(self.n_particles, k=1)
+
+        # Calculate displacements between pairs
+        dx = x[i] - x[j]
+
+        # Compute distances
+        distances = jnp.maximum(
+            jnp.sqrt(jnp.sum(dx**2, axis=-1) + epsilon), self.min_dr
+        )
+
+        return distances
+
+    def compute_time_dependent_lj_energy(
+        self,
+        x: jnp.ndarray,
+        t: float,
+    ) -> jnp.ndarray:
+        """
+        Compute the total time-dependent Lennard-Jones energy for a batch of samples.
+
+        Args:
+            x (jnp.ndarray): Input array of shape [n_particles * n_spatial_dim].
+            t (float): Time parameter.
+
+        Returns:
+            jnp.ndarray: Total time-dependent Lennard-Jones energy.
+        """
+        pairwise_dr = self.compute_distances(
+            x.reshape(self.n_particles, self.n_spatial_dim)
+        )
+        lj_energy = self.time_dependent_lennard_jones_potential(pairwise_dr, t)
+        return lj_energy
+
+    def log_prob(self, x: chex.Array) -> chex.Array:
+        return -self.compute_time_dependent_lj_energy(x, 1.0)
+
+    def time_dependent_log_prob(self, x: chex.Array, t: float) -> chex.Array:
+        return -self.compute_time_dependent_lj_energy(x, t)
+
+    def score(self, x: chex.Array, t: float) -> chex.Array:
+        return jax.grad(self.log_prob, argnums=0)(x, t)
+
+    def sample(
+        self, key: jax.random.PRNGKey, sample_shape: chex.Shape = ()
+    ) -> chex.Array:
+        raise NotImplementedError(
+            "Sampling is not implemented for TimeDependentLennardJonesEnergy"
+        )
+
+    def interatomic_dist(self, x):
+        x = x.reshape(-1, self.n_particles, self.n_spatial_dim)
+        distances = jax.vmap(lambda x: self.compute_distances(x))(x)
+
+        return distances
+
+    def batched_log_prob(self, xs, t):
+        return jax.vmap(self.time_dependent_log_prob, in_axes=(0, None))(xs, t)
+
+    def visualise(self, samples: chex.Array) -> plt.Figure:
+        # Since we don't have a test set, we will just visualize the samples
+        fig, axs = plt.subplots(1, 2, figsize=(12, 4))
+
+        dist_samples = self.interatomic_dist(samples)
+
+        axs[0].hist(
+            dist_samples.flatten(),
+            bins=100,
+            alpha=0.5,
+            density=True,
+            histtype="step",
+            linewidth=4,
+        )
+        axs[0].set_xlabel("Interatomic distance")
+        axs[0].legend(["Generated data"])
+
+        energy_samples = -self.batched_log_prob(samples, 1.0)
+
+        min_energy = -26
+        max_energy = 0
+
+        axs[1].hist(
+            energy_samples,
+            bins=100,
+            density=True,
+            alpha=0.4,
+            range=(min_energy, max_energy),
+            color="r",
+            histtype="step",
+            linewidth=4,
+            label="Generated data",
+        )
+        axs[1].set_xlabel("Energy")
+        axs[1].legend()
+
+        fig.canvas.draw()
+        return fig
+
+
 class GMMPrior(Target):
+    TIME_DEPENDENT = False
+
     def __init__(
         self,
         key: chex.PRNGKey,
@@ -1626,7 +1867,12 @@ class AnnealedDistribution(Target):
 
     def time_dependent_log_prob(self, xs: chex.Array, t: chex.Array) -> chex.Array:
         initial_prob = (1 - t) * self.initial_distribution.log_prob(xs)
-        target_prob = t * self.target_distribution.log_prob(xs)
+
+        if self.target_distribution.TIME_DEPENDENT:
+            target_prob = t * self.target_distribution.time_dependent_log_prob(xs, t)
+        else:
+            target_prob = t * self.target_distribution.log_prob(xs)
+
         return initial_prob + target_prob
 
     def time_derivative(self, xs: chex.Array, t: float) -> chex.Array:
@@ -2073,7 +2319,7 @@ def loss_fn(
     score_fn: Callable[[chex.Array, float], chex.Array],
     shift_fn: Callable[[chex.Array], chex.Array],
     enable_shortcut: bool = True,
-    dt_log_density_clip: float = 1000.0,
+    dt_log_density_clip: Optional[float] = None,
 ) -> float:
     dt_log_unormalised_density = jax.vmap(
         lambda xs, t: jax.vmap(lambda x: time_derivative_log_density(x, t))(xs),
@@ -2083,7 +2329,11 @@ def loss_fn(
     dt_log_density = dt_log_unormalised_density - jnp.mean(
         dt_log_unormalised_density, axis=-1, keepdims=True
     )
-    dt_log_density = jnp.clip(dt_log_density, -dt_log_density_clip, dt_log_density_clip)
+
+    if dt_log_density_clip is not None:
+        dt_log_density = jnp.clip(
+            dt_log_density, -dt_log_density_clip, dt_log_density_clip
+        )
 
     dss = jnp.diff(ts, append=1.0)
     epsilons = time_batched_epsilon(v_theta, xs, dt_log_density, ts, dss, score_fn)
@@ -2279,7 +2529,7 @@ def train_velocity_field(
     target: str = "gmm",
     eval_every: int = 20,
     shortcut: bool = True,
-    dt_log_density_clip: float = 1000.0,
+    dt_log_density_clip: Optional[float] = None,
     debug: bool = False,
     **kwargs: Any,
 ) -> Any:
@@ -2483,7 +2733,13 @@ def train_velocity_field(
                         plt.show()
 
                     plt.close(fig)
-                elif target == "dw4" or target == "dw4o" or target == "lj13" or target == "sclj13":
+                elif (
+                    target == "dw4"
+                    or target == "dw4o"
+                    or target == "lj13"
+                    or target == "sclj13"
+                    or target == "tlj13"
+                ):
                     key, subkey = jax.random.split(key)
                     fig = target_density.visualise(val_samples[i][-1][:1024])
                     # key, subkey = jax.random.split(key)
@@ -2547,13 +2803,13 @@ def main():
     parser.add_argument("--initial-sigma", type=float, default=20.0)
     parser.add_argument("--eval-steps", type=int, nargs="+", default=[4, 8, 16, 32])
     parser.add_argument("--network", type=str, default="mlp", choices=["mlp", "pdn"])
-    parser.add_argument("--dt-pt-clip", type=float, default=1000.0)
+    parser.add_argument("--dt-pt-clip", type=float, default=None)
     parser.add_argument("--pt-clip", type=float, default=100.0)
     parser.add_argument(
         "--target",
         type=str,
         default="gmm",
-        choices=["gmm", "mw32", "dw4", "lj13", "sclj13", "dw4o"],
+        choices=["gmm", "mw32", "dw4", "lj13", "sclj13", "dw4o", "tlj13"],
     )
     parser.add_argument(
         "--d-distribution", type=str, choices=["uniform", "log"], default="uniform"
@@ -2652,6 +2908,20 @@ def main():
             log_prob_clip=args.pt_clip,
             key=subkey,
         )
+    elif args.target == "tlj13":
+        input_dim = 39
+        key, subkey = jax.random.split(key)
+
+        initial_density = MultivariateGaussian(
+            dim=input_dim, mean=jnp.zeros(input_dim), sigma=args.initial_sigma
+        )
+        target_density = TimeDependentLennardJonesEnergy(
+            dim=input_dim,
+            n_particles=13,
+            alpha=0.5,
+            min_dr=1e-4,
+        )
+
     elif args.target == "sclj13":
         input_dim = 39
         key, subkey = jax.random.split(key)
@@ -2663,8 +2933,8 @@ def main():
             key=subkey,
             dim=input_dim,
             n_particles=13,
-            sigma=1.,
-            epsilon_val=1.,
+            sigma=1.0,
+            epsilon_val=1.0,
             alpha=0.1,
             shift_fn=shift_fn,
             min_dr=1e-3,
