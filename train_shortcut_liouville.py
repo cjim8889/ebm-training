@@ -2919,7 +2919,7 @@ def main():
             dim=input_dim,
             n_particles=13,
             alpha=0.5,
-            min_dr=1e-4,
+            min_dr=1e-3,
         )
 
     elif args.target == "sclj13":
