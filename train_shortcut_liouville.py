@@ -1755,8 +1755,8 @@ class TimeDependentLennardJonesEnergy(Target):
 
         energy_samples = -self.batched_log_prob(samples, 1.0)
 
-        min_energy = -26
-        max_energy = 0
+        min_energy = -100
+        max_energy = 100
 
         axs[1].hist(
             energy_samples,
