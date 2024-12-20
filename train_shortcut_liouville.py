@@ -2470,8 +2470,8 @@ def kernelized_stein_discrepancy(X, score_function, kernel_func, gamma=1.0):
     return stein_terms / (n**2)
 
 
-def inverse_power_schedule(T=64, gamma=0.5):
-    x_pow = jnp.linspace(0, 1, T)
+def inverse_power_schedule(T=64, end_time=1.0, gamma=0.5):
+    x_pow = jnp.linspace(0, end_time, T)
     t_pow = 1 - x_pow**gamma
     return jnp.flip(t_pow)
 
@@ -2509,6 +2509,7 @@ def train_velocity_field(
     B: int = 256,
     C: int = 64,
     L: float = 10.0,
+    end_time: float = 1.0,
     num_epochs: int = 200,
     num_steps: int = 100,
     learning_rate: float = 1e-03,
@@ -2552,11 +2553,11 @@ def train_velocity_field(
     # Generate time steps
     key, subkey = jax.random.split(key)
     if schedule == "linear":
-        ts = jnp.linspace(0, 1, T)
+        ts = jnp.linspace(0, end_time, T)
     elif schedule == "inverse_power":
-        ts = inverse_power_schedule(T, gamma=0.5)
+        ts = inverse_power_schedule(T, end_time=end_time, gamma=0.5)
     else:
-        ts = jnp.linspace(0, 1, T)
+        ts = jnp.linspace(0, end_time, T)
 
     sampled_ts = ts
     if d_distribution == "log":
@@ -2836,6 +2837,7 @@ def main():
     parser.add_argument("--shortcut", action="store_true")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--eval-every", type=int, default=20)
+    parser.add_argument("--end-time", type=float, default=1.0)
     args = parser.parse_args()
 
     if args.debug:
@@ -2918,7 +2920,7 @@ def main():
         target_density = TimeDependentLennardJonesEnergy(
             dim=input_dim,
             n_particles=13,
-            alpha=0.5,
+            alpha=2.,
             min_dr=1e-3,
         )
 
@@ -2997,6 +2999,7 @@ def main():
                 "shortcut": args.shortcut,
                 "dt_log_density_clip": args.dt_pt_clip,
                 "log_density_clip": args.pt_clip,
+                "end_time": args.end_time,
             },
             reinit=True,
             tags=[
@@ -3037,6 +3040,7 @@ def main():
         network=args.network,
         shortcut=args.shortcut,
         dt_log_density_clip=args.dt_pt_clip,
+        end_time=args.end_time,
     )
 
 
