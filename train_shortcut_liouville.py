@@ -1772,7 +1772,6 @@ class TimeDependentLennardJonesEnergy(Target):
         axs[1].set_xlabel("Energy")
         axs[1].legend()
 
-        fig.canvas.draw()
         return fig
 
 
@@ -2509,7 +2508,11 @@ def train_velocity_field(
     B: int = 256,
     C: int = 64,
     L: float = 10.0,
-    end_time: float = 1.0,
+    enable_end_time_progression: bool = False,
+    target_end_time: float = 1.0,  # Final target end time
+    initial_end_time: float = 0.2,  # Starting end time
+    end_time_steps: int = 5,  # Number of steps to reach target end time
+    update_end_time_every: int = 200,  # Update frequency in epochs
     num_epochs: int = 200,
     num_steps: int = 100,
     learning_rate: float = 1e-03,
@@ -2543,23 +2546,22 @@ def train_velocity_field(
         dim=initial_density.dim,
     )
 
+    # Initialize current end time
+    if enable_end_time_progression:
+        end_time_steps = jnp.linspace(initial_end_time, target_end_time, end_time_steps)
+        current_end_time = float(end_time_steps[0])
+        current_end_time_idx = -1
+    else:
+        current_end_time = target_end_time
+
     # Set up optimizer
     gradient_clipping = optax.clip_by_global_norm(gradient_norm)
     base_optimizer = get_optimizer(optimizer, learning_rate)
     optimizer = optax.chain(gradient_clipping, base_optimizer)
     opt_state = optimizer.init(eqx.filter(v_theta, eqx.is_inexact_array))
-
     integrator = euler_integrate
-    # Generate time steps
-    key, subkey = jax.random.split(key)
-    if schedule == "linear":
-        ts = jnp.linspace(0, end_time, T)
-    elif schedule == "inverse_power":
-        ts = inverse_power_schedule(T, end_time=end_time, gamma=0.5)
-    else:
-        ts = jnp.linspace(0, end_time, T)
 
-    sampled_ts = ts
+    # Set up shortcut distribution
     if d_distribution == "log":
         d_dis = 1.0 / jnp.array(
             [2**e for e in range(int(jnp.floor(jnp.log2(128))) + 1)]
@@ -2584,52 +2586,52 @@ def train_velocity_field(
         return v_theta, opt_state, loss
 
     for epoch in range(num_epochs):
-        key, subkey = jax.random.split(key)
-        if epoch >= 10 or target not in ["dw4", "dw4o", "lj13"]:
-            if mcmc_type == "hmc":
-                samples = generate_samples_with_hmc_correction(
-                    key=subkey,
-                    v_theta=v_theta,
-                    sample_fn=path_distribution.sample_initial,
-                    time_dependent_log_density=path_distribution.time_dependent_log_prob,
-                    num_samples=N,
-                    ts=sampled_ts,
-                    integration_fn=integrator,
-                    num_steps=num_mcmc_steps,
-                    integration_steps=num_mcmc_integration_steps,
-                    eta=eta,
-                    rejection_sampling=with_rejection_sampling,
-                    shift_fn=shift_fn,
-                )
-            else:
-                samples = generate_samples(
-                    subkey,
-                    v_theta,
-                    N,
-                    sampled_ts,
-                    path_distribution.sample_initial,
-                    integrator,
-                    shift_fn,
-                )
-        else:
-            initials = jax.random.choice(subkey, target_density._train_set, (N // 2,))
-            key, subkey = jax.random.split(key)
-            random_initials = path_distribution.sample_initial(subkey, ((N - N // 2),))
+        # Update end time if needed
+        if epoch % update_end_time_every == 0:
+            if (
+                enable_end_time_progression
+                and current_end_time_idx < len(end_time_steps) - 1
+            ):
+                current_end_time_idx += 1
+                current_end_time = float(end_time_steps[current_end_time_idx])
 
-            initials = jnp.concatenate([initials, random_initials], axis=0)
-            key, subkey = jax.random.split(key)
-            samples = generate_samples_with_hmc_correction_and_initial_values(
+            # Update time steps based on new end time
+            if schedule == "linear":
+                current_ts = jnp.linspace(0, current_end_time, T)
+            elif schedule == "inverse_power":
+                current_ts = inverse_power_schedule(
+                    T, end_time=current_end_time, gamma=0.5
+                )
+
+            if continuous_schedule:
+                key, subkey = jax.random.split(key)
+                current_ts = sample_monotonic_uniform_ordered(subkey, current_ts, True)
+
+        key, subkey = jax.random.split(key)
+        if mcmc_type == "hmc":
+            samples = generate_samples_with_hmc_correction(
                 key=subkey,
                 v_theta=v_theta,
-                initial_samples=initials,
-                ts=sampled_ts,
+                sample_fn=path_distribution.sample_initial,
                 time_dependent_log_density=path_distribution.time_dependent_log_prob,
+                num_samples=N,
+                ts=current_ts,
                 integration_fn=integrator,
                 num_steps=num_mcmc_steps,
                 integration_steps=num_mcmc_integration_steps,
                 eta=eta,
                 rejection_sampling=with_rejection_sampling,
                 shift_fn=shift_fn,
+            )
+        else:
+            samples = generate_samples(
+                subkey,
+                v_theta,
+                N,
+                current_ts,
+                path_distribution.sample_initial,
+                integrator,
+                shift_fn,
             )
 
         epoch_loss = 0.0
@@ -2652,7 +2654,7 @@ def train_velocity_field(
             )
 
             v_theta, opt_state, loss = step(
-                v_theta, opt_state, samps, samps_cxs, sampled_ts, sampled_ds
+                v_theta, opt_state, samps, samps_cxs, current_ts, sampled_ds
             )
             epoch_loss += loss
 
@@ -2664,12 +2666,16 @@ def train_velocity_field(
 
         avg_loss = epoch_loss / num_steps
         if not offline:
-            wandb.log({"epoch": epoch, "average_loss": avg_loss})
+            wandb.log({"epoch": epoch, "average_loss": avg_loss, "end_time": current_end_time})
         else:
-            print(f"Epoch {epoch}, Average Loss: {avg_loss}")
+            print(
+                f"Epoch {epoch}, Average Loss: {avg_loss} Current End Time: {current_end_time}"
+            )
 
         if epoch % eval_every == 0:
-            tss = [jnp.linspace(0, 1, eval_step) for eval_step in eval_steps]
+            tss = [
+                jnp.linspace(0, current_end_time, eval_step) for eval_step in eval_steps
+            ]
             key, subkey = jax.random.split(key)
             val_samples = generate_samples_with_different_ts(
                 subkey,
@@ -2761,10 +2767,6 @@ def train_velocity_field(
                         plt.show()
 
                     plt.close(fig)
-        # Resample ts according to gamma range
-        if continuous_schedule:
-            key, subkey = jax.random.split(key)
-            sampled_ts = sample_monotonic_uniform_ordered(subkey, ts, True)
 
     # Save trained model to wandb
     if not offline:
@@ -2837,7 +2839,12 @@ def main():
     parser.add_argument("--shortcut", action="store_true")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--eval-every", type=int, default=20)
-    parser.add_argument("--end-time", type=float, default=1.0)
+    parser.add_argument("--target-end-time", type=float, default=1.0)
+    parser.add_argument("--initial-end-time", type=float, default=0.2)
+    parser.add_argument("--end-time-steps", type=int, default=10)
+    parser.add_argument("--update-end-time-every", type=int, default=100)
+    parser.add_argument("--enable-end-time-progression", action="store_true")
+
     args = parser.parse_args()
 
     if args.debug:
@@ -2920,7 +2927,7 @@ def main():
         target_density = TimeDependentLennardJonesEnergy(
             dim=input_dim,
             n_particles=13,
-            alpha=2.,
+            alpha=2.0,
             min_dr=1e-3,
         )
 
@@ -2999,7 +3006,11 @@ def main():
                 "shortcut": args.shortcut,
                 "dt_log_density_clip": args.dt_pt_clip,
                 "log_density_clip": args.pt_clip,
-                "end_time": args.end_time,
+                "target_end_time": args.target_end_time,
+                "initial_end_time": args.initial_end_time,
+                "end_time_steps": args.end_time_steps,
+                "update_end_time_every": args.update_end_time_every,
+                "enable_end_time_progression": args.enable_end_time_progression,
             },
             reinit=True,
             tags=[
@@ -3040,7 +3051,11 @@ def main():
         network=args.network,
         shortcut=args.shortcut,
         dt_log_density_clip=args.dt_pt_clip,
-        end_time=args.end_time,
+        target_end_time=args.target_end_time,
+        initial_end_time=args.initial_end_time,
+        end_time_steps=args.end_time_steps,
+        update_end_time_every=args.update_end_time_every,
+        enable_end_time_progression=args.enable_end_time_progression,
     )
 
 
