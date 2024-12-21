@@ -722,6 +722,7 @@ class TimeDependentLennardJonesEnergyButler(Target):
         min_dr: float = 1e-4,
         n: float = 1,
         m: float = 1,
+        c: float = 0.5,
         log_prob_clip: float = None,
     ):
         super().__init__(
@@ -741,6 +742,7 @@ class TimeDependentLennardJonesEnergyButler(Target):
         self.min_dr = min_dr
         self.n = n
         self.m = m
+        self.c = c
 
         self.log_prob_clip = log_prob_clip
 
@@ -793,6 +795,17 @@ class TimeDependentLennardJonesEnergyButler(Target):
 
         return distances
 
+    def harmonic_potential(self, x):
+        """
+        Compute the harmonic potential energy.
+
+        E^osc(x) = 1/2 * Σ ||xi - x_COM||^2
+        """
+        x = x.reshape(self.n_particles, self.n_spatial_dim)
+        x_com = jnp.mean(x, axis=0)
+        distances_to_com = jnp.linalg.norm(x - x_com, axis=-1)
+        return 0.5 * jnp.sum(distances_to_com**2)
+
     def compute_time_dependent_lj_energy(
         self,
         x: jnp.ndarray,
@@ -812,7 +825,9 @@ class TimeDependentLennardJonesEnergyButler(Target):
             x.reshape(self.n_particles, self.n_spatial_dim)
         )
         lj_energy = self.soft_core_lennard_jones_potential(pairwise_dr, t)
-        return lj_energy
+        harmonic_energy = self.harmonic_potential(x)
+
+        return lj_energy + self.c * harmonic_energy
 
     def log_prob(self, x: chex.Array) -> chex.Array:
         return -self.compute_time_dependent_lj_energy(x, 1.0)
