@@ -2827,7 +2827,7 @@ def train_velocity_field(
                 shift_fn,
             )
 
-        samples = jnp.nan_to_num(samples, nan=0.0)
+        samples = jnp.nan_to_num(samples, nan=1.0)
         epoch_loss = 0.0
 
         key, subkey = jax.random.split(key)
@@ -2991,7 +2991,6 @@ def main():
         "-L",
         type=float,
         default=10.0,
-        help="Size of the box",
     )
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--hidden-dim", type=int, default=256)
