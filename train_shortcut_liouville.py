@@ -2758,7 +2758,7 @@ def train_velocity_field(
     # Set up optimizer
     gradient_clipping = optax.clip_by_global_norm(gradient_norm)
     base_optimizer = get_optimizer(optimizer, learning_rate)
-    optimizer = optax.chain(gradient_clipping, base_optimizer)
+    optimizer = optax.chain(optax.zero_nans(), gradient_clipping, base_optimizer)
     opt_state = optimizer.init(eqx.filter(v_theta, eqx.is_inexact_array))
     integrator = euler_integrate
 
