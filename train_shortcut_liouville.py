@@ -2844,6 +2844,8 @@ def train_velocity_field(
                 shift_fn,
             )
 
+        
+        samples = jnp.nan_to_num(samples, nan=0.0, posinf=1.0, neginf=-1.0)
         epoch_loss = 0.0
 
         key, subkey = jax.random.split(key)
