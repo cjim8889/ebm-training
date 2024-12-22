@@ -2523,8 +2523,11 @@ def loss_fn(
         in_axes=(0, 0),
     )(xs, ts)
 
-    dt_log_density = dt_log_unormalised_density - jnp.mean(
-        dt_log_unormalised_density, axis=-1, keepdims=True
+    dt_log_density = jnp.nan_to_num(
+        dt_log_unormalised_density - jnp.mean(
+            dt_log_unormalised_density, axis=-1, keepdims=True
+        ),
+        nan=0.0
     )
 
     if dt_log_density_clip is not None:
@@ -2765,34 +2768,9 @@ def train_velocity_field(
             [2**e for e in range(int(jnp.floor(jnp.log2(128))) + 1)]
         )
 
-    # @eqx.filter_jit
-    # def update_step(v_theta, opt_state, grads):
-    #     updates, opt_state = optimizer.update(grads, opt_state, v_theta)
-    #     v_theta = eqx.apply_updates(v_theta, updates)
-    #     return v_theta, opt_state
-
-    # def skip_step(v_theta, opt_state, grads):  # Grads added as argument
-    #     # Skip the update, effectively leaving the model unchanged
-    #     return v_theta, opt_state
-
-    # @eqx.filter_jit
-    # def calculate_loss_and_grads(v_theta, xs, cxs, ts, ds):
-    #     loss, grads = eqx.filter_value_and_grad(loss_fn)(
-    #         v_theta,
-    #         xs,
-    #         cxs,
-    #         ts,
-    #         ds,
-    #         time_derivative_log_density=path_distribution.time_derivative,
-    #         score_fn=path_distribution.score_fn,
-    #         shift_fn=shift_fn,
-    #         enable_shortcut=shortcut,
-    #         dt_log_density_clip=dt_log_density_clip,
-    #     )
-    #     return loss, grads
     local_loss_fn = loss_fn
     local_loss_fn = jax.experimental.checkify.checkify(
-        loss_fn, errors=jax.experimental.checkify.float_checks
+        loss_fn, errors=jax.experimental.checkify.nan_checks
     )
 
     @eqx.filter_jit
