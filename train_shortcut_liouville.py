@@ -890,11 +890,20 @@ class TimeDependentLennardJonesEnergyButler(Target):
             energy_samples, nan=0.0, posinf=1000.0, neginf=-1000.0
         )
 
+        # Determine histogram range from cleaned data
+        min_energy = jnp.min(energy_samples)
+        max_energy = jnp.max(energy_samples)
+
+        # Add padding to range
+        energy_range = (min_energy - 0.1*abs(min_energy), 
+                    max_energy + 0.1*abs(max_energy))
+
         axs[1].hist(
             energy_samples,
             bins=100,
             density=True,
             alpha=0.4,
+            range=energy_range,
             color="r",
             histtype="step",
             linewidth=4,
