@@ -1,4 +1,6 @@
 import jax
+import jax.experimental
+import jax.experimental.checkify
 import jax.numpy as jnp
 import equinox as eqx
 import distrax
@@ -2788,10 +2790,14 @@ def train_velocity_field(
     #         dt_log_density_clip=dt_log_density_clip,
     #     )
     #     return loss, grads
+    local_loss_fn = loss_fn
+    local_loss_fn = jax.experimental.checkify.checkify(
+        loss_fn, errors=jax.experimental.checkify.float_checks
+    )
 
     @eqx.filter_jit
     def step(v_theta, opt_state, xs, cxs, ts, ds):
-        loss, grads = eqx.filter_value_and_grad(loss_fn)(
+        loss, grads = eqx.filter_value_and_grad(local_loss_fn)(
             v_theta,
             xs,
             cxs,
