@@ -2769,9 +2769,9 @@ def train_velocity_field(
         )
 
     local_loss_fn = loss_fn
-    local_loss_fn = jax.experimental.checkify.checkify(
-        loss_fn, errors=jax.experimental.checkify.nan_checks
-    )
+    # local_loss_fn = jax.experimental.checkify.checkify(
+    #     loss_fn, errors=jax.experimental.checkify.nan_checks
+    # )
 
     @eqx.filter_jit
     def step(v_theta, opt_state, xs, cxs, ts, ds):
