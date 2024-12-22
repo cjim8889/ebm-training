@@ -2761,6 +2761,32 @@ def train_velocity_field(
         )
 
     @eqx.filter_jit
+    def update_step(v_theta, opt_state, grads):
+        updates, opt_state = optimizer.update(grads, opt_state, v_theta)
+        v_theta = eqx.apply_updates(v_theta, updates)
+        return v_theta, opt_state
+
+    def skip_step(v_theta, opt_state, grads):  # Grads added as argument
+        # Skip the update, effectively leaving the model unchanged
+        return v_theta, opt_state
+
+    @eqx.filter_jit
+    def calculate_loss_and_grads(v_theta, xs, cxs, ts, ds):
+        loss, grads = eqx.filter_value_and_grad(loss_fn)(
+            v_theta,
+            xs,
+            cxs,
+            ts,
+            ds,
+            time_derivative_log_density=path_distribution.time_derivative,
+            score_fn=path_distribution.score_fn,
+            shift_fn=shift_fn,
+            enable_shortcut=shortcut,
+            dt_log_density_clip=dt_log_density_clip,
+        )
+        return loss, grads
+
+    @eqx.filter_jit
     def step(v_theta, opt_state, xs, cxs, ts, ds):
         loss, grads = eqx.filter_value_and_grad(loss_fn)(
             v_theta,
@@ -2774,8 +2800,27 @@ def train_velocity_field(
             enable_shortcut=shortcut,
             dt_log_density_clip=dt_log_density_clip,
         )
-        updates, opt_state = optimizer.update(grads, opt_state, v_theta)
-        v_theta = eqx.apply_updates(v_theta, updates)
+
+        # Check for NaN or Inf in loss
+        def update_step(grads, opt_state, v_theta):
+            updates, opt_state = optimizer.update(grads, opt_state, v_theta)
+            v_theta = eqx.apply_updates(v_theta, updates)
+            return v_theta, opt_state
+
+        def skip_step(grads, opt_state, v_theta):
+            # Skip the update, effectively leaving the model unchanged
+            return v_theta, opt_state
+
+        # Conditionally update based on the loss value
+        v_theta, opt_state = jax.lax.cond(
+            jnp.isfinite(loss),  # Check if the loss is finite (not NaN or Inf)
+            update_step,  # Function to call if finite
+            skip_step,  # Function to call if not finite
+            grads,
+            opt_state,
+            v_theta,  # Arguments to pass to the functions
+        )
+
         return v_theta, opt_state, loss
 
     for epoch in range(num_epochs):
@@ -2827,7 +2872,6 @@ def train_velocity_field(
                 shift_fn,
             )
 
-        samples = jnp.nan_to_num(samples, nan=1.0)
         epoch_loss = 0.0
 
         key, subkey = jax.random.split(key)
@@ -2847,10 +2891,20 @@ def train_velocity_field(
                 axis=1,
             )
 
-            v_theta, opt_state, loss = step(
-                v_theta, opt_state, samps, samps_cxs, current_ts, sampled_ds
+            loss, grads = calculate_loss_and_grads(
+                v_theta, samps, samps_cxs, current_ts, sampled_ds
             )
-            epoch_loss += loss
+
+            # Now do the conditional update OUTSIDE the JIT-compiled function
+            if jnp.isfinite(loss):
+                v_theta, opt_state = update_step(v_theta, opt_state, grads)
+                epoch_loss += loss
+            else:
+                v_theta, opt_state = skip_step(v_theta, opt_state, grads)
+
+            # v_theta, opt_state, loss = step(
+            #     v_theta, opt_state, samps, samps_cxs, current_ts, sampled_ds
+            # )
 
             if s % 20 == 0:
                 if not offline:
