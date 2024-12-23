@@ -772,10 +772,9 @@ class TimeDependentLennardJonesEnergyButler(Target):
         inv_r6 = (pairwise_dr / self.sigma) ** 6
         soft_core_term = self.alpha * (1 - lambda_) ** self.m + inv_r6
         lj_energy = (
-            0.5
-            * self.epsilon_val
+            self.epsilon_val
             * lambda_**self.n
-            * (soft_core_term**-2 - soft_core_term**-1)
+            * (soft_core_term**-2 - 2 * soft_core_term**-1)
         )
 
         # Sum over all pairs to get total energy per sample
