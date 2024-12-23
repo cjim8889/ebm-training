@@ -726,6 +726,7 @@ class TimeDependentLennardJonesEnergyButler(Target):
         m: float = 1,
         c: float = 0.5,
         log_prob_clip: float = None,
+        score_norm: float = 1.0,
     ):
         super().__init__(
             dim=dim,
@@ -747,6 +748,7 @@ class TimeDependentLennardJonesEnergyButler(Target):
         self.c = c
 
         self.log_prob_clip = log_prob_clip
+        self.score_norm = score_norm
 
     def soft_core_lennard_jones_potential(
         self,
@@ -770,7 +772,7 @@ class TimeDependentLennardJonesEnergyButler(Target):
         inv_r6 = (pairwise_dr / self.sigma) ** 6
         soft_core_term = self.alpha * (1 - lambda_) ** self.m + inv_r6
         lj_energy = (
-            4
+            0.5
             * self.epsilon_val
             * lambda_**self.n
             * (soft_core_term**-2 - soft_core_term**-1)
@@ -845,7 +847,11 @@ class TimeDependentLennardJonesEnergyButler(Target):
         return p_t
 
     def score(self, x: chex.Array, t: float) -> chex.Array:
-        return jax.grad(self.time_dependent_log_prob, argnums=0)(x, t)
+        sc = jax.grad(self.time_dependent_log_prob, argnums=0)(x, t)
+        norm = optax.safe_norm(sc, axis=-1, min_norm=1e-6)
+        scale = jnp.clip(self.score_norm / (norm + 1e-6), a_min=0.0, a_max=1.0)
+
+        return sc * scale
 
     def sample(
         self, key: jax.random.PRNGKey, sample_shape: chex.Shape = ()
@@ -3182,8 +3188,8 @@ def main():
             log_prob_clip=args.pt_clip,
         )
 
-        # def shift_fn(x):
-        #     return x - jnp.mean(x, axis=0, keepdims=True)
+        def shift_fn(x):
+            return x - jnp.mean(x, axis=0, keepdims=True)
     elif args.target == "sclj13":
         input_dim = 39
         key, subkey = jax.random.split(key)
