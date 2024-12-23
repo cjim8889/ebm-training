@@ -830,6 +830,9 @@ class TimeDependentLennardJonesEnergyButler(Target):
             x.reshape(self.n_particles, self.n_spatial_dim)
         )
         lj_energy = self.soft_core_lennard_jones_potential(pairwise_dr, t)
+        if self.log_prob_clip is not None:
+            lj_energy = jnp.clip(lj_energy, -self.log_prob_clip, self.log_prob_clip)
+
         harmonic_energy = self.harmonic_potential(x)
 
         return lj_energy + self.c * harmonic_energy
@@ -839,10 +842,6 @@ class TimeDependentLennardJonesEnergyButler(Target):
 
     def time_dependent_log_prob(self, x: chex.Array, t: float) -> chex.Array:
         p_t = -self.compute_time_dependent_lj_energy(x, t)
-
-        if self.log_prob_clip is not None:
-            p_t = jnp.clip(p_t, -self.log_prob_clip, self.log_prob_clip)
-
         return p_t
 
     def score(self, x: chex.Array, t: float) -> chex.Array:
