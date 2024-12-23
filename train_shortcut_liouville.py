@@ -3173,8 +3173,11 @@ def main():
         input_dim = 39
         key, subkey = jax.random.split(key)
 
-        initial_density = MultivariateGaussian(
-            dim=input_dim, mean=jnp.zeros(input_dim), sigma=args.initial_sigma
+        # initial_density = MultivariateGaussian(
+        #     dim=input_dim, mean=jnp.zeros(input_dim), sigma=args.initial_sigma
+        # )
+        initial_density = TranslationInvariantGaussian(
+            N=13, D=3, sigma=args.initial_sigma, wrap=False
         )
         target_density = TimeDependentLennardJonesEnergyButler(
             dim=input_dim,
