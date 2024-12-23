@@ -3180,7 +3180,7 @@ def main():
             dim=input_dim,
             n_particles=13,
             sigma=1.0,
-            alpha=0.8,
+            alpha=0.1,
             epsilon_val=1.0,
             min_dr=1e-3,
             m=1,
