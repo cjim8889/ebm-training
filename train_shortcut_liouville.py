@@ -844,9 +844,6 @@ class TimeDependentLennardJonesEnergyButler(Target):
 
     def time_dependent_log_prob(self, x: chex.Array, t: float) -> chex.Array:
         p_t = -self.compute_time_dependent_lj_energy(x, t)
-
-        # if self.log_prob_clip is not None:
-            # p_t = jnp.clip(p_t, -self.log_prob_clip, self.log_prob_clip)
         return p_t
 
     def score(self, x: chex.Array, t: float) -> chex.Array:
@@ -903,8 +900,10 @@ class TimeDependentLennardJonesEnergyButler(Target):
         max_energy = jnp.max(energy_samples)
 
         # Add padding to range
-        energy_range = (min_energy - 0.1*abs(min_energy), 
-                    max_energy + 0.1*abs(max_energy))
+        energy_range = (
+            min_energy - 0.1 * abs(min_energy),
+            max_energy + 0.1 * abs(max_energy),
+        )
 
         axs[1].hist(
             energy_samples,
@@ -2541,10 +2540,9 @@ def loss_fn(
     )(xs, ts)
 
     dt_log_density = jnp.nan_to_num(
-        dt_log_unormalised_density - jnp.mean(
-            dt_log_unormalised_density, axis=-1, keepdims=True
-        ),
-        nan=0.0
+        dt_log_unormalised_density
+        - jnp.mean(dt_log_unormalised_density, axis=-1, keepdims=True),
+        nan=0.0,
     )
 
     if dt_log_density_clip is not None:
@@ -2861,7 +2859,6 @@ def train_velocity_field(
                 shift_fn,
             )
 
-        
         samples = jnp.nan_to_num(samples, nan=0.0, posinf=1.0, neginf=-1.0)
         epoch_loss = 0.0
 
