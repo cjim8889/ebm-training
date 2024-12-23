@@ -3182,8 +3182,8 @@ def main():
             log_prob_clip=args.pt_clip,
         )
 
-        def shift_fn(x):
-            return x - jnp.mean(x, axis=0, keepdims=True)
+        # def shift_fn(x):
+        #     return x - jnp.mean(x, axis=0, keepdims=True)
     elif args.target == "sclj13":
         input_dim = 39
         key, subkey = jax.random.split(key)
