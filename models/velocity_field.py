@@ -1,0 +1,101 @@
+import jax
+import jax.numpy as jnp
+import equinox as eqx
+from ..utils.distributions import compute_distances
+
+
+class TimeVelocityField(eqx.Module):
+    mlp: eqx.nn.MLP
+    shortcut: bool
+
+    def __init__(self, key, input_dim, hidden_dim, depth=3, shortcut=False):
+        # Define an MLP with time as an input
+        self.shortcut = shortcut
+
+        if shortcut:
+            self.mlp = eqx.nn.MLP(
+                in_size=input_dim + 2,  # x, t, and d
+                out_size=input_dim,
+                width_size=hidden_dim,
+                activation=jax.nn.sigmoid,
+                depth=depth,
+                key=key,
+            )
+        else:
+            self.mlp = eqx.nn.MLP(
+                in_size=input_dim + 1,  # x, and t
+                out_size=input_dim,
+                width_size=hidden_dim,
+                activation=jax.nn.sigmoid,
+                depth=depth,
+                key=key,
+            )
+
+    def __call__(self, *input):
+        if self.shortcut:
+            assert len(input) == 3
+            xs, t, d = input
+            x_concat = jnp.concatenate([xs, jnp.array([t, d])], axis=-1)
+        else:
+            assert len(input) == 2
+            xs, t = input
+            x_concat = jnp.concatenate([xs, jnp.array([t])], axis=-1)
+
+        return self.mlp(x_concat)
+
+
+class TimeVelocityFieldWithPairwiseFeature(eqx.Module):
+    mlp: eqx.nn.MLP
+    n_particles: int
+    n_spatial_dim: int
+    shortcut: bool
+
+    def __init__(
+        self,
+        key,
+        n_particles,
+        n_spatial_dim,
+        hidden_dim,
+        depth=3,
+        shortcut=False,
+    ):
+        self.shortcut = shortcut
+        self.n_particles = n_particles
+        self.n_spatial_dim = n_spatial_dim
+        input_dim = n_particles * n_spatial_dim
+        num_pairwise = n_particles * (n_particles - 1) // 2
+
+        if shortcut:
+            self.mlp = eqx.nn.MLP(
+                in_size=input_dim + 2 + num_pairwise,  # x, t, d, pairwise distances
+                out_size=input_dim,
+                width_size=hidden_dim,
+                activation=jax.nn.sigmoid,
+                depth=depth,
+                key=key,
+            )
+        else:
+            self.mlp = eqx.nn.MLP(
+                in_size=input_dim + 1 + num_pairwise,  # x, t, pairwise distances
+                out_size=input_dim,
+                width_size=hidden_dim,
+                activation=jax.nn.sigmoid,
+                depth=depth,
+                key=key,
+            )
+
+    def __call__(self, *input):
+        if self.shortcut:
+            assert len(input) == 3
+            xs, t, d = input
+            x_concat = jnp.concatenate([xs, jnp.array([t, d])], axis=-1)
+        else:
+            assert len(input) == 2
+            xs, t = input
+            x_concat = jnp.concatenate([xs, jnp.array([t])], axis=-1)
+
+        # Compute pairwise distances
+        dists = compute_distances(xs, self.n_particles, self.n_spatial_dim)
+        x_concat = jnp.concatenate([x_concat, dists.flatten()], axis=0)
+
+        return self.mlp(x_concat)
