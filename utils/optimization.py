@@ -14,6 +14,10 @@ def power_schedule(T=64, end_time=1.0, gamma=0.25):
     return t_pow
 
 
+def soft_clip(x, min_val, max_val, alpha=10.0):
+    return min_val + (max_val - min_val) / (1 + jnp.exp(-alpha * (x - min_val)))
+
+
 def get_optimizer(name: str, learning_rate: float) -> optax.GradientTransformation:
     """Creates optimizer based on name and learning rate.
 

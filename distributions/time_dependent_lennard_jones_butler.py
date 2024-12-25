@@ -1,11 +1,12 @@
 import chex
 import jax
 import jax.numpy as jnp
-from jax.scipy.optimize import minimize
 import matplotlib.pyplot as plt
 import optax
+from jax.scipy.optimize import minimize
 
 from utils.distributions import compute_distances
+from utils.optimization import soft_clip
 
 from .base import Target
 
@@ -26,6 +27,7 @@ class TimeDependentLennardJonesEnergyButler(Target):
         m: float = 1,
         c: float = 0.5,
         log_prob_clip: float = None,
+        soft_clip: bool = False,
         score_norm: float = None,
         include_harmonic: bool = False,
     ):
@@ -51,6 +53,7 @@ class TimeDependentLennardJonesEnergyButler(Target):
         self.c = c
 
         self.log_prob_clip = log_prob_clip
+        self.soft_clip = soft_clip
         self.score_norm = score_norm
         self.include_harmonic = include_harmonic
 
@@ -156,7 +159,12 @@ class TimeDependentLennardJonesEnergyButler(Target):
         p_t = -self.compute_time_dependent_lj_energy(x, t)
 
         if self.log_prob_clip is not None:
-            p_t = jnp.clip(p_t, a_min=-self.log_prob_clip, a_max=self.log_prob_clip)
+            if self.soft_clip:
+                p_t = soft_clip(
+                    p_t, min_val=-self.log_prob_clip, max_val=self.log_prob_clip
+                )
+            else:
+                p_t = jnp.clip(p_t, a_min=-self.log_prob_clip, a_max=self.log_prob_clip)
 
         return p_t
 
@@ -264,6 +272,7 @@ class TimeDependentLennardJonesEnergyButlerWithTemperatureTempered(
         initial_temperature=250.0,
         annealing_order=1.0,
         log_prob_clip=None,
+        soft_clip=False,
         score_norm=None,
         include_harmonic=False,
     ):
@@ -279,6 +288,7 @@ class TimeDependentLennardJonesEnergyButlerWithTemperatureTempered(
             m,
             c,
             log_prob_clip,
+            soft_clip,
             score_norm,
             include_harmonic,
         )
