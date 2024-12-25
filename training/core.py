@@ -233,6 +233,7 @@ def train_velocity_field(
                 or target == "tlj13"
                 or target == "lj13b"
                 or target == "lj13bt"
+                or target == "lj13c"
             ):
                 key, subkey = jax.random.split(key)
                 fig = target_density.visualise_with_time(
