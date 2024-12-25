@@ -2,13 +2,47 @@ import chex
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
+import numpy as np
 import optax
 from jax.scipy.optimize import minimize
+from scipy.interpolate import CubicSpline
 
 from utils.distributions import compute_distances
 from utils.optimization import soft_clip
 
 from .base import Target
+
+
+def cubic_spline_jax(r, spline_x, spline_coeffs):
+    """
+    Evaluate the cubic spline at points r.
+
+    Args:
+        r (jnp.ndarray): Points at which to evaluate the spline.
+        spline_x (jnp.ndarray): Knot positions.
+        spline_coeffs (jnp.ndarray): Spline coefficients with shape (4, n_segments).
+
+    Returns:
+        jnp.ndarray: Spline evaluated at points r.
+    """
+    # Find the interval indices for each r
+    # Using jnp.searchsorted to find the right interval
+    indices = jnp.searchsorted(spline_x, r) - 1
+    indices = jnp.clip(
+        indices, 0, spline_x.size - 2
+    )  # Ensure indices are within bounds
+
+    # Compute delta r
+    dx = r - spline_x[indices]
+
+    # Extract coefficients for each segment
+    a = spline_coeffs[0, indices]
+    b = spline_coeffs[1, indices]
+    c = spline_coeffs[2, indices]
+    d = spline_coeffs[3, indices]
+
+    # Evaluate the cubic polynomial
+    return a * dx**3 + b * dx**2 + c * dx + d
 
 
 class TimeDependentLennardJonesEnergyButler(Target):
@@ -30,6 +64,7 @@ class TimeDependentLennardJonesEnergyButler(Target):
         soft_clip: bool = False,
         score_norm: float = None,
         include_harmonic: bool = False,
+        cubic_spline: bool = False,
     ):
         super().__init__(
             dim=dim,
@@ -56,6 +91,21 @@ class TimeDependentLennardJonesEnergyButler(Target):
         self.soft_clip = soft_clip
         self.score_norm = score_norm
         self.include_harmonic = include_harmonic
+
+        self.cubic_spline = cubic_spline
+        if self.cubic_spline:
+            self.spline_x, self.spline_coeffs = self.fit_cubic_spline()
+
+    def fit_cubic_spline(
+        self, range_min=0.65, range_max=2.0, interpolation_points=1000
+    ):
+        x = np.linspace(range_min, range_max, interpolation_points)
+
+        # Compute the LJ potential at these points
+        V_LJ = self.epsilon_val * ((self.sigma / x) ** 12 - 2 * (self.sigma / x) ** 6)
+        spline = CubicSpline(x, V_LJ, bc_type="natural")
+
+        return jnp.array(x), jnp.array(spline.c)
 
     def find_min_energy_position(self, initial_position, tol=1e-6):
         result = minimize(
@@ -98,12 +148,30 @@ class TimeDependentLennardJonesEnergyButler(Target):
             self.epsilon_val * t**self.n * (soft_core_term**-2 - 2 * soft_core_term**-1)
         )
 
+        if self.cubic_spline:
+            smooth_mask = pairwise_dr < self.spline_x[-1]
+            lj_energy = jnp.where(
+                smooth_mask, self.cubic_spline_jax(pairwise_dr), lj_energy
+            )
+
         # Apply cutoff: set energy to zero for distances > cutoff
         lj_energy = jnp.where(pairwise_dr <= self.cutoff, lj_energy, 0.0)
         # Sum over all pairs to get total energy per sample
         total_lj_energy = jnp.sum(lj_energy, axis=-1)
 
         return total_lj_energy
+
+    def cubic_spline_jax(self, r):
+        """
+        Wrapper for cubic spline evaluation.
+
+        Args:
+            r (jnp.ndarray): Pairwise distances.
+
+        Returns:
+            jnp.ndarray: Smoothed LJ potential values.
+        """
+        return cubic_spline_jax(r, self.spline_x, self.spline_coeffs)
 
     def harmonic_potential(self, x):
         """
