@@ -51,3 +51,6 @@ class Target:
 
     def visualise(self, samples: chex.Array) -> plt.Figure:
         raise NotImplementedError
+
+    def visualise_with_time(self, samples: chex.Array, time: float) -> plt.Figure:
+        raise NotImplementedError
