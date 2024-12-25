@@ -197,13 +197,18 @@ def run(cfg: DictConfig) -> None:
         device=device,
     )
 
-    x = target._test_set[110].unsqueeze(0)
+    # x = target._test_set[110].unsqueeze(0)
     # x = torch.randn(1, 39) * .5
-    x = x.detach().requires_grad_(True)
-    print(torch.autograd.grad(target.log_prob(x).sum(), x)[0])
+    # x = x.detach().requires_grad_(True)
+    # print(torch.autograd.grad(target.log_prob(x).sum(), x)[0])
+
+    # val_samples = target.sample_train_set(1000)
+    # fig = target.get_dataset_fig(val_samples)
+    # fig.save("lj13.png")
+
     exit()
 
-
+ 
 
     initial = MultivariateGaussian(
         dim=cfg.target.input_dim,

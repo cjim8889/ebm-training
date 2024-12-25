@@ -14,6 +14,6 @@ if __name__ == '__main__':
     # main_fn = execute_function('liouville', 'gmm')
     # main_fn = execute_function('liouville', 'many_well')
     # main_fn = execute_function('liouville', 'dw4')
-    # main_fn = execute_function('liouville', 'lj13')
-    main_fn = execute_function('liouville', 'phi4')
+    main_fn = execute_function('liouville', 'lj13')
+    # main_fn = execute_function('liouville', 'phi4')
     main_fn()
