@@ -80,6 +80,7 @@ def main():
     parser.add_argument("--end-time-steps", type=int, default=10)
     parser.add_argument("--update-end-time-every", type=int, default=100)
     parser.add_argument("--enable-end-time-progression", action="store_true")
+    parser.add_argument("--gradient-norm", type=float, default=1.0)
 
     args = parser.parse_args()
 
@@ -263,7 +264,7 @@ def main():
                 "num_epochs": args.num_epochs,
                 "num_steps": args.num_steps,
                 "learning_rate": args.learning_rate,
-                "gradient_norm": 1.0,
+                "gradient_norm": args.gradient_norm,
                 "hidden_dim": v_theta.mlp.width_size,
                 "depth": v_theta.mlp.depth,
                 "mcmc_type": "hmc",
@@ -327,6 +328,7 @@ def main():
         end_time_steps=args.end_time_steps,
         update_end_time_every=args.update_end_time_every,
         enable_end_time_progression=args.enable_end_time_progression,
+        gradient_norm=args.gradient_norm,
     )
 
 
