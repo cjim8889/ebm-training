@@ -25,6 +25,7 @@ from .components.distribution_distances import compute_distribution_distances
 from .components.ema import EMAWrapper
 from .components.lambda_weighter import BaseLambdaWeighter
 from .components.mlp import TimeConder
+from .components.time_schedules import BaseTimeSchedule
 from .components.noise_schedules import BaseNoiseSchedule
 from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
 from .components.scaling_wrapper import ScalingWrapper
@@ -144,6 +145,7 @@ class DEMLitModule(LightningModule):
         version=1,
         negative_time=False,
         num_negative_time_steps=100,
+        time_schedule: BaseTimeSchedule = None,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 

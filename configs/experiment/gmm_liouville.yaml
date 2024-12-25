@@ -19,6 +19,11 @@ logger:
     group: "gmm"
 
 model:
+  time_schedule:
+    _target_: dem.models.components.time_schedules.InversePowerTimeSchedule
+    T: 128
+    gamma: 0.5
+
   noise_schedule:
     _target_: dem.models.components.noise_schedules.GeometricNoiseSchedule
     sigma_min: 0.00001
@@ -31,6 +36,7 @@ model:
     _target_: dem.energies.base_prior.Prior
     _partial_: true
     dim: 2
+    scale: 20
 
   clipper:
     _target_: dem.models.components.clipper.Clipper

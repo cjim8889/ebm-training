@@ -47,6 +47,7 @@ class LiouvilleModule(DEMLitModule):
         version=1,
         negative_time=False,
         num_negative_time_steps=100,
+        time_schedule: BaseTimeSchedule = None,
     ) -> None:
         super().__init__(
             net=net,
@@ -95,7 +96,40 @@ class LiouvilleModule(DEMLitModule):
             num_negative_time_steps=num_negative_time_steps,
         )
 
+        print(time_schedule)
+        exit()
+
+    def on_train_epoch_start(self):
+        pass
+
     def training_step(self, batch, batch_idx):
         loss = 0.0
         print(111)
+        exit()
+
+    def generate_samples_with_corrector(self):
+        pass
+
+    def setup(self, stage: str) -> None:
+        """Lightning hook that is called at the beginning of fit (train + validate), validate,
+        test, or predict.
+
+        This is a good hook when you need to build models dynamically or adjust something about
+        them. This hook is called on every process when using DDP.
+
+        :param stage: Either `"fit"`, `"validate"`, `"test"`, or `"predict"`.
+        """
+
+        self.prior = self.partial_prior(device=self.device)
+
+        if stage == "fit":
+            # generate training data
+            pass
+
+        if self.hparams.compile and stage == "fit":
+            self.net = torch.compile(self.net)
+            self.cfm_net = torch.compile(self.cfm_net)
+
+        if self.nll_with_cfm:
+            self.cfm_prior = self.partial_prior(device=self.device, scale=self.cfm_prior_std)
         exit()
