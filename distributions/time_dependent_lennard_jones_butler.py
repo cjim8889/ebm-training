@@ -207,7 +207,7 @@ class TimeDependentLennardJonesEnergyButler(Target):
             linewidth=4,
         )
         axs[0].set_xlabel("Interatomic distance")
-        axs[0].legend(["Generated data at t={}".format(t)])
+        axs[0].legend(["Generated data at t={:.2f}".format(t)])
 
         energy_samples = -self.batched_log_prob(samples, t)
         # Clip energy values for visualization
@@ -234,7 +234,7 @@ class TimeDependentLennardJonesEnergyButler(Target):
             color="r",
             histtype="step",
             linewidth=4,
-            label="Generated data at t={}".format(t),
+            label="Generated data at t={:.2f}".format(t),
         )
         axs[1].set_xlabel("Energy")
         axs[1].legend()
