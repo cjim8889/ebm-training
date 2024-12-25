@@ -18,6 +18,9 @@ logger:
     tags: ${tags}
     group: "gmm"
 
+energy:
+  should_unnormalize: false
+
 model:
   time_schedule:
     _target_: dem.models.components.time_schedules.InversePowerTimeSchedule
@@ -56,7 +59,7 @@ model:
   diffusion_scale: 1.0
 
   num_estimator_mc_samples: 500
-  num_samples_to_generate_per_epoch: 1000
+  num_samples_to_generate_per_epoch: 1024
 
   # this has to be max 1000 since test_set is 1000
   eval_batch_size: 1000

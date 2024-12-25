@@ -1,4 +1,7 @@
+from einops import rearrange, repeat
+
 from .dem_module import *
+from .components.mcmc import time_batched_sample_hamiltonian_monte_carlo
 
 class LiouvilleModule(DEMLitModule):
     def __init__(
@@ -96,19 +99,50 @@ class LiouvilleModule(DEMLitModule):
             num_negative_time_steps=num_negative_time_steps,
         )
 
-        print(time_schedule)
-        exit()
-
     def on_train_epoch_start(self):
         pass
 
     def training_step(self, batch, batch_idx):
         loss = 0.0
-        print(111)
+        print(self.training_data.shape)
         exit()
 
-    def generate_samples_with_corrector(self):
-        pass
+    def generate_samples(self, initial_samples, ts):
+        """
+        Generate samples using the Euler method.
+            t = 0 -> t = 1 : noise -> data
+        """
+        samples = initial_samples
+        t_prev = ts[:-1]
+        t_next = ts[1:]
+
+        samples_list = [initial_samples]
+        for t_p, t_n in zip(t_prev, t_next):
+            t = torch.ones(samples.size(0), device=self.device).unsqueeze(1) * t_p
+            with torch.no_grad():
+                samples = samples + self.net(t, samples) * (t_n - t_p)
+            samples_list.append(samples)
+    
+        samples = torch.stack(samples_list, dim=0)
+        return samples
+
+
+    def generate_samples_with_hmc_corrector(self):
+        initial_samples = self.prior.sample(self.num_samples_to_generate_per_epoch)
+        ts = self.time_schedule()
+
+        samples = self.generate_samples(initial_samples, ts)
+        final_samples = time_batched_sample_hamiltonian_monte_carlo(
+            self.time_dependent_log_density,
+            samples,
+            ts,
+            num_steps=5,
+            integration_steps=5,
+            eta=1.,
+            rejection_sampling=False,
+        )
+        final_samples = rearrange(final_samples, 't n d -> n t d')
+        return final_samples
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,
@@ -119,12 +153,16 @@ class LiouvilleModule(DEMLitModule):
 
         :param stage: Either `"fit"`, `"validate"`, `"test"`, or `"predict"`.
         """
-
         self.prior = self.partial_prior(device=self.device)
+        self.time_schedule = self.hparams.time_schedule
+        self.net = self.net.to(self.device)
+
+        # set up various functions
+        self.time_dependent_log_density = lambda x, t: (1 - t) * self.prior.log_prob(x) + t * self.energy_function(x)
 
         if stage == "fit":
             # generate training data
-            pass
+            self.training_data = self.generate_samples_with_hmc_corrector()
 
         if self.hparams.compile and stage == "fit":
             self.net = torch.compile(self.net)
@@ -132,4 +170,3 @@ class LiouvilleModule(DEMLitModule):
 
         if self.nll_with_cfm:
             self.cfm_prior = self.partial_prior(device=self.device, scale=self.cfm_prior_std)
-        exit()
