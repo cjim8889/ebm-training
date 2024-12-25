@@ -1,10 +1,12 @@
+import chex
 import jax
 import jax.numpy as jnp
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+
+from utils.distributions import batched_remove_mean
+
 from .base import Target
-from ..utils.distributions import batched_remove_mean
-import chex
 
 
 class LennardJonesEnergy(Target):

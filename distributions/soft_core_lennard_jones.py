@@ -1,13 +1,16 @@
+from typing import Callable
+
+import blackjax
+import chex
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
-import equinox as eqx
-import blackjax
-from .base import Target
-from ..utils.distributions import remove_mean, remove_mean_decorator
-from typing import Callable
 from jax.scipy.optimize import minimize
-import chex
+
+from utils.distributions import remove_mean, remove_mean_decorator
+
+from .base import Target
 
 
 class SoftCoreLennardJonesEnergy(Target):

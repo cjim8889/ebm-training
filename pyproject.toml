@@ -20,6 +20,7 @@ dependencies = [
     "scikit-learn>=1.5.2",
     "blackjax>=1.2.4",
     "jax-md @ git+https://github.com/google/jax-md.git",
+    "setuptools>=75.2.0",
 ]
 
 [tool.uv.sources]

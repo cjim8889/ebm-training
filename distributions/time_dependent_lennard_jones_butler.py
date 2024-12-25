@@ -141,10 +141,6 @@ class TimeDependentLennardJonesEnergyButler(Target):
             min_dr=self.min_dr,
         )
         lj_energy = self.soft_core_lennard_jones_potential(pairwise_dr, t)
-        # lj_energy = lj_energy / (1 + 9999 * (1 - t))
-
-        if self.log_prob_clip is not None:
-            lj_energy = jnp.clip(lj_energy, -self.log_prob_clip, self.log_prob_clip)
 
         if self.include_harmonic:
             harmonic_energy = self.harmonic_potential(x)
@@ -154,10 +150,14 @@ class TimeDependentLennardJonesEnergyButler(Target):
             return lj_energy
 
     def log_prob(self, x: chex.Array) -> chex.Array:
-        return -self.compute_time_dependent_lj_energy(x, 1.0)
+        return self.time_dependent_log_prob(x, 1.0)
 
     def time_dependent_log_prob(self, x: chex.Array, t: float) -> chex.Array:
         p_t = -self.compute_time_dependent_lj_energy(x, t)
+
+        if self.log_prob_clip is not None:
+            p_t = jnp.clip(p_t, a_min=-self.log_prob_clip, a_max=self.log_prob_clip)
+
         return p_t
 
     def score(self, x: chex.Array, t: float) -> chex.Array:
@@ -189,7 +189,7 @@ class TimeDependentLennardJonesEnergyButler(Target):
     def batched_log_prob(self, xs, t):
         return jax.vmap(self.time_dependent_log_prob, in_axes=(0, None))(xs, t)
 
-    def visualise(self, samples: chex.Array) -> plt.Figure:
+    def visualise_with_time(self, samples: chex.Array, t: float) -> plt.Figure:
         # Fill samples nan values with zeros
         samples = jnp.nan_to_num(samples, nan=0.0, posinf=1.0, neginf=-1.0)
 
@@ -207,9 +207,9 @@ class TimeDependentLennardJonesEnergyButler(Target):
             linewidth=4,
         )
         axs[0].set_xlabel("Interatomic distance")
-        axs[0].legend(["Generated data"])
+        axs[0].legend(["Generated data at t={}".format(t)])
 
-        energy_samples = -self.batched_log_prob(samples, 1.0)
+        energy_samples = -self.batched_log_prob(samples, t)
         # Clip energy values for visualization
         energy_samples = jnp.nan_to_num(
             energy_samples, nan=0.0, posinf=100.0, neginf=-100.0
@@ -234,10 +234,63 @@ class TimeDependentLennardJonesEnergyButler(Target):
             color="r",
             histtype="step",
             linewidth=4,
-            label="Generated data",
+            label="Generated data at t={}".format(t),
         )
         axs[1].set_xlabel("Energy")
         axs[1].legend()
 
         fig.canvas.draw()
         return fig
+
+    def visualise(self, samples: chex.Array) -> plt.Figure:
+        return self.visualise_with_time(samples, 1.0)
+
+
+class TimeDependentLennardJonesEnergyButlerWithTemperatureTempered(
+    TimeDependentLennardJonesEnergyButler
+):
+    def __init__(
+        self,
+        dim,
+        n_particles,
+        alpha=0.5,
+        sigma=1,
+        sigma_cutoff=2.5,
+        epsilon_val=1,
+        min_dr=0.0001,
+        n=1,
+        m=1,
+        c=0.5,
+        initial_temperature=250.0,
+        annealing_order=1.0,
+        log_prob_clip=None,
+        score_norm=None,
+        include_harmonic=False,
+    ):
+        super().__init__(
+            dim,
+            n_particles,
+            alpha,
+            sigma,
+            sigma_cutoff,
+            epsilon_val,
+            min_dr,
+            n,
+            m,
+            c,
+            log_prob_clip,
+            score_norm,
+            include_harmonic,
+        )
+
+        self.initial_temperature = initial_temperature
+        self.annealing_order = annealing_order
+
+    def time_dependent_log_prob(self, x: chex.Array, t: float) -> chex.Array:
+        p_t = -self.compute_time_dependent_lj_energy(x, t)
+        p_t = p_t / (1 + self.initial_temperature * (1 - t) ** self.annealing_order)
+
+        if self.log_prob_clip is not None:
+            p_t = jnp.clip(p_t, a_min=-self.log_prob_clip, a_max=self.log_prob_clip)
+
+        return p_t
