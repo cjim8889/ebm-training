@@ -36,6 +36,7 @@ def main():
     parser.add_argument("--initial-sigma", type=float, default=20.0)
     parser.add_argument("--network", type=str, default="mlp", choices=["mlp", "pdn"])
     parser.add_argument("--dt-pt-clip", type=float, default=None)
+    parser.add_argument("--soft-clip", action="store_true")
     parser.add_argument("--pt-clip", type=float, default=None)
     parser.add_argument(
         "--target",
@@ -185,6 +186,7 @@ def main():
             n=1,
             c=0.5,
             log_prob_clip=args.pt_clip,
+            soft_clip=args.soft_clip,
             score_norm=30.0,
         )
 
@@ -209,6 +211,7 @@ def main():
             n=1,
             c=0.5,
             log_prob_clip=args.pt_clip,
+            soft_clip=args.soft_clip,
             score_norm=30.0,
         )
     elif args.target == "sclj13":
@@ -275,6 +278,7 @@ def main():
                 "network": args.network,
                 "dt_log_density_clip": args.dt_pt_clip,
                 "log_density_clip": args.pt_clip,
+                "soft_clip": args.soft_clip,
                 "target_end_time": args.target_end_time,
                 "initial_end_time": args.initial_end_time,
                 "end_time_steps": args.end_time_steps,

@@ -79,7 +79,7 @@ key, warmup_key, sample_key = jax.random.split(key, 3)
     num_steps=2000,
 )
 print("HMC Warmup done")
-print("Step size:", parameters.step_size)
+print("Step size:", parameters["step_size"])
 
 hmc = blackjax.hmc(target_density.log_prob, **parameters)
 kernel = jax.jit(hmc.step)
