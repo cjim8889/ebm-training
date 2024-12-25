@@ -40,6 +40,9 @@ class Target:
     def log_Z(self) -> Union[int, None]:
         return self._log_Z
 
+    def sample(self, seed: chex.PRNGKey, sample_shape: chex.Shape = ()) -> chex.Array:
+        raise NotImplementedError
+
     def log_prob(self, value: chex.Array) -> chex.Array:
         raise NotImplementedError
 
