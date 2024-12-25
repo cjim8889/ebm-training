@@ -188,6 +188,7 @@ def main():
             log_prob_clip=args.pt_clip,
             soft_clip=args.soft_clip,
             score_norm=30.0,
+            include_harmonic=True,
         )
 
         def shift_fn(x):
@@ -213,6 +214,7 @@ def main():
             log_prob_clip=args.pt_clip,
             soft_clip=args.soft_clip,
             score_norm=30.0,
+            include_harmonic=True,
         )
     elif args.target == "sclj13":
         input_dim = 39
