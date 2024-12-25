@@ -2,6 +2,7 @@ from typing import Callable
 
 import chex
 import equinox as eqx
+import optax
 import jax
 import jax.numpy as jnp
 
@@ -34,7 +35,7 @@ def remove_mean_decorator(step_fn, n_particles, n_spatial_dim):
     return wrapped_step
 
 
-def compute_distances(x, n_particles, n_dimensions, epsilon=1e-8):
+def compute_distances(x, n_particles, n_dimensions, min_dr=1e-8):
     x = x.reshape(n_particles, n_dimensions)
 
     # Get indices of upper triangular pairs
@@ -44,7 +45,7 @@ def compute_distances(x, n_particles, n_dimensions, epsilon=1e-8):
     dx = x[i] - x[j]
 
     # Compute distances
-    distances = jnp.sqrt(jnp.sum(dx**2, axis=-1) + epsilon)
+    distances = optax.safe_norm(dx, axis=-1, min_norm=min_dr, ord=2)
 
     return distances
 

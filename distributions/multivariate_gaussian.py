@@ -13,7 +13,6 @@ class MultivariateGaussian(Target):
         dim: int = 2,
         mean: float = 0.0,
         sigma: float = 1.0,
-        plot_bound_factor: float = 3.0,
     ):
         super().__init__(
             dim=dim,
@@ -33,7 +32,7 @@ class MultivariateGaussian(Target):
                 )
             scale_diag = self.sigma
 
-        self.mean = jnp.asarray(mean)
+        self.mean = jnp.ones((dim,)) * mean
 
         self.distribution = distrax.MultivariateNormalDiag(
             loc=self.mean, scale_diag=scale_diag
