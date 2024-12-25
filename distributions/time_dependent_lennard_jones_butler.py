@@ -65,7 +65,7 @@ class TimeDependentLennardJonesEnergyButler(Target):
 
     def initialize_position(self, key: jax.random.PRNGKey):
         # Start with a random normal position
-        initial_position = jax.random.uniform(key, (self.dim,), minval=-1.0, maxval=1.0)
+        initial_position = jax.random.uniform(key, (self.dim,), minval=-3.0, maxval=3.0)
         # Optionally, scale positions to avoid overlaps
         initial_position = initial_position * self.sigma * 1.2
         # Perform energy minimization

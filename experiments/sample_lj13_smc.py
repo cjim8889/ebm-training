@@ -70,7 +70,7 @@ warmup = blackjax.window_adaptation(
     num_integration_steps=10,
     initial_step_size=1.0,
     target_acceptance_rate=0.8,
-    progress_bar=True,
+    # progress_bar=True,
 )
 
 
@@ -81,38 +81,41 @@ key, warmup_key, sample_key = jax.random.split(key, 3)
     initial_position,
     num_steps=2000,
 )
-print("Warmup done")
+print("HMC Warmup done")
 
-target_ess = 0.5
-num_mcmc_steps = 1000
+hmc = blackjax.hmc(target_density.log_prob, **parameters)
+kernel = jax.jit(hmc.step)
+
+target_ess = 0.6
+num_mcmc_steps = 100
 
 tempered = blackjax.adaptive_tempered_smc(
     initial_density.log_prob,
     target_density.log_prob,
-    blackjax.hmc,
+    blackjax.hmc.build_kernel(),
     blackjax.hmc.init,
-    mcmc_parameters=parameters,
+    blackjax.smc.extend_params(parameters),
     resampling_fn=resampling.systematic,
     target_ess=target_ess,
     num_mcmc_steps=num_mcmc_steps,
 )
 
-kernel = jax.jit(tempered.step)
+tempered_kernel = jax.jit(tempered.step)
 
-sample_keys = jax.random.split(key, 100)
-initial_state = tempered.init(jax.vmap(target_density.initialize_position)(sample_keys))
+num_particles = 10240
+sample_keys = jax.random.split(key, num_particles)
+initial_positions = jax.vmap(target_density.initialize_position)(sample_keys)
+initial_state = tempered.init(initial_positions)
+
 
 key, subkey = jax.random.split(key, 2)
-n_iter, final_state = smc_inference_loop(subkey, kernel, initial_state)
+n_iter, final_state = smc_inference_loop(subkey, tempered_kernel, initial_state)
 
 print("SMC done")
 print("Number of iterations:", n_iter)
-print("Final state:", final_state)
-# samples = vmap_states.position[
-#     :,
-#     190000,
-# ].reshape(-1, 39)
+# print("Final state:", final_state)
 
-# print("Samples shape:", samples.shape)
-# fig = target_density.visualise(samples)
-# plt.show()
+samples = final_state.particles
+print("Samples shape:", samples.shape)
+fig = target_density.visualise(samples)
+plt.show()
