@@ -4,7 +4,7 @@ import chex
 import jax
 from .base import Target
 import matplotlib.pyplot as plt
-from ..utils.plotting import plot_contours_2D, plot_marginal_pair
+from utils.plotting import plot_contours_2D, plot_marginal_pair
 
 
 class GMM(Target):

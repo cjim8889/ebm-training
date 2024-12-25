@@ -8,6 +8,12 @@ def inverse_power_schedule(T=64, end_time=1.0, gamma=0.5):
     return jnp.flip(t_pow)
 
 
+def power_schedule(T=64, end_time=1.0, gamma=0.25):
+    x_pow = jnp.linspace(0, end_time, T)
+    t_pow = x_pow**gamma
+    return t_pow
+
+
 def get_optimizer(name: str, learning_rate: float) -> optax.GradientTransformation:
     """Creates optimizer based on name and learning rate.
 

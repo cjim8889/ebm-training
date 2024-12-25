@@ -1,7 +1,6 @@
 import blackjax.adaptation
 import blackjax.adaptation.mass_matrix
 import jax
-import jax.numpy as jnp
 import blackjax
 import blackjax.smc.resampling as resampling
 import matplotlib.pyplot as plt
@@ -62,8 +61,6 @@ def smc_inference_loop(rng_key, smc_kernel, initial_state):
 
 key, subkey = jax.random.split(key)
 initial_position = target_density.initialize_position(subkey)
-
-print("Initial position:", initial_position)
 warmup = blackjax.window_adaptation(
     blackjax.hmc,
     target_density.log_prob,
@@ -82,6 +79,7 @@ key, warmup_key, sample_key = jax.random.split(key, 3)
     num_steps=2000,
 )
 print("HMC Warmup done")
+print("Step size:", parameters.step_size)
 
 hmc = blackjax.hmc(target_density.log_prob, **parameters)
 kernel = jax.jit(hmc.step)

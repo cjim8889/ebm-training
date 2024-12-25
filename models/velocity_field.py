@@ -1,7 +1,8 @@
+import equinox as eqx
 import jax
 import jax.numpy as jnp
-import equinox as eqx
-from ..utils.distributions import compute_distances
+
+from utils.distributions import compute_distances
 
 
 class TimeVelocityField(eqx.Module):

@@ -1,11 +1,14 @@
+from typing import Tuple
+
+import chex
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
-import chex
+
+from utils.plotting import plot_contours_2D, plot_marginal_pair
+
 from .base import Target
 from .double_well import DoubleWellEnergy
-from ..utils.plotting import plot_contours_2D, plot_marginal_pair
-from typing import Tuple
 
 
 class ManyWellEnergy(Target):

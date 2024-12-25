@@ -1,4 +1,4 @@
-from typing import Any, Callable, Optional
+from typing import Any, Callable, List, Optional
 
 import chex
 import equinox as eqx
@@ -18,14 +18,15 @@ from utils.hmc import (
 from utils.integration import (
     euler_integrate,
     generate_samples,
+    generate_samples_with_different_ts,
 )
-from utils.optimization import get_optimizer, inverse_power_schedule, power_schedule
+from utils.optimization import get_optimizer, inverse_power_schedule
 
-from .loss import loss_fn
+from .loss import shortcut_loss_fn
 
 
 # Main training loop for training a velocity field with shortcut
-def train_velocity_field(
+def train_velocity_field_with_shortcut(
     key: jax.random.PRNGKey,
     initial_density: Target,
     target_density: Target,
@@ -33,6 +34,7 @@ def train_velocity_field(
     shift_fn: Callable[[chex.Array], chex.Array] = lambda x: x,
     N: int = 512,
     B: int = 256,
+    C: int = 64,
     T: int = 32,
     enable_end_time_progression: bool = False,
     target_end_time: float = 1.0,  # Final target end time
@@ -52,16 +54,19 @@ def train_velocity_field(
     integrator: str = "euler",
     optimizer: str = "adamw",
     with_rejection_sampling: bool = False,
+    eval_steps: List[int] = [4, 8, 16, 32],
     offline: bool = False,
-    target: str = "",
+    d_distribution: str = "uniform",
+    target: str = "gmm",
     eval_every: int = 20,
     dt_log_density_clip: Optional[float] = None,
     debug: bool = False,
     **kwargs: Any,
 ) -> Any:
     path_distribution = AnnealedDistribution(
-        initial_density=initial_density,
-        target_density=target_density,
+        initial_distribution=initial_density,
+        target_distribution=target_density,
+        dim=initial_density.dim,
     )
 
     # Initialize current end time
@@ -81,6 +86,12 @@ def train_velocity_field(
     opt_state = optimizer.init(eqx.filter(v_theta, eqx.is_inexact_array))
     integrator = euler_integrate
 
+    # Set up shortcut distribution
+    if d_distribution == "log":
+        d_dis = 1.0 / jnp.array(
+            [2**e for e in range(int(jnp.floor(jnp.log2(128))) + 1)]
+        )
+
     def _generate(key: jax.random.PRNGKey, force_finite: bool = False):
         if mcmc_type == "hmc":
             samples = generate_samples_with_hmc_correction(
@@ -96,7 +107,7 @@ def train_velocity_field(
                 eta=eta,
                 rejection_sampling=with_rejection_sampling,
                 shift_fn=shift_fn,
-                use_shortcut=False,
+                use_shortcut=True,
             )
         else:
             samples = generate_samples(
@@ -107,7 +118,7 @@ def train_velocity_field(
                 path_distribution.sample_initial,
                 integrator,
                 shift_fn,
-                use_shortcut=False,
+                use_shortcut=True,
             )
 
         if force_finite:
@@ -116,13 +127,16 @@ def train_velocity_field(
         return samples
 
     @eqx.filter_jit
-    def step(v_theta, opt_state, xs, ts):
-        loss, grads = eqx.filter_value_and_grad(loss_fn)(
+    def step(v_theta, opt_state, xs, cxs, ts, ds):
+        loss, grads = eqx.filter_value_and_grad(shortcut_loss_fn)(
             v_theta,
             xs,
+            cxs,
             ts,
+            ds,
             time_derivative_log_density=path_distribution.time_derivative,
             score_fn=path_distribution.score_fn,
+            shift_fn=shift_fn,
             dt_log_density_clip=dt_log_density_clip,
         )
 
@@ -148,8 +162,6 @@ def train_velocity_field(
                 current_ts = inverse_power_schedule(
                     T, end_time=current_end_time, gamma=0.5
                 )
-            elif schedule == "power":
-                current_ts = power_schedule(T, end_time=current_end_time, gamma=0.25)
 
             if continuous_schedule:
                 key, subkey = jax.random.split(key)
@@ -159,11 +171,23 @@ def train_velocity_field(
         samples = _generate(key, force_finite=True)
         epoch_loss = 0.0
 
+        key, subkey = jax.random.split(key)
+        if d_distribution == "uniform":
+            sampled_ds = jax.random.uniform(subkey, (T, C), minval=0.0, maxval=1.0)
+        elif d_distribution == "log":
+            sampled_ds = jax.random.choice(subkey, d_dis, (T, C), replace=True)
+
         for s in range(num_steps):
             key, subkey = jax.random.split(key)
-            samps = jax.random.choice(subkey, samples, (B,), replace=False, axis=1)
+            samps, samps_cxs = jnp.split(
+                jax.random.choice(subkey, samples, (B + C,), replace=False, axis=1),
+                [B],
+                axis=1,
+            )
 
-            v_theta, opt_state, loss = step(v_theta, opt_state, samps, current_ts)
+            v_theta, opt_state, loss = step(
+                v_theta, opt_state, samps, samps_cxs, current_ts, sampled_ds
+            )
 
             epoch_loss += loss
             if s % 20 == 0:
@@ -183,71 +207,74 @@ def train_velocity_field(
             )
 
         if epoch % eval_every == 0:
-            eval_ts = jnp.linspace(0, current_end_time, T)
+            tss = [
+                jnp.linspace(0, current_end_time, eval_step) for eval_step in eval_steps
+            ]
             key, subkey = jax.random.split(key)
-            val_samples = generate_samples(
+            val_samples = generate_samples_with_different_ts(
                 subkey,
                 v_theta,
                 N,
-                eval_ts,
+                tss,
                 path_distribution.sample_initial,
                 integrator,
                 shift_fn,
-                use_shortcut=False,
+                use_shortcut=True,
             )
 
-            if target == "gmm":
-                fig = target_density.visualise(val_samples[-1])
-                if not offline:
-                    wandb.log(
-                        {
-                            f"validation_samples_{T}_step": wandb.Image(fig),
-                        }
+            for i, es in enumerate(eval_steps):
+                if target == "gmm":
+                    fig = target_density.visualise(val_samples[i][-1])
+                    if not offline:
+                        wandb.log(
+                            {
+                                f"validation_samples_{es}_step": wandb.Image(fig),
+                            }
+                        )
+                    else:
+                        plt.show()
+
+                    plt.close(fig)
+
+                elif target == "mw32":
+                    key, subkey = jax.random.split(key)
+                    fig = target_density.visualise(
+                        jax.random.choice(
+                            subkey, val_samples[i][-1], (100,), replace=False
+                        )
                     )
-                else:
-                    plt.show()
 
-                plt.close(fig)
+                    if not offline:
+                        wandb.log(
+                            {
+                                f"validation_samples_{es}_step": wandb.Image(fig),
+                            }
+                        )
+                    else:
+                        plt.show()
 
-            elif target == "mw32":
-                key, subkey = jax.random.split(key)
-                fig = target_density.visualise(
-                    jax.random.choice(subkey, val_samples[-1], (100,), replace=False)
-                )
+                    plt.close(fig)
+                elif (
+                    target == "dw4"
+                    or target == "dw4o"
+                    or target == "lj13"
+                    or target == "sclj13"
+                    or target == "tlj13"
+                    or target == "lj13b"
+                ):
+                    key, subkey = jax.random.split(key)
+                    fig = target_density.visualise(val_samples[i][-1][:1024])
 
-                if not offline:
-                    wandb.log(
-                        {
-                            f"validation_samples_{T}_step": wandb.Image(fig),
-                        }
-                    )
-                else:
-                    plt.show()
+                    if not offline:
+                        wandb.log(
+                            {
+                                f"validation_samples_{es}_step": wandb.Image(fig),
+                            }
+                        )
+                    else:
+                        plt.show()
 
-                plt.close(fig)
-            elif (
-                target == "dw4"
-                or target == "dw4o"
-                or target == "lj13"
-                or target == "sclj13"
-                or target == "tlj13"
-                or target == "lj13b"
-            ):
-                key, subkey = jax.random.split(key)
-                fig = target_density.visualise(
-                    jax.random.choice(subkey, val_samples[-1], (1024,), replace=False)
-                )
-
-                if not offline:
-                    wandb.log(
-                        {
-                            f"validation_samples_{T}_step": wandb.Image(fig),
-                        }
-                    )
-                else:
-                    plt.show()
-
-                plt.close(fig)
+                    plt.close(fig)
 
     # Save trained model to wandb
     if not offline:
