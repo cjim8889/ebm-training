@@ -13,6 +13,7 @@ from distributions import (
     SoftCoreLennardJonesEnergy,
     TimeDependentLennardJonesEnergy,
     TimeDependentLennardJonesEnergyButler,
+    TimeDependentLennardJonesEnergyButlerWithTemperatureTempered,
     TranslationInvariantGaussian,
 )
 from models import TimeVelocityField, TimeVelocityFieldWithPairwiseFeature
@@ -184,10 +185,32 @@ def main():
             n=1,
             c=0.5,
             log_prob_clip=args.pt_clip,
+            score_norm=30.0,
         )
 
         def shift_fn(x):
             return x - jnp.mean(x, axis=0, keepdims=True)
+    elif args.target == "lj13bt":
+        input_dim = 39
+        key, subkey = jax.random.split(key)
+
+        initial_density = MultivariateGaussian(
+            dim=input_dim, mean=jnp.zeros(input_dim), sigma=args.initial_sigma
+        )
+
+        target_density = TimeDependentLennardJonesEnergyButlerWithTemperatureTempered(
+            dim=input_dim,
+            n_particles=13,
+            sigma=1.0,
+            alpha=0.1,
+            epsilon_val=1.0,
+            min_dr=1e-3,
+            m=1,
+            n=1,
+            c=0.5,
+            log_prob_clip=args.pt_clip,
+            score_norm=30.0,
+        )
     elif args.target == "sclj13":
         input_dim = 39
         key, subkey = jax.random.split(key)
