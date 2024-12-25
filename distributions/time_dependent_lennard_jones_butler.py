@@ -220,7 +220,10 @@ class TimeDependentLennardJonesEnergyButler(Target):
         energy_samples = -self.batched_log_prob(samples, t)
         # Clip energy values for visualization
         energy_samples = jnp.nan_to_num(
-            energy_samples, nan=-100.0, posinf=100.0, neginf=-100.0
+            energy_samples,
+            nan=-self.log_prob_clip,
+            posinf=self.log_prob_clip,
+            neginf=-self.log_prob_clip,
         )
 
         # Determine histogram range from cleaned data
@@ -229,8 +232,8 @@ class TimeDependentLennardJonesEnergyButler(Target):
 
         # Add padding to range
         energy_range = (
-            min_energy - 0.1 * abs(min_energy),
-            max_energy + 0.1 * abs(max_energy),
+            min_energy,
+            max_energy,
         )
 
         axs[1].hist(
