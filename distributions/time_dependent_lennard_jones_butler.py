@@ -1,9 +1,13 @@
+import chex
 import jax
 import jax.numpy as jnp
+from jax.scipy.optimize import minimize
 import matplotlib.pyplot as plt
 import optax
+
+from utils.distributions import compute_distances
+
 from .base import Target
-import chex
 
 
 class TimeDependentLennardJonesEnergyButler(Target):
@@ -15,13 +19,15 @@ class TimeDependentLennardJonesEnergyButler(Target):
         n_particles: int,
         alpha: float = 0.5,
         sigma: float = 1.0,
+        sigma_cutoff: float = 2.5,
         epsilon_val: float = 1.0,
         min_dr: float = 1e-4,
         n: float = 1,
         m: float = 1,
         c: float = 0.5,
         log_prob_clip: float = None,
-        score_norm: float = 1.0,
+        score_norm: float = None,
+        include_harmonic: bool = False,
     ):
         super().__init__(
             dim=dim,
@@ -36,6 +42,8 @@ class TimeDependentLennardJonesEnergyButler(Target):
 
         self.alpha = alpha
         self.sigma = sigma
+        self.cutoff = sigma_cutoff * sigma
+
         self.epsilon_val = epsilon_val
         self.min_dr = min_dr
         self.n = n
@@ -44,6 +52,26 @@ class TimeDependentLennardJonesEnergyButler(Target):
 
         self.log_prob_clip = log_prob_clip
         self.score_norm = score_norm
+        self.include_harmonic = include_harmonic
+
+    def find_min_energy_position(self, initial_position, tol=1e-6):
+        result = minimize(
+            lambda x: self.compute_time_dependent_lj_energy(x, 1.0),
+            initial_position,
+            method="BFGS",
+            tol=tol,
+        )
+        return result.x
+
+    def initialize_position(self, key: jax.random.PRNGKey):
+        # Start with a random normal position
+        initial_position = jax.random.uniform(key, (self.dim,), minval=-1.0, maxval=1.0)
+        # Optionally, scale positions to avoid overlaps
+        initial_position = initial_position * self.sigma * 1.2
+        # Perform energy minimization
+        optimized_position = self.find_min_energy_position(initial_position)
+
+        return optimized_position
 
     def soft_core_lennard_jones_potential(
         self,
@@ -61,35 +89,18 @@ class TimeDependentLennardJonesEnergyButler(Target):
             jnp.ndarray: Time-dependent soft-core Lennard-Jones potential energy of shape [].
         """
 
-        # U(λ, r) = 0.5 * epsilon * λ^n * [ (α_LJ * (1 - λ)^m + (r/sigma)^6)^-2 - (α_LJ * (1 - λ)^m + (r/sigma)^6)^-1 ]
-        lambda_ = t
-
         inv_r6 = (pairwise_dr / self.sigma) ** 6
-        soft_core_term = self.alpha * (1 - lambda_) ** self.m + inv_r6
+        soft_core_term = self.alpha * (1 - t) ** self.m + inv_r6
         lj_energy = (
-            self.epsilon_val
-            * lambda_**self.n
-            * (soft_core_term**-2 - 2 * soft_core_term**-1)
+            self.epsilon_val * t**self.n * (soft_core_term**-2 - 2 * soft_core_term**-1)
         )
 
+        # Apply cutoff: set energy to zero for distances > cutoff
+        lj_energy = jnp.where(pairwise_dr <= self.cutoff, lj_energy, 0.0)
         # Sum over all pairs to get total energy per sample
         total_lj_energy = jnp.sum(lj_energy, axis=-1)
 
         return total_lj_energy
-
-    def compute_distances(self, x, epsilon=1e-8):
-        x = x.reshape(self.n_particles, self.n_spatial_dim)
-
-        # Get indices of upper triangular pairs
-        i, j = jnp.triu_indices(self.n_particles, k=1)
-
-        # Calculate displacements between pairs
-        dx = x[i] - x[j]
-
-        # Compute distances
-        distances = optax.safe_norm(dx, axis=-1, min_norm=self.min_dr)
-
-        return distances
 
     def harmonic_potential(self, x):
         """
@@ -101,6 +112,7 @@ class TimeDependentLennardJonesEnergyButler(Target):
         x_com = jnp.mean(x, axis=0)
         distances_to_com = optax.safe_norm(
             x - x_com,
+            ord=2,
             axis=-1,
             min_norm=0.0,
         )
@@ -122,16 +134,24 @@ class TimeDependentLennardJonesEnergyButler(Target):
         Returns:
             jnp.ndarray: Total time-dependent Lennard-Jones energy.
         """
-        pairwise_dr = self.compute_distances(
-            x.reshape(self.n_particles, self.n_spatial_dim)
+        pairwise_dr = compute_distances(
+            x,
+            n_particles=self.n_particles,
+            n_dimensions=self.n_spatial_dim,
+            min_dr=self.min_dr,
         )
         lj_energy = self.soft_core_lennard_jones_potential(pairwise_dr, t)
+        # lj_energy = lj_energy / (1 + 9999 * (1 - t))
+
         if self.log_prob_clip is not None:
             lj_energy = jnp.clip(lj_energy, -self.log_prob_clip, self.log_prob_clip)
 
-        harmonic_energy = self.harmonic_potential(x)
+        if self.include_harmonic:
+            harmonic_energy = self.harmonic_potential(x)
 
-        return lj_energy + self.c * harmonic_energy
+            return lj_energy + self.c * harmonic_energy
+        else:
+            return lj_energy
 
     def log_prob(self, x: chex.Array) -> chex.Array:
         return -self.compute_time_dependent_lj_energy(x, 1.0)
@@ -142,10 +162,14 @@ class TimeDependentLennardJonesEnergyButler(Target):
 
     def score(self, x: chex.Array, t: float) -> chex.Array:
         sc = jax.grad(self.time_dependent_log_prob, argnums=0)(x, t)
-        norm = optax.safe_norm(sc, axis=-1, min_norm=1e-6)
-        scale = jnp.clip(self.score_norm / (norm + 1e-6), a_min=0.0, a_max=1.0)
 
-        return sc * scale
+        if self.score_norm is not None:
+            norm = optax.safe_norm(sc, axis=-1, min_norm=1e-6)
+            scale = jnp.clip(self.score_norm / (norm + 1e-6), a_min=0.0, a_max=1.0)
+
+            return sc * scale
+        else:
+            return sc
 
     def sample(
         self, key: jax.random.PRNGKey, sample_shape: chex.Shape = ()
@@ -156,7 +180,9 @@ class TimeDependentLennardJonesEnergyButler(Target):
 
     def interatomic_dist(self, x):
         x = x.reshape(-1, self.n_particles, self.n_spatial_dim)
-        distances = jax.vmap(lambda x: self.compute_distances(x))(x)
+        distances = jax.vmap(
+            lambda x: compute_distances(x, self.n_particles, self.n_spatial_dim)
+        )(x)
 
         return distances
 
@@ -165,7 +191,7 @@ class TimeDependentLennardJonesEnergyButler(Target):
 
     def visualise(self, samples: chex.Array) -> plt.Figure:
         # Fill samples nan values with zeros
-        samples = jnp.nan_to_num(samples, nan=0.0, posinf=100.0, neginf=-100.0)
+        samples = jnp.nan_to_num(samples, nan=0.0, posinf=1.0, neginf=-1.0)
 
         # Since we don't have a test set, we will just visualize the samples
         fig, axs = plt.subplots(1, 2, figsize=(12, 4))
@@ -186,7 +212,7 @@ class TimeDependentLennardJonesEnergyButler(Target):
         energy_samples = -self.batched_log_prob(samples, 1.0)
         # Clip energy values for visualization
         energy_samples = jnp.nan_to_num(
-            energy_samples, nan=0.0, posinf=1000.0, neginf=-1000.0
+            energy_samples, nan=0.0, posinf=100.0, neginf=-100.0
         )
 
         # Determine histogram range from cleaned data
