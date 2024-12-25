@@ -232,10 +232,12 @@ def train_velocity_field(
                 or target == "sclj13"
                 or target == "tlj13"
                 or target == "lj13b"
+                or target == "lj13bt"
             ):
                 key, subkey = jax.random.split(key)
-                fig = target_density.visualise(
-                    jax.random.choice(subkey, val_samples[-1], (1024,), replace=False)
+                fig = target_density.visualise_with_time(
+                    jax.random.choice(subkey, val_samples[-1], (1024,), replace=False),
+                    float(eval_ts[-1]),
                 )
 
                 if not offline:

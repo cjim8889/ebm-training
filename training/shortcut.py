@@ -261,6 +261,7 @@ def train_velocity_field_with_shortcut(
                     or target == "sclj13"
                     or target == "tlj13"
                     or target == "lj13b"
+                    or target == "lj13bt"
                 ):
                     key, subkey = jax.random.split(key)
                     fig = target_density.visualise(val_samples[i][-1][:1024])
