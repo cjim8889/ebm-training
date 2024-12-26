@@ -67,14 +67,14 @@ class LennardJonesEnergy(Target):
         inv_r12 = inv_r6**2
 
         # Compute LJ potential: 4 * epsilon * (inv_r12 - inv_r6)
-        lj_energy = 4 * epsilon_val * (inv_r12 - inv_r6)
+        lj_energy = epsilon_val * (inv_r12 - 2 * inv_r6)
 
         # Sum over all pairs to get total energy per sample
         total_lj_energy = jnp.sum(lj_energy, axis=-1)
 
         return total_lj_energy
 
-    def compute_distances(self, x, epsilon=1e-8, min_dr: float = 1e-2):
+    def compute_distances(self, x, epsilon=1e-8, min_dr: float = 1e-3):
         x = x.reshape(self.n_particles, self.n_spatial_dim)
 
         # Get indices of upper triangular pairs
