@@ -83,6 +83,7 @@ def main():
     parser.add_argument("--update-end-time-every", type=int, default=100)
     parser.add_argument("--enable-end-time-progression", action="store_true")
     parser.add_argument("--gradient-norm", type=float, default=1.0)
+    parser.add_argument("--score-norm", type=float, default=None)
 
     args = parser.parse_args()
 
@@ -190,7 +191,7 @@ def main():
             c=0.5,
             log_prob_clip=args.pt_clip,
             soft_clip=args.soft_clip,
-            score_norm=30.0,
+            score_norm=args.score_norm,
             include_harmonic=True,
         )
 
@@ -216,7 +217,7 @@ def main():
             c=0.5,
             log_prob_clip=args.pt_clip,
             soft_clip=args.soft_clip,
-            score_norm=30.0,
+            score_norm=args.score_norm,
             include_harmonic=True,
             cubic_spline=True,
         )
@@ -240,7 +241,7 @@ def main():
             c=0.5,
             log_prob_clip=args.pt_clip,
             soft_clip=args.soft_clip,
-            score_norm=30.0,
+            score_norm=args.score_norm,
             include_harmonic=True,
         )
     elif args.target == "sclj13":
@@ -313,6 +314,7 @@ def main():
                 "end_time_steps": args.end_time_steps,
                 "update_end_time_every": args.update_end_time_every,
                 "enable_end_time_progression": args.enable_end_time_progression,
+                "score_norm": args.score_norm,
             },
             reinit=True,
             tags=[
