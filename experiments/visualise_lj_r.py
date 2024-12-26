@@ -18,15 +18,16 @@ target_density = TimeDependentLennardJonesEnergyButler(
     alpha=0.2,
     sigma=1.0,
     epsilon_val=1.0,
-    min_dr=1e-6,
+    min_dr=1e-4,
     n=1,
     m=1,
     c=0.5,
     include_harmonic=True,
+    cubic_spline=True,
 )
 
 
-r = jnp.linspace(0.8, 2, 1000).reshape(
+r = jnp.linspace(0.25, 2, 1000).reshape(
     1000, 1
 )  # Start from 0.1 to avoid division by zero
 potential = jax.vmap(
