@@ -15,6 +15,7 @@ from utils.distributions import (
 from utils.hmc import (
     generate_samples_with_hmc_correction,
 )
+from utils.smc import generate_samples_with_euler_smc
 from utils.integration import (
     euler_integrate,
     generate_samples,
@@ -81,7 +82,7 @@ def train_velocity_field(
     opt_state = optimizer.init(eqx.filter(v_theta, eqx.is_inexact_array))
     integrator = euler_integrate
 
-    def _generate(key: jax.random.PRNGKey, force_finite: bool = False):
+    def _generate(key: jax.random.PRNGKey, ts: jnp.ndarray, force_finite: bool = False):
         if mcmc_type == "hmc":
             samples = generate_samples_with_hmc_correction(
                 key=key,
@@ -89,8 +90,23 @@ def train_velocity_field(
                 sample_fn=path_distribution.sample_initial,
                 time_dependent_log_density=path_distribution.time_dependent_log_prob,
                 num_samples=N,
-                ts=current_ts,
+                ts=ts,
                 integration_fn=integrator,
+                num_steps=num_mcmc_steps,
+                integration_steps=num_mcmc_integration_steps,
+                eta=eta,
+                rejection_sampling=with_rejection_sampling,
+                shift_fn=shift_fn,
+                use_shortcut=False,
+            )
+        elif mcmc_type == "esmc":
+            samples = generate_samples_with_euler_smc(
+                key=key,
+                v_theta=v_theta,
+                time_dependent_log_density=path_distribution.time_dependent_log_prob,
+                num_samples=N,
+                ts=ts,
+                sample_fn=path_distribution.sample_initial,
                 num_steps=num_mcmc_steps,
                 integration_steps=num_mcmc_integration_steps,
                 eta=eta,
@@ -103,7 +119,7 @@ def train_velocity_field(
                 key,
                 v_theta,
                 N,
-                current_ts,
+                ts,
                 path_distribution.sample_initial,
                 integrator,
                 shift_fn,
@@ -156,7 +172,7 @@ def train_velocity_field(
                 current_ts = sample_monotonic_uniform_ordered(subkey, current_ts, True)
 
         key, subkey = jax.random.split(key)
-        samples = _generate(key, force_finite=True)
+        samples = _generate(key, current_ts, force_finite=True)
         epoch_loss = 0.0
 
         for s in range(num_steps):

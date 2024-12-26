@@ -30,6 +30,7 @@ def main():
     parser.add_argument("--hidden-dim", type=int, default=256)
     parser.add_argument("--depth", type=int, default=3)
     parser.add_argument("--num-timesteps", type=int, default=128)
+    parser.add_argument("--mcmc-type", type=str, default="hmc", choices=["hmc", "esmc"])
     parser.add_argument("--mcmc-steps", type=int, default=5)
     parser.add_argument("--mcmc-integration-steps", type=int, default=3)
     parser.add_argument("--eta", type=float, default=0.2)
@@ -292,7 +293,7 @@ def main():
                 "gradient_norm": args.gradient_norm,
                 "hidden_dim": v_theta.mlp.width_size,
                 "depth": v_theta.mlp.depth,
-                "mcmc_type": "hmc",
+                "mcmc_type": args.mcmc_type,
                 "num_mcmc_steps": args.mcmc_steps,
                 "num_mcmc_integration_steps": args.mcmc_integration_steps,
                 "eta": args.eta,
@@ -336,7 +337,7 @@ def main():
         learning_rate=args.learning_rate,
         num_mcmc_steps=args.mcmc_steps,
         num_mcmc_integration_steps=args.mcmc_integration_steps,
-        mcmc_type="hmc",
+        mcmc_type=args.mcmc_type,
         eta=args.eta,
         schedule=args.schedule,
         integrator=args.integrator,
