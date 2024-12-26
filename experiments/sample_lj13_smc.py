@@ -28,7 +28,8 @@ target_density = TimeDependentLennardJonesEnergyButler(
     m=1,
     c=0.5,
     include_harmonic=True,
-    log_prob_clip=100.0,
+    cubic_spline=True,
+    # log_prob_clip=100.0,
 )
 
 initial_density = MultivariateGaussian(dim=39, mean=0.0, sigma=1.0)
@@ -85,7 +86,7 @@ hmc = blackjax.hmc(target_density.log_prob, **parameters)
 kernel = jax.jit(hmc.step)
 
 target_ess = 0.6
-num_mcmc_steps = 100
+num_mcmc_steps = 10
 
 tempered = blackjax.adaptive_tempered_smc(
     initial_density.log_prob,
