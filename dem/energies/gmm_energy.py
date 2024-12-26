@@ -55,8 +55,8 @@ class GMM(BaseEnergyFunction):
 
         super().__init__(
             dimensionality=dimensionality,
-            normalization_min=-data_normalization_factor,
-            normalization_max=data_normalization_factor,
+            # normalization_min=-data_normalization_factor,
+            # normalization_max=data_normalization_factor,
         )
 
     def setup_test_set(self):

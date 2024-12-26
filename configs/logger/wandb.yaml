@@ -14,4 +14,4 @@ wandb:
   group: ""
   tags: []
   job_type: ""
-  mode: "online"  # "online", "offline", "disabled"
+  mode: "disabled"  # "online", "offline", "disabled"
