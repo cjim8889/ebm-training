@@ -35,7 +35,7 @@ score_scaler: null
 num_init_samples: 1024
 num_estimator_mc_samples: 100
 num_samples_to_generate_per_epoch: 1024
-num_samples_to_sample_from_buffer: 512
+num_samples_to_sample_from_buffer: 64
 eval_batch_size: 1024
 
 num_integration_steps: 1000

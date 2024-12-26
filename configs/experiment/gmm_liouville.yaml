@@ -18,8 +18,8 @@ logger:
     tags: ${tags}
     group: "gmm"
 
-energy:
-  should_unnormalize: false
+# energy:
+#   should_unnormalize: false
 
 model:
   time_schedule:
