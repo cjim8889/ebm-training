@@ -93,17 +93,21 @@ class TimeDependentLennardJonesEnergyButler(Target):
         self.include_harmonic = include_harmonic
 
         self.cubic_spline = cubic_spline
+        self.range_min = 0.65
+        self.range_max = 2.0
         if self.cubic_spline:
-            self.spline_x, self.spline_coeffs = self.fit_cubic_spline()
+            self.spline_x, self.spline_coeffs = self.fit_cubic_spline(
+                range_max=self.range_max, range_min=self.range_min
+            )
 
     def fit_cubic_spline(
-        self, range_min=0.65, range_max=2.0, interpolation_points=1000
+        self, range_min=0.25, range_max=2.0, interpolation_points=1000
     ):
         x = np.linspace(range_min, range_max, interpolation_points)
 
         # Compute the LJ potential at these points
         V_LJ = self.epsilon_val * ((self.sigma / x) ** 12 - 2 * (self.sigma / x) ** 6)
-        spline = CubicSpline(x, V_LJ, bc_type="natural")
+        spline = CubicSpline(x, V_LJ)
 
         return jnp.array(x), jnp.array(spline.c)
 
@@ -149,7 +153,7 @@ class TimeDependentLennardJonesEnergyButler(Target):
         )
 
         if self.cubic_spline:
-            smooth_mask = pairwise_dr < self.spline_x[-1]
+            smooth_mask = pairwise_dr < self.range_min
             lj_energy = jnp.where(
                 smooth_mask, self.cubic_spline_jax(pairwise_dr), lj_energy
             )
