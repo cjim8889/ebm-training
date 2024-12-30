@@ -17,7 +17,7 @@ from distributions import (
     TranslationInvariantGaussian,
 )
 from models import TimeVelocityField, TimeVelocityFieldWithPairwiseFeature
-from training import train_velocity_field
+from training import train_velocity_field, train_velocity_field_with_decoupled_loss
 
 
 def main():
@@ -84,6 +84,9 @@ def main():
     parser.add_argument("--enable-end-time-progression", action="store_true")
     parser.add_argument("--gradient-norm", type=float, default=1.0)
     parser.add_argument("--score-norm", type=float, default=None)
+    parser.add_argument(
+        "--method", type=str, default="default", choices=["default", "decoupled"]
+    )
 
     args = parser.parse_args()
 
@@ -315,49 +318,86 @@ def main():
                 "update_end_time_every": args.update_end_time_every,
                 "enable_end_time_progression": args.enable_end_time_progression,
                 "score_norm": args.score_norm,
+                "method": args.method,
             },
             reinit=True,
             tags=[
                 args.target,
                 args.network,
+                args.method,
                 "no_shortcut",
             ],
         )
 
     # Train model
-    v_theta = train_velocity_field(
-        key=key,
-        initial_density=initial_density,
-        target_density=target_density,
-        v_theta=v_theta,
-        shift_fn=shift_fn,
-        N=args.num_samples,
-        B=args.batch_size,
-        T=args.num_timesteps,
-        num_epochs=args.num_epochs,
-        num_steps=args.num_steps,
-        learning_rate=args.learning_rate,
-        num_mcmc_steps=args.mcmc_steps,
-        num_mcmc_integration_steps=args.mcmc_integration_steps,
-        mcmc_type=args.mcmc_type,
-        eta=args.eta,
-        schedule=args.schedule,
-        integrator=args.integrator,
-        optimizer=args.optimizer,
-        with_rejection_sampling=args.with_rejection_sampling,
-        continuous_schedule=args.continuous_schedule,
-        offline=args.offline,
-        target=args.target,
-        eval_every=args.eval_every,
-        network=args.network,
-        dt_log_density_clip=args.dt_pt_clip,
-        target_end_time=args.target_end_time,
-        initial_end_time=args.initial_end_time,
-        end_time_steps=args.end_time_steps,
-        update_end_time_every=args.update_end_time_every,
-        enable_end_time_progression=args.enable_end_time_progression,
-        gradient_norm=args.gradient_norm,
-    )
+    if args.method == "default":
+        v_theta = train_velocity_field(
+            key=key,
+            initial_density=initial_density,
+            target_density=target_density,
+            v_theta=v_theta,
+            shift_fn=shift_fn,
+            N=args.num_samples,
+            B=args.batch_size,
+            T=args.num_timesteps,
+            num_epochs=args.num_epochs,
+            num_steps=args.num_steps,
+            learning_rate=args.learning_rate,
+            num_mcmc_steps=args.mcmc_steps,
+            num_mcmc_integration_steps=args.mcmc_integration_steps,
+            mcmc_type=args.mcmc_type,
+            eta=args.eta,
+            schedule=args.schedule,
+            integrator=args.integrator,
+            optimizer=args.optimizer,
+            with_rejection_sampling=args.with_rejection_sampling,
+            continuous_schedule=args.continuous_schedule,
+            offline=args.offline,
+            target=args.target,
+            eval_every=args.eval_every,
+            network=args.network,
+            dt_log_density_clip=args.dt_pt_clip,
+            target_end_time=args.target_end_time,
+            initial_end_time=args.initial_end_time,
+            end_time_steps=args.end_time_steps,
+            update_end_time_every=args.update_end_time_every,
+            enable_end_time_progression=args.enable_end_time_progression,
+            gradient_norm=args.gradient_norm,
+        )
+    elif args.method == "decoupled":
+        v_theta = train_velocity_field_with_decoupled_loss(
+            key=key,
+            initial_density=initial_density,
+            target_density=target_density,
+            v_theta=v_theta,
+            shift_fn=shift_fn,
+            N=args.num_samples,
+            B=args.batch_size,
+            T=args.num_timesteps,
+            num_epochs=args.num_epochs,
+            num_steps=args.num_steps,
+            learning_rate=args.learning_rate,
+            num_mcmc_steps=args.mcmc_steps,
+            num_mcmc_integration_steps=args.mcmc_integration_steps,
+            mcmc_type=args.mcmc_type,
+            eta=args.eta,
+            schedule=args.schedule,
+            integrator=args.integrator,
+            optimizer=args.optimizer,
+            with_rejection_sampling=args.with_rejection_sampling,
+            continuous_schedule=args.continuous_schedule,
+            offline=args.offline,
+            target=args.target,
+            eval_every=args.eval_every,
+            network=args.network,
+            dt_log_density_clip=args.dt_pt_clip,
+            target_end_time=args.target_end_time,
+            initial_end_time=args.initial_end_time,
+            end_time_steps=args.end_time_steps,
+            update_end_time_every=args.update_end_time_every,
+            enable_end_time_progression=args.enable_end_time_progression,
+            gradient_norm=args.gradient_norm,
+        )
 
 
 if __name__ == "__main__":

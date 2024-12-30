@@ -179,3 +179,39 @@ def loss_fn(
 
     epsilons = time_batched_epsilon(v_theta, xs, dt_log_density, ts, score_fn)
     return jnp.mean(epsilons**2)
+
+
+@eqx.filter_jit
+def estimate_log_Z_t(
+    xs: chex.Array,
+    ts: chex.Array,
+    time_derivative_log_density: Callable[[chex.Array, float], float],
+) -> chex.Array:
+    dt_log_unormalised_density = jax.vmap(
+        lambda xs, t: jax.vmap(lambda x: time_derivative_log_density(x, t))(xs),
+        in_axes=(0, 0),
+    )(xs, ts)
+
+    return jnp.mean(dt_log_unormalised_density, axis=-1, keepdims=True)
+
+
+def loss_fn_with_decoupled_log_Z_t(
+    v_theta: Callable[[chex.Array, float], chex.Array],
+    xs: chex.Array,
+    log_Z_t: chex.Array,
+    ts: chex.Array,
+    time_derivative_log_density: Callable[[chex.Array, float], float],
+    score_fn: Callable[[chex.Array, float], chex.Array],
+) -> float:
+    dt_log_unormalised_density = jax.vmap(
+        lambda xs, t: jax.vmap(lambda x: time_derivative_log_density(x, t))(xs),
+        in_axes=(0, 0),
+    )(xs, ts)
+
+    dt_log_density = jnp.nan_to_num(
+        dt_log_unormalised_density - log_Z_t,
+        nan=0.0,
+    )
+
+    epsilons = time_batched_epsilon(v_theta, xs, dt_log_density, ts, score_fn)
+    return jnp.mean(epsilons**2)
