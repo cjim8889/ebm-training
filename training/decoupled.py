@@ -166,6 +166,8 @@ def train_velocity_field_with_decoupled_loss(
 
         return v_theta, opt_state, loss
 
+    log_Z_t = None
+
     for epoch in range(num_epochs):
         # Update end time if needed
         if epoch % update_end_time_every == 0:
@@ -192,9 +194,14 @@ def train_velocity_field_with_decoupled_loss(
 
         key, subkey = jax.random.split(key)
         mcmc_samples = _generate_mcmc(subkey, current_ts, force_finite=True)
-        log_Z_t = estimate_log_Z_t(
+        new_log_Z_t = estimate_log_Z_t(
             mcmc_samples, current_ts, path_distribution.time_derivative
         )
+
+        if log_Z_t is None:
+            log_Z_t = new_log_Z_t
+        else:
+            log_Z_t = 0.5 * (log_Z_t + new_log_Z_t)
 
         key, subkey = jax.random.split(key)
         v_theta_samples = _generate(subkey, current_ts, force_finite=True)
