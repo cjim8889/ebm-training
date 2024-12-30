@@ -206,7 +206,8 @@ def train_velocity_field_with_decoupled_loss(
         key, subkey = jax.random.split(key)
         v_theta_samples = _generate(subkey, current_ts, force_finite=True)
 
-        samples = jnp.concatenate([mcmc_samples, v_theta_samples], axis=1)
+        # samples = jnp.concatenate([mcmc_samples, v_theta_samples], axis=1)
+        samples = v_theta_samples
         epoch_loss = 0.0
 
         for s in range(num_steps):
