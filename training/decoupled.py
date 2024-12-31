@@ -284,7 +284,9 @@ def train_velocity_field_with_decoupled_loss(
             elif target == "mw32":
                 key, subkey = jax.random.split(key)
                 fig = target_density.visualise(
-                    jax.random.choice(subkey, val_samples[-1], (100,), replace=False)
+                    jax.random.choice(
+                        subkey, val_samples["positions"][-1], (100,), replace=False
+                    )
                 )
 
                 if not offline:
@@ -309,7 +311,9 @@ def train_velocity_field_with_decoupled_loss(
             ):
                 key, subkey = jax.random.split(key)
                 fig = target_density.visualise_with_time(
-                    jax.random.choice(subkey, val_samples[-1], (1024,), replace=False),
+                    jax.random.choice(
+                        subkey, val_samples["positions"][-1], (1024,), replace=False
+                    ),
                     float(eval_ts[-1]),
                 )
 
