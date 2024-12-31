@@ -257,14 +257,14 @@ def main():
             dim=input_dim, mean=jnp.zeros(input_dim), sigma=args.initial_sigma
         )
         target_density = SoftCoreLennardJonesEnergy(
-            key=subkey,
             dim=input_dim,
             n_particles=13,
             sigma=1.0,
             epsilon_val=1.0,
-            alpha=0.1,
+            alpha=0.2,
             shift_fn=shift_fn,
             min_dr=1e-3,
+            include_harmonic=True,
         )
 
     # Initialize velocity field
