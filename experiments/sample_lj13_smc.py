@@ -17,6 +17,8 @@ jax.config.update("jax_platform_name", "cpu")
 
 key = jax.random.PRNGKey(1234)
 
+
+initial_density = MultivariateGaussian(dim=39, mean=0, sigma=3)
 target_density = TimeDependentLennardJonesEnergyButler(
     dim=39,
     n_particles=13,
@@ -117,4 +119,6 @@ print("Number of iterations:", n_iter)
 samples = final_state.particles
 print("Samples shape:", samples.shape)
 fig = target_density.visualise(samples)
-plt.show()
+
+plt.savefig("lj13c.png")
+# plt.show()
