@@ -15,7 +15,7 @@ from utils.distributions import (
 from utils.hmc import (
     generate_samples_with_hmc_correction,
 )
-from utils.smc import generate_samples_with_euler_smc
+from utils.smc import generate_samples_with_euler_smc, generate_samples_with_smc
 from utils.integration import (
     euler_integrate,
     generate_samples,
@@ -132,6 +132,19 @@ def train_velocity_field_with_decoupled_loss(
                 rejection_sampling=with_rejection_sampling,
                 shift_fn=shift_fn,
                 use_shortcut=False,
+            )
+        elif mcmc_type == "smc":
+            samples = generate_samples_with_smc(
+                key=key,
+                time_dependent_log_density=path_distribution.time_dependent_log_prob,
+                num_samples=N,
+                ts=ts,
+                sample_fn=path_distribution.sample_initial,
+                num_steps=num_mcmc_steps,
+                integration_steps=num_mcmc_integration_steps,
+                eta=eta,
+                rejection_sampling=with_rejection_sampling,
+                shift_fn=shift_fn,
             )
         else:
             samples = generate_samples(
