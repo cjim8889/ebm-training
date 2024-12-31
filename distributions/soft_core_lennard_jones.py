@@ -269,8 +269,8 @@ class SoftCoreLennardJonesEnergy(Target):
     def log_prob(self, x: chex.Array) -> chex.Array:
         return -self.compute_soft_core_lj_energy(x)
 
-    def batched_log_prob(self, xs, t):
-        return jax.vmap(self.time_dependent_log_prob, in_axes=(0, None))(xs, t)
+    def batched_log_prob(self, xs):
+        return jax.vmap(self.log_prob)(xs)
 
     def sample(self, key: jax.random.PRNGKey, sample_shape: chex.Shape) -> chex.Array:
         """Not implemented as sampling directly is difficult."""
@@ -284,15 +284,13 @@ class SoftCoreLennardJonesEnergy(Target):
 
         return distances
 
-    def visualise_with_time(self, samples: chex.Array, t: float) -> plt.Figure:
-        # Fill samples nan values with zeros
-        samples = jnp.nan_to_num(samples, nan=0.0, posinf=1.0, neginf=-1.0)
-
-        # Since we don't have a test set, we will just visualize the samples
-        fig, axs = plt.subplots(1, 2, figsize=(12, 4))
+    def visualise(self, samples: chex.Array) -> plt.Figure:
+        """Visualize samples against validation set"""
 
         dist_samples = self.interatomic_dist(samples)
+        energy_samples = -self.batched_log_prob(samples)
 
+        fig, axs = plt.subplots(1, 2, figsize=(12, 4))
         axs[0].hist(
             dist_samples.flatten(),
             bins=100,
@@ -302,43 +300,19 @@ class SoftCoreLennardJonesEnergy(Target):
             linewidth=4,
         )
         axs[0].set_xlabel("Interatomic distance")
-        axs[0].legend(["Generated data at t={:.2f}".format(t)])
-
-        energy_samples = -self.batched_log_prob(samples, t)
-        # Clip energy values for visualization
-        energy_samples = jnp.nan_to_num(
-            energy_samples,
-            nan=-100.0,
-            posinf=100.0,
-            neginf=-100.0,
-        )
-
-        # Determine histogram range from cleaned data
-        min_energy = jnp.min(energy_samples)
-        max_energy = jnp.max(energy_samples)
-
-        # Add padding to range
-        energy_range = (
-            min_energy,
-            max_energy,
-        )
 
         axs[1].hist(
             energy_samples,
             bins=100,
             density=True,
             alpha=0.4,
-            range=energy_range,
+            range=(energy_samples.min(), energy_samples.max()),
             color="r",
             histtype="step",
             linewidth=4,
-            label="Generated data at t={:.2f}".format(t),
+            label="Generated data",
         )
         axs[1].set_xlabel("Energy")
-        axs[1].legend()
 
         fig.canvas.draw()
         return fig
-
-    def visualise(self, samples: chex.Array) -> plt.Figure:
-        return self.visualise_with_time(samples, 1.0)
