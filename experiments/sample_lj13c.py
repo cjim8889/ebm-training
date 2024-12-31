@@ -59,5 +59,5 @@ samples = generate_samples_with_smc(
     ess_threshold=0.5,
 )
 
-fig = target_density.visualise(samples)
+fig = target_density.visualise(samples[-1])
 plt.show()
