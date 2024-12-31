@@ -15,18 +15,18 @@ from utils.distributions import (
 from utils.hmc import (
     generate_samples_with_hmc_correction,
 )
-from utils.smc import generate_samples_with_euler_smc
+from utils.smc import generate_samples_with_euler_smc, generate_samples_with_smc
 from utils.integration import (
     euler_integrate,
     generate_samples,
 )
 from utils.optimization import get_optimizer, inverse_power_schedule, power_schedule
 
-from .loss import loss_fn
+from .loss import loss_fn_with_decoupled_log_Z_t, estimate_log_Z_t
 
 
 # Main training loop for training a velocity field with shortcut
-def train_velocity_field(
+def train_velocity_field_with_decoupled_loss(
     key: jax.random.PRNGKey,
     initial_density: Target,
     target_density: Target,
@@ -83,6 +83,25 @@ def train_velocity_field(
     integrator = euler_integrate
 
     def _generate(key: jax.random.PRNGKey, ts: jnp.ndarray, force_finite: bool = False):
+        samples = generate_samples(
+            key,
+            v_theta,
+            N,
+            ts,
+            path_distribution.sample_initial,
+            integrator,
+            shift_fn,
+            use_shortcut=False,
+        )
+
+        if force_finite:
+            samples = jnp.nan_to_num(samples, nan=0.0, posinf=1.0, neginf=-1.0)
+
+        return samples
+
+    def _generate_mcmc(
+        key: jax.random.PRNGKey, ts: jnp.ndarray, force_finite: bool = False
+    ):
         if mcmc_type == "hmc":
             samples = generate_samples_with_hmc_correction(
                 key=key,
@@ -114,6 +133,19 @@ def train_velocity_field(
                 shift_fn=shift_fn,
                 use_shortcut=False,
             )
+        elif mcmc_type == "smc":
+            samples = generate_samples_with_smc(
+                key=key,
+                time_dependent_log_density=path_distribution.time_dependent_log_prob,
+                num_samples=N,
+                ts=ts,
+                sample_fn=path_distribution.sample_initial,
+                num_steps=num_mcmc_steps,
+                integration_steps=num_mcmc_integration_steps,
+                eta=eta,
+                rejection_sampling=with_rejection_sampling,
+                shift_fn=shift_fn,
+            )
         else:
             samples = generate_samples(
                 key,
@@ -132,20 +164,22 @@ def train_velocity_field(
         return samples
 
     @eqx.filter_jit
-    def step(v_theta, opt_state, xs, ts):
-        loss, grads = eqx.filter_value_and_grad(loss_fn)(
+    def step(v_theta, opt_state, xs, ts, log_Z_t):
+        loss, grads = eqx.filter_value_and_grad(loss_fn_with_decoupled_log_Z_t)(
             v_theta,
             xs,
+            log_Z_t,
             ts,
             time_derivative_log_density=path_distribution.time_derivative,
             score_fn=path_distribution.score_fn,
-            dt_log_density_clip=dt_log_density_clip,
         )
 
         updates, opt_state = optimizer.update(grads, opt_state, v_theta)
         v_theta = eqx.apply_updates(v_theta, updates)
 
         return v_theta, opt_state, loss
+
+    log_Z_t = None
 
     for epoch in range(num_epochs):
         # Update end time if needed
@@ -172,14 +206,30 @@ def train_velocity_field(
                 current_ts = sample_monotonic_uniform_ordered(subkey, current_ts, True)
 
         key, subkey = jax.random.split(key)
-        samples = _generate(key, current_ts, force_finite=True)
+        mcmc_samples = _generate_mcmc(subkey, current_ts, force_finite=True)
+        new_log_Z_t = estimate_log_Z_t(
+            mcmc_samples, current_ts, path_distribution.time_derivative
+        )
+
+        if log_Z_t is None:
+            log_Z_t = new_log_Z_t
+        else:
+            log_Z_t = 0.5 * (log_Z_t + new_log_Z_t)
+
+        key, subkey = jax.random.split(key)
+        v_theta_samples = _generate(subkey, current_ts, force_finite=True)
+
+        # samples = jnp.concatenate([mcmc_samples, v_theta_samples], axis=1)
+        samples = v_theta_samples
         epoch_loss = 0.0
 
         for s in range(num_steps):
             key, subkey = jax.random.split(key)
             samps = jax.random.choice(subkey, samples, (B,), replace=False, axis=1)
 
-            v_theta, opt_state, loss = step(v_theta, opt_state, samps, current_ts)
+            v_theta, opt_state, loss = step(
+                v_theta, opt_state, samps, current_ts, log_Z_t
+            )
 
             epoch_loss += loss
             if s % 20 == 0:
