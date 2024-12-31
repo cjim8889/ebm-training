@@ -30,7 +30,9 @@ def main():
     parser.add_argument("--hidden-dim", type=int, default=256)
     parser.add_argument("--depth", type=int, default=3)
     parser.add_argument("--num-timesteps", type=int, default=128)
-    parser.add_argument("--mcmc-type", type=str, default="hmc", choices=["hmc", "esmc"])
+    parser.add_argument(
+        "--mcmc-type", type=str, default="hmc", choices=["hmc", "smc", "esmc"]
+    )
     parser.add_argument("--mcmc-steps", type=int, default=5)
     parser.add_argument("--mcmc-integration-steps", type=int, default=3)
     parser.add_argument("--eta", type=float, default=0.2)
