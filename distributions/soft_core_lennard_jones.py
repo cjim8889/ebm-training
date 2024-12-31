@@ -269,8 +269,8 @@ class SoftCoreLennardJonesEnergy(Target):
     def log_prob(self, x: chex.Array) -> chex.Array:
         return -self.compute_soft_core_lj_energy(x)
 
-    def batched_log_prob(self, xs):
-        return jax.vmap(self.log_prob)(xs)
+    def batched_log_prob(self, xs, t):
+        return jax.vmap(self.time_dependent_log_prob, in_axes=(0, None))(xs, t)
 
     def sample(self, key: jax.random.PRNGKey, sample_shape: chex.Shape) -> chex.Array:
         """Not implemented as sampling directly is difficult."""
