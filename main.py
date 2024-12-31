@@ -180,15 +180,15 @@ def main():
         input_dim = 39
         key, subkey = jax.random.split(key)
 
-        initial_density = MultivariateGaussian(
-            dim=input_dim, mean=jnp.zeros(input_dim), sigma=args.initial_sigma
+        initial_density = TranslationInvariantGaussian(
+            N=13, D=3, sigma=args.initial_sigma, wrap=False
         )
 
         target_density = TimeDependentLennardJonesEnergyButler(
             dim=input_dim,
             n_particles=13,
             sigma=1.0,
-            alpha=0.1,
+            alpha=0.5,
             epsilon_val=1.0,
             min_dr=1e-3,
             m=1,
