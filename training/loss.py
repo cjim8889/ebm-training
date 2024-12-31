@@ -184,6 +184,7 @@ def loss_fn(
 @eqx.filter_jit
 def estimate_log_Z_t(
     xs: chex.Array,
+    weights: chex.Array,
     ts: chex.Array,
     time_derivative_log_density: Callable[[chex.Array, float], float],
 ) -> chex.Array:
@@ -192,7 +193,7 @@ def estimate_log_Z_t(
         in_axes=(0, 0),
     )(xs, ts)
 
-    return jnp.mean(dt_log_unormalised_density, axis=-1, keepdims=True)
+    return jnp.sum(dt_log_unormalised_density * weights, axis=-1, keepdims=True)
 
 
 def loss_fn_with_decoupled_log_Z_t(

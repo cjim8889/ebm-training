@@ -210,4 +210,16 @@ def generate_samples_with_hmc_correction(
         shift_fn,
     )
 
-    return final_samples
+    weights = (
+        jnp.ones(
+            (
+                ts.shape[0],
+                num_samples,
+            )
+        )
+        / num_samples
+    )
+    return {
+        "positions": final_samples,
+        "weights": weights,
+    }
