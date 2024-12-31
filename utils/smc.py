@@ -10,6 +10,24 @@ from blackjax.smc.ess import ess
 from blackjax.smc.resampling import systematic
 
 
+@jax.jit
+def log_weights_to_weights(log_weights: jnp.ndarray) -> jnp.ndarray:
+    """
+    Convert log weights to weights.
+
+    Args:
+        log_weights: Log weights. Shape: (num_samples,).
+
+    Returns:
+        Weights: Weights. Shape: (num_samples,).
+    """
+    log_sum_w = jax.scipy.special.logsumexp(log_weights)
+    log_normalized_weights = log_weights - log_sum_w
+    weights = jnp.exp(log_normalized_weights)
+
+    return weights
+
+
 @eqx.filter_jit
 def generate_samples_with_smc(
     key: jax.random.PRNGKey,
@@ -78,11 +96,7 @@ def generate_samples_with_smc(
             new_log_weights: Reset log weights. Shape: (num_samples,).
         """
         # Normalize log_weights to prevent numerical underflow/overflow
-        max_log_weight = jnp.max(log_weights)
-        shifted_log_weights = log_weights - max_log_weight
-        weights = jnp.exp(shifted_log_weights)
-        weights /= jnp.sum(weights)
-
+        weights = log_weights_to_weights(log_weights)
         # Perform resampling to obtain indices
         indices = resampling_fn(key, weights, num_samples)  # Shape: (num_samples,)
 
@@ -153,7 +167,7 @@ def generate_samples_with_smc(
         new_carry = (particles_new, t)
 
         # Output current particles
-        return new_carry, particles_new["positions"]
+        return new_carry, particles_new
 
     # Perform the SMC over all time steps
     _, output = jax.lax.scan(
@@ -162,7 +176,12 @@ def generate_samples_with_smc(
         (sample_keys, ts),  # Inputs: resampled keys and time steps
     )
 
-    return output
+    weights = log_weights_to_weights(output["log_weights"])
+
+    return {
+        "positions": output["positions"],
+        "weights": weights,
+    }
 
 
 @eqx.filter_jit
@@ -220,4 +239,14 @@ def generate_samples_with_euler_smc(
 
     _, output = jax.lax.scan(step, (initial_samples, 0.0), (sample_keys, ts))
 
-    return output
+    uniform_weights = jnp.full(
+        (
+            ts.shape[0],
+            num_samples,
+        ),
+        1.0 / num_samples,
+    )
+    return {
+        "positions": output,
+        "weights": uniform_weights,
+    }

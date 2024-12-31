@@ -51,7 +51,12 @@ def generate_samples(
     key, subkey = jax.random.split(key)
     initial_samples = sample_fn(subkey, (num_samples,))
     samples = integration_fn(v_theta, initial_samples, ts, shift_fn, use_shortcut)
-    return samples
+    weights = jnp.ones((ts.shape[0], num_samples)) / num_samples
+
+    return {
+        "positions": samples,
+        "weights": weights,
+    }
 
 
 @eqx.filter_jit

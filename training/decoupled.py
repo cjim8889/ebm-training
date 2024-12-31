@@ -95,7 +95,9 @@ def train_velocity_field_with_decoupled_loss(
         )
 
         if force_finite:
-            samples = jnp.nan_to_num(samples, nan=0.0, posinf=1.0, neginf=-1.0)
+            samples["positions"] = jnp.nan_to_num(
+                samples["positions"], nan=0.0, posinf=1.0, neginf=-1.0
+            )
 
         return samples
 
@@ -159,7 +161,9 @@ def train_velocity_field_with_decoupled_loss(
             )
 
         if force_finite:
-            samples = jnp.nan_to_num(samples, nan=0.0, posinf=1.0, neginf=-1.0)
+            samples["positions"] = jnp.nan_to_num(
+                samples["positions"], nan=0.0, posinf=1.0, neginf=-1.0
+            )
 
         return samples
 
@@ -208,7 +212,10 @@ def train_velocity_field_with_decoupled_loss(
         key, subkey = jax.random.split(key)
         mcmc_samples = _generate_mcmc(subkey, current_ts, force_finite=True)
         new_log_Z_t = estimate_log_Z_t(
-            mcmc_samples, current_ts, path_distribution.time_derivative
+            mcmc_samples["positions"],
+            mcmc_samples["weights"],
+            current_ts,
+            path_distribution.time_derivative,
         )
 
         if log_Z_t is None:
@@ -219,8 +226,7 @@ def train_velocity_field_with_decoupled_loss(
         key, subkey = jax.random.split(key)
         v_theta_samples = _generate(subkey, current_ts, force_finite=True)
 
-        # samples = jnp.concatenate([mcmc_samples, v_theta_samples], axis=1)
-        samples = v_theta_samples
+        samples = v_theta_samples["positions"]
         epoch_loss = 0.0
 
         for s in range(num_steps):
@@ -263,7 +269,7 @@ def train_velocity_field_with_decoupled_loss(
             )
 
             if target == "gmm":
-                fig = target_density.visualise(val_samples[-1])
+                fig = target_density.visualise(val_samples["positions"][-1])
                 if not offline:
                     wandb.log(
                         {
