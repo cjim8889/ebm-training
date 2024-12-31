@@ -284,13 +284,15 @@ class SoftCoreLennardJonesEnergy(Target):
 
         return distances
 
-    def visualise(self, samples: chex.Array) -> plt.Figure:
-        """Visualize samples against validation set"""
+    def visualise_with_time(self, samples: chex.Array, t: float) -> plt.Figure:
+        # Fill samples nan values with zeros
+        samples = jnp.nan_to_num(samples, nan=0.0, posinf=1.0, neginf=-1.0)
+
+        # Since we don't have a test set, we will just visualize the samples
+        fig, axs = plt.subplots(1, 2, figsize=(12, 4))
 
         dist_samples = self.interatomic_dist(samples)
-        energy_samples = -self.batched_log_prob(samples)
 
-        fig, axs = plt.subplots(1, 2, figsize=(12, 4))
         axs[0].hist(
             dist_samples.flatten(),
             bins=100,
@@ -300,19 +302,43 @@ class SoftCoreLennardJonesEnergy(Target):
             linewidth=4,
         )
         axs[0].set_xlabel("Interatomic distance")
+        axs[0].legend(["Generated data at t={:.2f}".format(t)])
+
+        energy_samples = -self.batched_log_prob(samples, t)
+        # Clip energy values for visualization
+        energy_samples = jnp.nan_to_num(
+            energy_samples,
+            nan=-100.0,
+            posinf=100.0,
+            neginf=-100.0,
+        )
+
+        # Determine histogram range from cleaned data
+        min_energy = jnp.min(energy_samples)
+        max_energy = jnp.max(energy_samples)
+
+        # Add padding to range
+        energy_range = (
+            min_energy,
+            max_energy,
+        )
 
         axs[1].hist(
             energy_samples,
             bins=100,
             density=True,
             alpha=0.4,
-            range=(energy_samples.min(), energy_samples.max()),
+            range=energy_range,
             color="r",
             histtype="step",
             linewidth=4,
-            label="Generated data",
+            label="Generated data at t={:.2f}".format(t),
         )
         axs[1].set_xlabel("Energy")
+        axs[1].legend()
 
         fig.canvas.draw()
         return fig
+
+    def visualise(self, samples: chex.Array) -> plt.Figure:
+        return self.visualise_with_time(samples, 1.0)
