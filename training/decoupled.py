@@ -211,17 +211,17 @@ def train_velocity_field_with_decoupled_loss(
 
         key, subkey = jax.random.split(key)
         mcmc_samples = _generate_mcmc(subkey, current_ts, force_finite=True)
-        new_log_Z_t = estimate_log_Z_t(
+        log_Z_t = estimate_log_Z_t(
             mcmc_samples["positions"],
             mcmc_samples["weights"],
             current_ts,
             path_distribution.time_derivative,
         )
 
-        if log_Z_t is None:
-            log_Z_t = new_log_Z_t
-        else:
-            log_Z_t = 0.5 * (log_Z_t + new_log_Z_t)
+        # if log_Z_t is None:
+        #     log_Z_t = new_log_Z_t
+        # else:
+        #     log_Z_t = 0.5 * (log_Z_t + new_log_Z_t)
 
         key, subkey = jax.random.split(key)
         v_theta_samples = _generate(subkey, current_ts, force_finite=True)
