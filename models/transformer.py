@@ -299,4 +299,4 @@ class TimeVelocityFieldTransformer(eqx.Module):
 
         pooled = jax.vmap(self.pooler)(x)
 
-        return pooled.reshape(self.n_particles, self.n_spatial_dim)
+        return pooled.reshape((self.n_particles * self.n_spatial_dim,))
