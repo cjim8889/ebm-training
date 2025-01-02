@@ -50,9 +50,10 @@ class EmbedderBlock(eqx.Module):
     def __call__(
         self,
         xs: Float[Array, "n_particles n_spatial_dim"],
-        t: Float[Array, "n_particles"],
+        t: Float,
     ) -> Float[Array, "n_particles embedding_size"]:
-        xs = jnp.concatenate([xs, t[:, None]], axis=-1)
+        t = jnp.broadcast_to(t, (xs.shape[0], 1))
+        xs = jnp.concatenate([xs, t], axis=-1)
         embedded = jax.vmap(self.particle_embedder)(xs)
         embedded = self.layernorm(embedded)
         return embedded
