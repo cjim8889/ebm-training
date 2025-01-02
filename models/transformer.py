@@ -40,7 +40,7 @@ class EmbedderBlock(eqx.Module):
         key: jax.random.PRNGKey,
     ):
         self.particle_embedder = eqx.nn.Linear(
-            in_features=n_spatial_dim,
+            in_features=n_spatial_dim + 1,
             out_features=embedding_size,
             use_bias=True,
             key=key,
@@ -50,7 +50,9 @@ class EmbedderBlock(eqx.Module):
     def __call__(
         self,
         xs: Float[Array, "n_particles n_spatial_dim"],
+        t: Float[Array, "n_particles"],
     ) -> Float[Array, "n_particles embedding_size"]:
+        xs = jnp.concatenate([xs, t[:, None]], axis=-1)
         embedded = jax.vmap(self.particle_embedder)(xs)
         embedded = self.layernorm(embedded)
         return embedded
@@ -281,6 +283,7 @@ class TimeVelocityFieldTransformer(eqx.Module):
     def __call__(
         self,
         xs: Float[Array, "..."],
+        t: Float[Array, "..."],
         *,
         enable_dropout: bool = False,
         key: Optional[jax.random.PRNGKey] = None,
@@ -288,7 +291,7 @@ class TimeVelocityFieldTransformer(eqx.Module):
         xs = xs.reshape(self.n_particles, self.n_spatial_dim)
         key, l_key = jax.random.split(key) if key is not None else (None, None)
 
-        x = self.embedder_block(xs)
+        x = self.embedder_block(xs, t)
         for layer in self.layers:
             cl_key, l_key = (None, None) if l_key is None else jax.random.split(l_key)
             x = layer(x, enable_dropout=enable_dropout, key=cl_key)
