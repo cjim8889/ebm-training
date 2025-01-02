@@ -1,7 +1,3 @@
-import blackjax
-import blackjax.adaptation
-import blackjax.adaptation.mass_matrix
-import blackjax.smc.resampling as resampling
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
@@ -19,7 +15,7 @@ from utils.smc import generate_samples_with_smc
 # plt.rcParams["figure.dpi"] = 300
 # plt.rcParams["figure.figsize"] = [6.0, 4.0]
 
-jax.config.update("jax_platform_name", "cpu")
+# jax.config.update("jax_platform_name", "cpu")
 
 key = jax.random.PRNGKey(1234)
 
