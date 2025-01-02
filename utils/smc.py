@@ -427,11 +427,9 @@ class SampleBuffer:
         if samples is None or ts is None:
             return None
 
-        def estimate_timestep(samples_t, t):
-            dt_log_unormalised_density = jax.vmap(
-                lambda x: time_derivative_log_density(x, t)
-            )(samples_t)
-            # Use uniform weights implicitly by taking mean
-            return jnp.mean(dt_log_unormalised_density, keepdims=True)
+        dt_log_unormalised_density = jax.vmap(
+            lambda xs, t: jax.vmap(lambda x: time_derivative_log_density(x, t))(xs),
+            in_axes=(0, 0),
+        )(samples, ts)
 
-        return jax.vmap(estimate_timestep)(samples, ts)
+        return jnp.mean(dt_log_unormalised_density, axis=-1, keepdims=True)
