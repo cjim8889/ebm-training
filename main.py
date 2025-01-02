@@ -16,7 +16,11 @@ from distributions import (
     TimeDependentLennardJonesEnergyButlerWithTemperatureTempered,
     TranslationInvariantGaussian,
 )
-from models import TimeVelocityField, TimeVelocityFieldWithPairwiseFeature
+from models import (
+    TimeVelocityField,
+    TimeVelocityFieldWithPairwiseFeature,
+    TimeVelocityFieldTransformer,
+)
 from training import train_velocity_field, train_velocity_field_with_decoupled_loss
 
 
@@ -37,7 +41,9 @@ def main():
     parser.add_argument("--mcmc-integration-steps", type=int, default=3)
     parser.add_argument("--eta", type=float, default=0.2)
     parser.add_argument("--initial-sigma", type=float, default=20.0)
-    parser.add_argument("--network", type=str, default="mlp", choices=["mlp", "pdn"])
+    parser.add_argument(
+        "--network", type=str, default="mlp", choices=["mlp", "pdn", "transformer"]
+    )
     parser.add_argument("--dt-pt-clip", type=float, default=None)
     parser.add_argument("--soft-clip", action="store_true")
     parser.add_argument("--pt-clip", type=float, default=None)
@@ -283,6 +289,18 @@ def main():
             n_spatial_dim=2 if args.target in ["dw4", "dw4o"] else 3,
             hidden_dim=args.hidden_dim,
             depth=args.depth,
+        )
+    elif args.network == "transformer":
+        v_theta = TimeVelocityFieldTransformer(
+            n_particles=4 if args.target in ["dw4", "dw4o"] else 13,
+            n_spatial_dim=2 if args.target in ["dw4", "dw4o"] else 3,
+            hidden_size=args.hidden_dim,
+            intermediate_size=2 * args.hidden_dim,
+            num_layers=args.depth,
+            num_heads=4,
+            dropout_rate=0.1,
+            attention_dropout_rate=0.1,
+            key=model_key,
         )
 
     if not args.offline:
