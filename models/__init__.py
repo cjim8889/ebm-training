@@ -1,1 +1,2 @@
-from .velocity_field import TimeVelocityField, TimeVelocityFieldWithPairwiseFeature
+from .mlp import TimeVelocityField, TimeVelocityFieldWithPairwiseFeature
+from .transformer import TimeVelocityFieldTransformer
