@@ -1,4 +1,4 @@
-from typing import Callable, Tuple
+from typing import Callable, Tuple, Optional
 
 import chex
 import equinox as eqx
@@ -27,6 +27,17 @@ def log_weights_to_weights(log_weights: jnp.ndarray) -> jnp.ndarray:
 
     return weights
 
+@eqx.filter_jit
+def estimate_covariance(positions: chex.Array, weights: Optional[chex.Array] = None) -> chex.Array:
+    # """Estimate covariance from particles, optionally using importance weights"""
+    # if weights is None:
+    #     weights = jnp.ones(positions.shape[0]) / positions.shape[0]
+    
+    # mean = jnp.average(positions, weights=weights, axis=0)
+    # centered = positions - mean[None, :]
+    # cov = centered.T @ (weights[:, None] * centered)
+    # return cov
+    return jnp.cov(positions, rowvar=False, aweights=weights)
 
 @eqx.filter_jit
 def generate_samples_with_smc(
@@ -44,10 +55,12 @@ def generate_samples_with_smc(
     resampling_fn: Callable[
         [jax.random.PRNGKey, jnp.ndarray, int], jnp.ndarray
     ] = systematic,
+    incremental_log_delta: Callable[[chex.Array, float], float] = None,
+    covariances: Optional[chex.Array] = None,
 ) -> jnp.ndarray:
     batched_shift_fn = jax.vmap(shift_fn)
     batched_hmc = jax.vmap(
-        lambda key, x, t: sample_hamiltonian_monte_carlo(
+        lambda key, x, t, covariance: sample_hamiltonian_monte_carlo(
             key,
             time_dependent_log_density,
             x,
@@ -57,8 +70,9 @@ def generate_samples_with_smc(
             eta,
             rejection_sampling,
             shift_fn,
+            covariance
         ),
-        in_axes=(0, 0, None),
+        in_axes=(0, 0, None, None),
     )
 
     key, subkey = jax.random.split(key)
@@ -74,11 +88,14 @@ def generate_samples_with_smc(
     }
 
     def _delta(positions, t_delta):
+        if incremental_log_delta is not None:
+            return incremental_log_delta(positions, t_delta)
+        
         # Prevent division by zero by adding a small epsilon
         log_density_ratio = time_dependent_log_density(
             positions, 1.0
         ) - time_dependent_log_density(positions, 0.0)
-        return jnp.exp(log_density_ratio * t_delta)
+        return log_density_ratio * t_delta
 
     batched_delta = jax.vmap(_delta, in_axes=(0, None))
 
@@ -109,50 +126,33 @@ def generate_samples_with_smc(
         return new_positions, new_log_weights
 
     def step(carry, inputs):
-        keys, t = inputs
+        keys, t, cov = inputs
         particles_prev, t_prev = carry
 
         prev_positions = particles_prev["positions"]
         prev_log_weights = particles_prev["log_weights"]
-
         d = t - t_prev
 
-        # Apply shift function
-        shifted_positions = batched_shift_fn(
-            prev_positions
-        )  # Shape: (num_samples, ...)
-
-        # Apply HMC to propagate particles
-        propagated_positions = batched_hmc(
-            keys, shifted_positions, t
-        )  # Shape: (num_samples, ...)
-
-        # Compute incremental weights
-        w_delta = batched_delta(propagated_positions, d)  # Shape: (num_samples,)
-
-        # Update log weights in log space
-        next_log_weights = prev_log_weights + jnp.log(
-            w_delta + 1e-8
-        )  # Shape: (num_samples,)
-
-        ess_val = ess(log_weights=next_log_weights)  # Scalar
+        # Compute ESS and Resample if necessary
+        ess_val = ess(log_weights=prev_log_weights)  # Scalar
         ess_percentage = ess_val / num_samples  # Scalar
 
         # Define the condition for resampling
         def do_resample():
+            resample_key, _ = jax.random.split(keys[0])
             # Resample particles
             new_positions, new_log_weights = _resample(
-                keys[0], propagated_positions, next_log_weights
+                resample_key, prev_positions, prev_log_weights
             )
             return {"positions": new_positions, "log_weights": new_log_weights}
 
         def do_nothing():
             # Keep the particles as is with normalized log weights
-            log_weights_normalized = next_log_weights - jax.scipy.special.logsumexp(
-                next_log_weights
+            log_weights_normalized = prev_log_weights - jax.scipy.special.logsumexp(
+                prev_log_weights
             )
             return {
-                "positions": propagated_positions,
+                "positions": prev_positions,
                 "log_weights": log_weights_normalized,
             }
 
@@ -163,8 +163,27 @@ def generate_samples_with_smc(
             do_nothing,
         )
 
+        # Apply shift function
+        shifted_positions = batched_shift_fn(
+            particles_new["positions"]
+        )  # Shape: (num_samples, ...)
+
+        # Apply HMC to propagate particles
+        propagated_positions = batched_hmc(
+            keys, shifted_positions, t, cov
+        )  # Shape: (num_samples, ...)
+
+        # Compute incremental weights
+        w_delta = batched_delta(propagated_positions, d)  # Shape: (num_samples,)
+
+        # Update log weights in log space
+        next_log_weights = particles_new["log_weights"] + w_delta
+
         # Update time
-        new_carry = (particles_new, t)
+        new_carry = ({
+            "positions": propagated_positions,
+            "log_weights": next_log_weights,
+        }, t)
 
         # Output current particles
         return new_carry, particles_new
@@ -173,14 +192,16 @@ def generate_samples_with_smc(
     _, output = jax.lax.scan(
         step,
         (particles, 0.0),  # Initial carry: particles and initial time
-        (sample_keys, ts),  # Inputs: resampled keys and time steps
+        (sample_keys, ts, covariances),  # Inputs: resampled keys and time steps
     )
 
-    weights = log_weights_to_weights(output["log_weights"])
+    weights = jax.vmap(log_weights_to_weights)(output["log_weights"])
+    covariances = jax.vmap(lambda x, weights: jnp.cov(x, rowvar=False, aweights=weights))(output["positions"], weights)
 
     return {
         "positions": output["positions"],
         "weights": weights,
+        "covariances": covariances
     }
 
 
