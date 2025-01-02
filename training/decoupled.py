@@ -15,7 +15,11 @@ from utils.distributions import (
 from utils.hmc import (
     generate_samples_with_hmc_correction,
 )
-from utils.smc import generate_samples_with_euler_smc, generate_samples_with_smc
+from utils.smc import (
+    generate_samples_with_euler_smc,
+    generate_samples_with_smc,
+    SampleBuffer,
+)
 from utils.integration import (
     euler_integrate,
     generate_samples,
@@ -101,11 +105,14 @@ def train_velocity_field_with_decoupled_loss(
 
         return samples
 
-    covariances = None
+    buffer = SampleBuffer(buffer_size=10240, min_update_size=512)
+
     def _generate_mcmc(
         key: jax.random.PRNGKey, ts: jnp.ndarray, force_finite: bool = False
     ):
-        nonlocal covariances
+        nonlocal buffer
+        key, subkey = jax.random.split(key)
+        covariances = buffer.estimate_covariance(subkey, num_samples=5120)
         if mcmc_type == "hmc":
             samples = generate_samples_with_hmc_correction(
                 key=key,
@@ -151,9 +158,6 @@ def train_velocity_field_with_decoupled_loss(
                 shift_fn=shift_fn,
                 covariances=covariances,
             )
-
-            if "covariances" in samples:
-                covariances = samples["covariances"]
         else:
             samples = generate_samples(
                 key,
@@ -217,11 +221,13 @@ def train_velocity_field_with_decoupled_loss(
 
         key, subkey = jax.random.split(key)
         mcmc_samples = _generate_mcmc(subkey, current_ts, force_finite=True)
-        log_Z_t = estimate_log_Z_t(
-            mcmc_samples["positions"],
-            mcmc_samples["weights"],
-            current_ts,
-            path_distribution.time_derivative,
+
+        key, subkey = jax.random.split(key)
+        buffer.add_samples(subkey, mcmc_samples["positions"], mcmc_samples["weights"])
+
+        key, subkey = jax.random.split(key)
+        log_Z_t = buffer.estimate_log_Z_t(
+            subkey, path_distribution.time_derivative, current_ts, num_samples=5120
         )
 
         if not offline:
@@ -230,11 +236,8 @@ def train_velocity_field_with_decoupled_loss(
                     "log_Z_t": log_Z_t,
                 }
             )
-
-        # if log_Z_t is None:
-        #     log_Z_t = new_log_Z_t
-        # else:
-        #     log_Z_t = 0.5 * (log_Z_t + new_log_Z_t)
+        else:
+            print(f"Epoch {epoch}, Log Z_t: {log_Z_t}")
 
         key, subkey = jax.random.split(key)
         v_theta_samples = _generate(subkey, current_ts, force_finite=True)
