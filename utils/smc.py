@@ -27,17 +27,21 @@ def log_weights_to_weights(log_weights: jnp.ndarray) -> jnp.ndarray:
 
     return weights
 
+
 @eqx.filter_jit
-def estimate_covariance(positions: chex.Array, weights: Optional[chex.Array] = None) -> chex.Array:
+def estimate_covariance(
+    positions: chex.Array, weights: Optional[chex.Array] = None
+) -> chex.Array:
     # """Estimate covariance from particles, optionally using importance weights"""
     # if weights is None:
     #     weights = jnp.ones(positions.shape[0]) / positions.shape[0]
-    
+
     # mean = jnp.average(positions, weights=weights, axis=0)
     # centered = positions - mean[None, :]
     # cov = centered.T @ (weights[:, None] * centered)
     # return cov
     return jnp.cov(positions, rowvar=False, aweights=weights)
+
 
 @eqx.filter_jit
 def generate_samples_with_smc(
@@ -70,7 +74,7 @@ def generate_samples_with_smc(
             eta,
             rejection_sampling,
             shift_fn,
-            covariance
+            covariance,
         ),
         in_axes=(0, 0, None, None),
     )
@@ -90,7 +94,7 @@ def generate_samples_with_smc(
     def _delta(positions, t_delta):
         if incremental_log_delta is not None:
             return incremental_log_delta(positions, t_delta)
-        
+
         # Prevent division by zero by adding a small epsilon
         log_density_ratio = time_dependent_log_density(
             positions, 1.0
@@ -180,10 +184,13 @@ def generate_samples_with_smc(
         next_log_weights = particles_new["log_weights"] + w_delta
 
         # Update time
-        new_carry = ({
-            "positions": propagated_positions,
-            "log_weights": next_log_weights,
-        }, t)
+        new_carry = (
+            {
+                "positions": propagated_positions,
+                "log_weights": next_log_weights,
+            },
+            t,
+        )
 
         # Output current particles
         return new_carry, particles_new
@@ -196,12 +203,14 @@ def generate_samples_with_smc(
     )
 
     weights = jax.vmap(log_weights_to_weights)(output["log_weights"])
-    covariances = jax.vmap(lambda x, weights: jnp.cov(x, rowvar=False, aweights=weights))(output["positions"], weights)
+    # covariances = jax.vmap(
+    #     lambda x, weights: jnp.cov(x, rowvar=False, aweights=weights)
+    # )(output["positions"], weights)
 
     return {
         "positions": output["positions"],
         "weights": weights,
-        "covariances": covariances
+        # "covariances": covariances,
     }
 
 
@@ -271,3 +280,158 @@ def generate_samples_with_euler_smc(
         "positions": output,
         "weights": uniform_weights,
     }
+
+
+class SampleBuffer:
+    """Buffer to store and manage samples at each time step. All samples have uniform weights after resampling."""
+
+    def __init__(self, buffer_size: int = 10240, min_update_size: int = 512):
+        """
+        Args:
+            buffer_size: Maximum number of samples to store per time step
+            min_buffer_size: Minimum number of samples required before using buffer for estimation
+        """
+        self.buffer_size = buffer_size
+        self.min_update_size = min_update_size
+        self.samples = None  # Shape: (num_timesteps, buffer_size, dim)
+        self.sample_counts = 0  # Shape: (num_timesteps,)
+
+    def add_samples(
+        self,
+        key: chex.PRNGKey,
+        new_samples: chex.Array,  # Shape: (num_timesteps, num_samples, dim)
+        new_weights: chex.Array,  # Shape: (num_timesteps, num_samples)
+    ):
+        """Add new samples and weights for all time steps.
+        If total samples exceed buffer_size, resample to buffer_size.
+
+        Args:
+            key: Random key for resampling
+            new_samples: New samples to add. Shape: (num_timesteps, num_samples, dim)
+            new_weights: Normalized weights for new samples. Shape: (num_timesteps, num_samples)
+        """
+
+        num_timesteps, num_new_samples, dim = new_samples.shape
+
+        if self.samples is None:
+            # Initialize samples and sample_counts
+            sampled_size = jnp.minimum(num_new_samples, self.buffer_size)
+            keys = jax.random.split(key, num_timesteps)
+            indices = jax.vmap(systematic, in_axes=(0, 0, None))(
+                keys, new_weights, sampled_size
+            )
+            self.samples = jax.vmap(lambda s, idx: s[idx])(new_samples, indices)
+            self.sample_counts = sampled_size
+            return
+
+        # Determine number of samples to add without exceeding buffer_size
+        available_space = self.buffer_size - self.sample_counts
+        sampled_size = jnp.minimum(
+            jnp.maximum(available_space, self.min_update_size), num_new_samples
+        )
+        sampled_size = jnp.minimum(sampled_size, num_new_samples)
+
+        # Split keys for each timestep
+        keys = jax.random.split(key, num_timesteps)
+
+        # Resample indices using systematic resampling per timestep
+        indices = jax.vmap(systematic, in_axes=(0, 0, None))(
+            keys, new_weights, sampled_size
+        )
+
+        # Gather the new samples based on the resampled indices
+        new_selected_samples = jax.vmap(lambda s, idx: s[idx])(new_samples, indices)
+
+        # Concatenate existing samples with new samples
+        self.samples = jnp.concatenate([self.samples, new_selected_samples], axis=1)
+
+        # Update sample counts
+        self.sample_counts = self.sample_counts + sampled_size
+
+        if self.sample_counts > self.buffer_size:
+            # Identify timesteps that exceed the buffer
+            subkey, *rest = jax.random.split(key)
+            uniform_weights = jnp.ones((self.buffer_size,)) / self.buffer_size
+            resample_indices = systematic(subkey, uniform_weights, self.buffer_size)
+            self.samples = jnp.take(
+                self.samples, resample_indices, axis=1, unique_indices=False
+            )
+            self.sample_counts = self.buffer_size
+
+    def get_samples(self, key: chex.PRNGKey, num_samples: Optional[int] = None):
+        """Get samples from the buffer.
+
+        Args:
+            key: Random key for sampling
+            num_samples: Optional number of samples to return. If None, returns all samples.
+                        If specified, samples are resampled using systematic resampling.
+
+        Returns:
+            samples: Array of samples. Shape: (num_timesteps, num_samples, dim)
+            weights: Array of uniform weights. Shape: (num_timesteps, num_samples)
+        """
+        if self.samples is None:
+            return None, None
+
+        if num_samples is None or num_samples == self.samples.shape[1]:
+            uniform_weights = (
+                jnp.ones((self.samples.shape[0], self.samples.shape[1]))
+                / self.samples.shape[1]
+            )
+            return self.samples, uniform_weights
+
+        # Resample to get requested number of samples
+        keys = jax.random.split(key, self.samples.shape[0])
+        uniform_weights = jnp.ones((self.samples.shape[1],)) / self.samples.shape[1]
+
+        # Apply systematic resampling for each timestep
+        indices = jax.vmap(systematic, in_axes=(0, None, None))(
+            keys, uniform_weights, num_samples
+        )
+
+        resampled_samples = jnp.take(self.samples, indices)
+
+        new_uniform_weights = (
+            jnp.ones((self.samples.shape[0], num_samples)) / num_samples
+        )
+        return resampled_samples, new_uniform_weights
+
+    def estimate_covariance(
+        self, key: chex.PRNGKey, num_samples: Optional[int] = None
+    ) -> Optional[chex.Array]:
+        """Estimate covariance at each time step using uniform weights.
+
+        Returns:
+            Array of shape (num_timesteps, dim, dim) or None if insufficient samples
+        """
+        samples, _ = self.get_samples(key, num_samples=num_samples)
+        if samples is None:
+            return None
+
+        # Use uniform weights for covariance estimation
+        return jax.vmap(lambda x: jnp.cov(x, rowvar=False))(samples)
+
+    def estimate_log_Z_t(
+        self,
+        key: chex.PRNGKey,
+        time_derivative_log_density: Callable[[chex.Array, float], float],
+        ts: chex.Array,
+        num_samples: Optional[int] = None,
+    ) -> Optional[chex.Array]:
+        """Estimate log_Z_t at each time step using uniform weights.
+
+        Returns:
+            Array of shape (num_timesteps, 1) or None if insufficient samples
+        """
+        samples, _ = self.get_samples(key, num_samples=num_samples)
+        if samples is None or ts is None:
+            return None
+
+        def estimate_timestep(samples_t, t):
+            dt_log_unormalised_density = jax.vmap(
+                lambda x: time_derivative_log_density(x, t)
+            )(samples_t)
+            # Use uniform weights implicitly by taking mean
+            return jnp.mean(dt_log_unormalised_density, keepdims=True)
+
+        return jax.vmap(estimate_timestep)(samples, ts)
