@@ -389,7 +389,7 @@ class SampleBuffer:
             keys, uniform_weights, num_samples
         )
 
-        resampled_samples = jnp.take(self.samples, indices)
+        resampled_samples = jax.vmap(lambda s, idx: s[idx])(self.samples, indices)
 
         new_uniform_weights = (
             jnp.ones((self.samples.shape[0], num_samples)) / num_samples
