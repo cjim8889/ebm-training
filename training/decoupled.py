@@ -224,6 +224,13 @@ def train_velocity_field_with_decoupled_loss(
             path_distribution.time_derivative,
         )
 
+        if not offline:
+            wandb.log(
+                {
+                    "log_Z_t": log_Z_t,
+                }
+            )
+
         # if log_Z_t is None:
         #     log_Z_t = new_log_Z_t
         # else:
