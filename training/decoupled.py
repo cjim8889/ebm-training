@@ -236,8 +236,8 @@ def train_velocity_field_with_decoupled_loss(
                     "log_Z_t": log_Z_t,
                 }
             )
-        else:
-            print(f"Epoch {epoch}, Log Z_t: {log_Z_t}")
+        # else:
+        # print(f"Epoch {epoch}, Log Z_t: {log_Z_t}")
 
         key, subkey = jax.random.split(key)
         v_theta_samples = _generate(subkey, current_ts, force_finite=True)
