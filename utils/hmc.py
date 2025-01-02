@@ -1,4 +1,4 @@
-from typing import Callable, Tuple
+from typing import Callable, Tuple, Optional
 
 import chex
 import equinox as eqx
@@ -23,10 +23,22 @@ def sample_hamiltonian_monte_carlo(
     eta: float = 0.1,
     rejection_sampling: bool = False,
     shift_fn: Callable[[chex.Array], chex.Array] = lambda x: x,
+    covariance: Optional[chex.Array] = None,
 ) -> chex.Array:
     dim = x.shape[-1]
-    covariance = jnp.eye(dim)
-    inv_covariance = covariance
+    
+     # Handle covariance cases
+    if covariance is None:
+        covariance = jnp.eye(dim)
+        inv_covariance = covariance
+    else:
+        # Check if diagonal covariance (1D array) or full matrix
+        if covariance.ndim == 1:
+            inv_covariance = 1.0 / covariance
+            covariance = jnp.diag(covariance)
+        else:
+            inv_covariance = jnp.linalg.inv(covariance)
+    
     grad_log_prob = jax.grad(lambda x: time_dependent_log_density(x, t))
 
     def kinetic_energy(v):
@@ -102,6 +114,8 @@ def time_batched_sample_hamiltonian_monte_carlo(
     eta: float = 0.1,
     rejection_sampling: bool = False,
     shift_fn: Callable[[chex.Array], chex.Array] = lambda x: x,
+    # TODO: Add covariance support
+    covariance: Optional[chex.Array] = None,
 ) -> chex.Array:
     keys = jax.random.split(key, xs.shape[0] * xs.shape[1])
 

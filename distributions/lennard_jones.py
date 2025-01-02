@@ -16,10 +16,10 @@ class LennardJonesEnergy(Target):
         self,
         dim: int,
         n_particles: int,
-        data_path_train: str,
-        data_path_test: str,
-        data_path_val: str,
-        log_prob_clip: float = 100.0,
+        data_path_train: str = None,
+        data_path_test: str = None,
+        data_path_val: str = None,
+        log_prob_clip: float = None,
         key: jax.random.PRNGKey = jax.random.PRNGKey(0),
     ):
         super().__init__(

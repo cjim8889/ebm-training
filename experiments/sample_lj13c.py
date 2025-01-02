@@ -9,9 +9,11 @@ import matplotlib.pyplot as plt
 from distributions import AnnealedDistribution
 from distributions.multivariate_gaussian import MultivariateGaussian
 from distributions.time_dependent_lennard_jones_butler import (
-    TimeDependentLennardJonesEnergyButler,
+    TimeDependentLennardJonesEnergyButler, TimeDependentLennardJonesEnergyButlerWithTemperatureTempered
 )
+from distributions import SoftCoreLennardJonesEnergy
 
+from utils.optimization import power_schedule, inverse_power_schedule
 from utils.smc import generate_samples_with_smc
 
 # plt.rcParams["figure.dpi"] = 300
@@ -23,6 +25,20 @@ key = jax.random.PRNGKey(1234)
 
 
 initial_density = MultivariateGaussian(dim=39, mean=0, sigma=3)
+# target_density = TimeDependentLennardJonesEnergyButler(
+#     dim=39,
+#     n_particles=13,
+#     alpha=0.5,
+#     sigma=1.0,
+#     epsilon_val=1.0,
+#     min_dr=1e-4,
+#     n=1,
+#     m=1,
+#     c=0.5,
+#     include_harmonic=True,
+#     initial_temperature=100.,
+#     # log_prob_clip=100.0,
+# )
 target_density = TimeDependentLennardJonesEnergyButler(
     dim=39,
     n_particles=13,
@@ -34,7 +50,7 @@ target_density = TimeDependentLennardJonesEnergyButler(
     m=1,
     c=0.5,
     include_harmonic=True,
-    cubic_spline=True,
+    # cubic_spline=True,
     # log_prob_clip=100.0,
 )
 
@@ -44,20 +60,43 @@ path_density = AnnealedDistribution(
 )
 
 key, subkey = jax.random.split(key)
-ts = jnp.linspace(0, 1.0, num=128)
+gamma = 0.5
+# ts = jnp.linspace(0, 1, 128)
+ts = (1 + gamma) ** (jnp.linspace(0, 1, 128) + 1) - 1
+ts = ts / ts[-1]
+# print(ts)
 
+# print(inverse_power_schedule(T=128, end_time=1.0, gamma=0.5))
+# ts = inverse_power_schedule(T=128, end_time=1.0, gamma=0.5)
 samples = generate_samples_with_smc(
     key=key,
     time_dependent_log_density=path_density.time_dependent_log_prob,
-    num_samples=1000,
+    num_samples=2048,
     ts=ts,
     sample_fn=path_density.sample_initial,
-    num_steps=20,
+    num_steps=10,
     integration_steps=10,
-    eta=0.02,
+    eta=0.01,
     rejection_sampling=True,
-    ess_threshold=0.5,
+    ess_threshold=0.6,
+    # incremental_log_delta=path_density.incremental_log_delta,
 )
 
-fig = target_density.visualise(samples[-1])
-plt.show()
+cov = samples["covariances"]
+key, subkey = jax.random.split(key)
+samples = generate_samples_with_smc(
+    key=key,
+    time_dependent_log_density=path_density.time_dependent_log_prob,
+    num_samples=2048,
+    ts=ts,
+    sample_fn=path_density.sample_initial,
+    num_steps=10,
+    integration_steps=10,
+    eta=0.01,
+    rejection_sampling=True,
+    ess_threshold=0.6,
+    covariances=cov,
+)
+fig = target_density.visualise(samples["positions"][-1])
+# plt.show()
+plt.savefig("lj13c.png")

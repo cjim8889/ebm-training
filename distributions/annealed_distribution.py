@@ -35,6 +35,9 @@ class AnnealedDistribution(Target):
 
         return initial_prob + target_prob
 
+    def incremental_log_delta(self, xs: chex.Array, dt: float) -> chex.Array:
+        return -self.time_dependent_log_prob(xs, 1.0) * dt
+
     def time_derivative(self, xs: chex.Array, t: float) -> chex.Array:
         return jax.grad(lambda t: self.time_dependent_log_prob(xs, t))(t)
 
