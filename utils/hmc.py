@@ -26,8 +26,8 @@ def sample_hamiltonian_monte_carlo(
     covariance: Optional[chex.Array] = None,
 ) -> chex.Array:
     dim = x.shape[-1]
-    
-     # Handle covariance cases
+
+    # Handle covariance cases
     if covariance is None:
         covariance = jnp.eye(dim)
         inv_covariance = covariance
@@ -38,7 +38,7 @@ def sample_hamiltonian_monte_carlo(
             covariance = jnp.diag(covariance)
         else:
             inv_covariance = jnp.linalg.inv(covariance)
-    
+
     grad_log_prob = jax.grad(lambda x: time_dependent_log_density(x, t))
 
     def kinetic_energy(v):
@@ -114,26 +114,45 @@ def time_batched_sample_hamiltonian_monte_carlo(
     eta: float = 0.1,
     rejection_sampling: bool = False,
     shift_fn: Callable[[chex.Array], chex.Array] = lambda x: x,
-    # TODO: Add covariance support
     covariance: Optional[chex.Array] = None,
 ) -> chex.Array:
     keys = jax.random.split(key, xs.shape[0] * xs.shape[1])
+    reshaped_keys = keys.reshape((xs.shape[0], xs.shape[1], -1))
 
-    final_xs = jax.vmap(
-        lambda xs, t, keys: jax.vmap(
-            lambda x, subkey: sample_hamiltonian_monte_carlo(
-                subkey,
-                time_dependent_log_density,
-                x,
-                t,
-                num_steps,
-                integration_steps,
-                eta,
-                rejection_sampling,
-                shift_fn,
-            )
-        )(xs, keys)
-    )(xs, ts, keys.reshape((xs.shape[0], xs.shape[1], -1)))
+    if covariance is None:
+        final_xs = jax.vmap(
+            lambda xs, t, keys: jax.vmap(
+                lambda x, subkey: sample_hamiltonian_monte_carlo(
+                    subkey,
+                    time_dependent_log_density,
+                    x,
+                    t,
+                    num_steps,
+                    integration_steps,
+                    eta,
+                    rejection_sampling,
+                    shift_fn,
+                    None,
+                )
+            )(xs, keys)
+        )(xs, ts, reshaped_keys)
+    else:
+        final_xs = jax.vmap(
+            lambda xs, t, keys, cov: jax.vmap(
+                lambda x, subkey: sample_hamiltonian_monte_carlo(
+                    subkey,
+                    time_dependent_log_density,
+                    x,
+                    t,
+                    num_steps,
+                    integration_steps,
+                    eta,
+                    rejection_sampling,
+                    shift_fn,
+                    cov,
+                )
+            )(xs, keys)
+        )(xs, ts, reshaped_keys, covariance)
 
     return final_xs
 
@@ -155,6 +174,7 @@ def generate_samples_with_hmc_correction_and_initial_values(
     rejection_sampling: bool = False,
     shift_fn: Callable[[jnp.ndarray], jnp.ndarray] = lambda x: x,
     use_shortcut: bool = False,
+    covariance: Optional[chex.Array] = None,
 ) -> jnp.ndarray:
     initial_samps = generate_samples_with_initial_values(
         v_theta=v_theta,
@@ -175,6 +195,7 @@ def generate_samples_with_hmc_correction_and_initial_values(
         eta,
         rejection_sampling,
         shift_fn,
+        covariance,
     )
 
     return final_samples
@@ -198,6 +219,7 @@ def generate_samples_with_hmc_correction(
     rejection_sampling: bool = False,
     shift_fn: Callable[[jnp.ndarray], jnp.ndarray] = lambda x: x,
     use_shortcut: bool = False,
+    covariance: Optional[chex.Array] = None,
 ) -> jnp.ndarray:
     key, subkey = jax.random.split(key)
     initial_samples = generate_samples(
@@ -222,6 +244,7 @@ def generate_samples_with_hmc_correction(
         eta,
         rejection_sampling,
         shift_fn,
+        covariance,
     )
 
     weights = (
