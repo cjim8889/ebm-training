@@ -232,6 +232,9 @@ def main():
             include_harmonic=True,
             cubic_spline=True,
         )
+
+        def shift_fn(x):
+            return x - jnp.mean(x, axis=0, keepdims=True)
     elif args.target == "lj13bt":
         input_dim = 39
         key, subkey = jax.random.split(key)
@@ -255,6 +258,9 @@ def main():
             score_norm=args.score_norm,
             include_harmonic=True,
         )
+
+        def shift_fn(x):
+            return x - jnp.mean(x, axis=0, keepdims=True)
     elif args.target == "sclj13":
         input_dim = 39
         key, subkey = jax.random.split(key)
@@ -272,6 +278,9 @@ def main():
             min_dr=1e-3,
             include_harmonic=True,
         )
+
+        def shift_fn(x):
+            return x - jnp.mean(x, axis=0, keepdims=True)
 
     # Initialize velocity field
     key, model_key = jax.random.split(key)
