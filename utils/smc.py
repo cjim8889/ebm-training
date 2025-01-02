@@ -424,6 +424,7 @@ class SampleBuffer:
             Array of shape (num_timesteps, 1) or None if insufficient samples
         """
         samples, _ = self.get_samples(key, num_samples=num_samples)
+        print("Retrieved samples shape:", samples.shape)
         if samples is None or ts is None:
             return None
 
