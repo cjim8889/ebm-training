@@ -101,9 +101,11 @@ def train_velocity_field_with_decoupled_loss(
 
         return samples
 
+    covariances = None
     def _generate_mcmc(
         key: jax.random.PRNGKey, ts: jnp.ndarray, force_finite: bool = False
     ):
+        nonlocal covariances
         if mcmc_type == "hmc":
             samples = generate_samples_with_hmc_correction(
                 key=key,
@@ -147,7 +149,11 @@ def train_velocity_field_with_decoupled_loss(
                 eta=eta,
                 rejection_sampling=with_rejection_sampling,
                 shift_fn=shift_fn,
+                covariances=covariances,
             )
+
+            if "covariances" in samples:
+                covariances = samples["covariances"]
         else:
             samples = generate_samples(
                 key,
