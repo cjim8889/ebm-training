@@ -96,7 +96,9 @@ def main():
     parser.add_argument(
         "--method", type=str, default="default", choices=["default", "decoupled"]
     )
-
+    parser.add_argument(
+        "--annealing-path", type=str, default="linear", choices=["linear", "geometric"]
+    )
     args = parser.parse_args()
 
     if args.debug:
@@ -217,12 +219,11 @@ def main():
         initial_density = MultivariateGaussian(
             dim=input_dim, mean=jnp.zeros(input_dim), sigma=args.initial_sigma
         )
-
         target_density = TimeDependentLennardJonesEnergyButler(
             dim=input_dim,
             n_particles=13,
             sigma=1.0,
-            alpha=0.1,
+            alpha=0.2,
             epsilon_val=1.0,
             min_dr=1e-3,
             m=1,
@@ -345,6 +346,7 @@ def main():
                 "enable_end_time_progression": args.enable_end_time_progression,
                 "score_norm": args.score_norm,
                 "method": args.method,
+                "annealing_path": args.annealing_path,
             },
             reinit=True,
             tags=[
@@ -423,6 +425,7 @@ def main():
             update_end_time_every=args.update_end_time_every,
             enable_end_time_progression=args.enable_end_time_progression,
             gradient_norm=args.gradient_norm,
+            annealing_path=args.annealing_path,
         )
 
 
