@@ -66,6 +66,7 @@ def train_velocity_field_with_decoupled_loss(
     path_distribution = AnnealedDistribution(
         initial_density=initial_density,
         target_density=target_density,
+        method="linear" if target != "lj13b" else "geometric",
     )
 
     # Initialize current end time
