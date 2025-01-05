@@ -265,6 +265,9 @@ def main():
         input_dim = 39
         key, subkey = jax.random.split(key)
 
+        def shift_fn(x):
+            return x - jnp.mean(x, axis=0, keepdims=True)
+
         initial_density = MultivariateGaussian(
             dim=input_dim, mean=jnp.zeros(input_dim), sigma=args.initial_sigma
         )
@@ -276,11 +279,10 @@ def main():
             alpha=0.2,
             shift_fn=shift_fn,
             min_dr=1e-3,
+            c=0.5,
             include_harmonic=True,
+            log_prob_clip=args.pt_clip,
         )
-
-        def shift_fn(x):
-            return x - jnp.mean(x, axis=0, keepdims=True)
 
     # Initialize velocity field
     key, model_key = jax.random.split(key)
