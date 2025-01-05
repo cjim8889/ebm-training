@@ -30,10 +30,10 @@ def log_weights_to_weights(log_weights: jnp.ndarray) -> jnp.ndarray:
 
 @eqx.filter_jit
 def estimate_covariance(
-    positions: chex.Array, 
-    weights: Optional[chex.Array] = None, 
-    diagonal: bool = False, 
-    regularization: float = 1e-3
+    positions: chex.Array,
+    weights: Optional[chex.Array] = None,
+    diagonal: bool = True,
+    regularization: float = 1e-6,
 ) -> chex.Array:
     N, d = positions.shape
     # Handle weights
@@ -43,9 +43,10 @@ def estimate_covariance(
         # Normalize weights to sum to 1
         weights = weights / jnp.sum(weights)
 
-
     if not diagonal:
-        return jnp.cov(positions, rowvar=False, aweights=weights) + regularization * jnp.eye(d)
+        return jnp.cov(
+            positions, rowvar=False, aweights=weights
+        ) + regularization * jnp.eye(d)
     else:
         mean = jnp.average(positions, weights=weights, axis=0)
         # Compute weighted variance for each dimension
@@ -119,11 +120,11 @@ def generate_samples_with_smc(
     def _delta(positions, t, t_prev):
         if incremental_log_delta is not None:
             return incremental_log_delta(positions, t, t_prev)
-        
+
         log_density_current = time_dependent_log_density(positions, t)
         log_density_prev = time_dependent_log_density(positions, t_prev)
         return log_density_current - log_density_prev
-    
+
     batched_delta = jax.vmap(_delta, in_axes=(0, None, None))
 
     def _resample(key, positions, log_weights):
@@ -161,7 +162,9 @@ def generate_samples_with_smc(
         d = t - t_prev
 
         if covariances is None:
-            cov = estimate_covariance(prev_positions, log_weights_to_weights(prev_log_weights))
+            cov = estimate_covariance(
+                prev_positions, log_weights_to_weights(prev_log_weights)
+            )
 
         # Compute ESS and Resample if necessary
         ess_val = ess(log_weights=prev_log_weights)  # Scalar
@@ -206,7 +209,9 @@ def generate_samples_with_smc(
         )  # Shape: (num_samples, ...)
 
         # Compute incremental weights
-        w_delta = batched_delta(propagated_positions, t, t_prev)  # Shape: (num_samples,)
+        w_delta = batched_delta(
+            propagated_positions, t, t_prev
+        )  # Shape: (num_samples,)
 
         # Update log weights in log space
         next_log_weights = particles_new["log_weights"] + w_delta
