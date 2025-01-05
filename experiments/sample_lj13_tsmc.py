@@ -20,25 +20,26 @@ jax.config.update("jax_platform_name", "cpu")
 
 key = jax.random.PRNGKey(1234)
 
-# target_density = TimeDependentLennardJonesEnergyButler(
-#     dim=39,
-#     n_particles=13,
-#     alpha=0.2,
-#     sigma=1.0,
-#     epsilon_val=1.0,
-#     min_dr=1e-4,
-#     n=1,
-#     m=1,
-#     c=0.5,
-#     include_harmonic=True,
-#     cubic_spline=False,
-# )
-target_density = LennardJonesEnergy(
+target_density = TimeDependentLennardJonesEnergyButler(
     dim=39,
     n_particles=13,
-    data_path_test="data/test_split_LJ13-1000.npy",
+    alpha=0.2,
+    sigma=1.0,
+    epsilon_val=1.0,
+    min_dr=1e-4,
+    n=1,
+    m=1,
+    c=0.5,
     include_harmonic=True,
+    cubic_spline=False,
 )
+# target_density = LennardJonesEnergy(
+#     dim=39,
+#     n_particles=13,
+#     c=0.5,
+#     data_path_test="data/test_split_LJ13-1000.npy",
+#     include_harmonic=True,
+# )
 
 initial_density = MultivariateGaussian(dim=39, mean=0.0, sigma=1.0)
 
@@ -84,6 +85,7 @@ key, warmup_key, sample_key = jax.random.split(key, 3)
 
 print("HMC Warmup done")
 print("Step size:", parameters["step_size"])
+print(parameters)
 
 hmc = blackjax.hmc(target_density.log_prob, **parameters)
 kernel = jax.jit(hmc.step)
@@ -103,7 +105,7 @@ tempered = blackjax.tempered_smc(
 
 tempered_kernel = jax.jit(tempered.step)
 
-num_particles = 102400
+num_particles = 10240
 key, sample_key = jax.random.split(key)
 initial_positions = initial_density.sample(sample_key, (num_particles,))
 initial_state = tempered.init(initial_positions)

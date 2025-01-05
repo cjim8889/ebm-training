@@ -18,7 +18,7 @@ jax.config.update("jax_platform_name", "cpu")
 key = jax.random.PRNGKey(1234)
 
 
-initial_density = MultivariateGaussian(dim=39, mean=0, sigma=3)
+initial_density = MultivariateGaussian(dim=39, mean=0, sigma=1.)
 target_density = TimeDependentLennardJonesEnergyButler(
     dim=39,
     n_particles=13,
