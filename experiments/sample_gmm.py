@@ -66,6 +66,7 @@ samples = generate_samples_with_smc(
     eta=0.83,
     rejection_sampling=True,
     ess_threshold=0.5,
+    estimate_covariance=False,
 )
 fig = target_density.visualise(samples["positions"][-1])
 # plt.show()
