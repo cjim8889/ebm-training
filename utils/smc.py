@@ -76,8 +76,9 @@ def generate_samples_with_smc(
     resampling_fn: Callable[
         [jax.random.PRNGKey, jnp.ndarray, int], jnp.ndarray
     ] = systematic,
-    incremental_log_delta: Callable[[chex.Array, float], float] = None,
+    incremental_log_delta: Optional[Callable[[chex.Array, float], float]] = None,
     covariances: Optional[chex.Array] = None,
+    v_theta: Optional[Callable[[chex.Array, float], chex.Array]] = None,
 ) -> jnp.ndarray:
     batched_shift_fn = jax.vmap(shift_fn)
     batched_hmc = jax.vmap(
@@ -108,15 +109,19 @@ def generate_samples_with_smc(
         "log_weights": log_weights,
     }
 
-    def _delta(positions, t, t_prev):
+    def _delta(positions, t_delta):
         if incremental_log_delta is not None:
-            return incremental_log_delta(positions, t, t_prev)
+            return incremental_log_delta(positions, t_delta)
+        else:
+            log_density_ratio = time_dependent_log_density(
+                positions, 1.0
+            ) - time_dependent_log_density(positions, 0.0)
+            return jnp.exp(log_density_ratio * t_delta)
 
-        log_density_current = time_dependent_log_density(positions, t)
-        log_density_prev = time_dependent_log_density(positions, t_prev)
-        return log_density_current - log_density_prev
+    batched_delta = jax.vmap(_delta, in_axes=(0, None))
 
-    batched_delta = jax.vmap(_delta, in_axes=(0, None, None))
+    if v_theta is not None:
+        batched_v_theta = jax.vmap(v_theta, in_axes=(0, None))
 
     def _resample(key, positions, log_weights):
         """
@@ -150,7 +155,7 @@ def generate_samples_with_smc(
 
         prev_positions = particles_prev["positions"]
         prev_log_weights = particles_prev["log_weights"]
-
+        d = t - t_prev
         if covariances is None:
             cov = estimate_covariance(
                 prev_positions, log_weights_to_weights(prev_log_weights), diagonal=False
@@ -193,16 +198,19 @@ def generate_samples_with_smc(
             particles_new["positions"]
         )  # Shape: (num_samples, ...)
 
+        # If v_theta is provided, use it to propagate particles first
+        if v_theta is not None:
+            propagated_positions = shifted_positions + d * batched_v_theta(
+                shifted_positions, t_prev
+            )
+
         # Apply HMC to propagate particles
         propagated_positions = batched_hmc(
             keys, shifted_positions, t, cov
         )  # Shape: (num_samples, ...)
 
         # Compute incremental weights
-        w_delta = batched_delta(
-            propagated_positions, t, t_prev
-        )  # Shape: (num_samples,)
-
+        w_delta = batched_delta(propagated_positions, d)
         # Update log weights in log space
         next_log_weights = particles_new["log_weights"] + w_delta
         next_log_weights = next_log_weights - jax.scipy.special.logsumexp(
@@ -418,6 +426,7 @@ class SampleBuffer:
             # Update sample counts
             self.sample_counts = jnp.minimum(self.sample_counts, self.buffer_size)
 
+    @eqx.filter_jit
     def get_samples(self, key: chex.PRNGKey, num_samples: Optional[int] = None):
         """Get samples from the buffer.
 
@@ -455,6 +464,7 @@ class SampleBuffer:
         new_uniform_weights = jnp.ones((num_timesteps, num_samples)) / num_samples
         return resampled_samples, new_uniform_weights
 
+    @eqx.filter_jit
     def estimate_covariance(
         self, key: chex.PRNGKey, num_samples: Optional[int] = None
     ) -> Optional[chex.Array]:
@@ -477,6 +487,7 @@ class SampleBuffer:
         cov = jnp.einsum("tnd,tne->tde", centered, centered) / (samples.shape[1] - 1)
         return cov  # Shape: (num_timesteps, dim, dim)
 
+    @eqx.filter_jit
     def estimate_log_Z_t(
         self,
         key: chex.PRNGKey,

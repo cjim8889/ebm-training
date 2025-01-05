@@ -18,7 +18,6 @@ from utils.hmc import (
 from utils.smc import (
     generate_samples_with_euler_smc,
     generate_samples_with_smc,
-    SampleBuffer,
 )
 from utils.integration import (
     euler_integrate,
@@ -26,7 +25,7 @@ from utils.integration import (
 )
 from utils.optimization import get_optimizer, inverse_power_schedule, power_schedule
 
-from .loss import loss_fn_with_decoupled_log_Z_t
+from .loss import loss_fn_with_decoupled_log_Z_t, estimate_log_Z_t
 
 
 # Main training loop for training a velocity field with shortcut
@@ -105,14 +104,9 @@ def train_velocity_field_with_decoupled_loss(
 
         return samples
 
-    buffer = SampleBuffer(buffer_size=10240, min_update_size=512)
-
     def _generate_mcmc(
         key: jax.random.PRNGKey, ts: jnp.ndarray, force_finite: bool = False
     ):
-        nonlocal buffer
-        key, subkey = jax.random.split(key)
-        covariances = buffer.estimate_covariance(subkey, num_samples=5120)
         if mcmc_type == "hmc":
             samples = generate_samples_with_hmc_correction(
                 key=key,
@@ -156,7 +150,20 @@ def train_velocity_field_with_decoupled_loss(
                 eta=eta,
                 rejection_sampling=with_rejection_sampling,
                 shift_fn=shift_fn,
-                covariances=covariances,
+            )
+        elif mcmc_type == "vsmc":
+            samples = generate_samples_with_smc(
+                key=key,
+                time_dependent_log_density=path_distribution.time_dependent_log_prob,
+                num_samples=N,
+                ts=ts,
+                sample_fn=path_distribution.sample_initial,
+                num_steps=num_mcmc_steps,
+                integration_steps=num_mcmc_integration_steps,
+                eta=eta,
+                rejection_sampling=with_rejection_sampling,
+                shift_fn=shift_fn,
+                v_theta=v_theta,
             )
         else:
             samples = generate_samples(
@@ -221,13 +228,12 @@ def train_velocity_field_with_decoupled_loss(
 
         key, subkey = jax.random.split(key)
         mcmc_samples = _generate_mcmc(subkey, current_ts, force_finite=True)
-
         key, subkey = jax.random.split(key)
-        buffer.add_samples(subkey, mcmc_samples["positions"], mcmc_samples["weights"])
-
-        key, subkey = jax.random.split(key)
-        log_Z_t = buffer.estimate_log_Z_t(
-            subkey, path_distribution.time_derivative, current_ts, num_samples=5120
+        log_Z_t = estimate_log_Z_t(
+            mcmc_samples["positions"],
+            mcmc_samples["weights"],
+            current_ts,
+            path_distribution.time_derivative,
         )
 
         if not offline:
@@ -236,6 +242,8 @@ def train_velocity_field_with_decoupled_loss(
                     "log_Z_t": log_Z_t,
                 }
             )
+            if "ess" in mcmc_samples:
+                wandb.log({"ess": mcmc_samples["ess"]})
 
         key, subkey = jax.random.split(key)
         v_theta_samples = _generate(subkey, current_ts, force_finite=True)
