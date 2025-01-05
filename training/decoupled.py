@@ -67,7 +67,7 @@ def train_velocity_field_with_decoupled_loss(
     path_distribution = AnnealedDistribution(
         initial_density=initial_density,
         target_density=target_density,
-        method="linear" if target != "lj13b" else "geometric",
+        method="linear"
     )
 
     # Initialize current end time
@@ -152,6 +152,8 @@ def train_velocity_field_with_decoupled_loss(
                 eta=eta,
                 rejection_sampling=with_rejection_sampling,
                 shift_fn=shift_fn,
+                estimate_covariance=False,
+                blackjax_hmc=True,
             )
         elif mcmc_type == "vsmc":
             samples = generate_samples_with_smc(
@@ -166,6 +168,8 @@ def train_velocity_field_with_decoupled_loss(
                 rejection_sampling=with_rejection_sampling,
                 shift_fn=shift_fn,
                 v_theta=v_theta,
+                estimate_covariance=False,
+                blackjax_hmc=True,
             )
         else:
             samples = generate_samples(
