@@ -96,7 +96,9 @@ class TimeVelocityFieldWithPairwiseFeature(eqx.Module):
             x_concat = jnp.concatenate([xs, jnp.array([t])], axis=-1)
 
         # Compute pairwise distances
-        dists = compute_distances(xs, self.n_particles, self.n_spatial_dim)
+        dists = compute_distances(
+            xs, self.n_particles, self.n_spatial_dim, repeat=False, min_dr=1e-4
+        )
         x_concat = jnp.concatenate([x_concat, dists.flatten()], axis=0)
 
         return self.mlp(x_concat)
