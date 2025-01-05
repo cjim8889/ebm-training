@@ -100,3 +100,40 @@ def sample_monotonic_uniform_ordered(
         key, bounds.shape, minval=ordered_pairs[:, 0], maxval=ordered_pairs[:, 1]
     )
     return samples
+
+@eqx.filter_jit
+def get_inverse_temperature(t, T_initial, T_final, method='geometric'):
+    """
+    Compute the inverse temperature beta(t) given a parameter t in [0,1],
+    initial and final temperatures, and the interpolation method.
+
+    Args:
+        t (float or jnp.ndarray): Parameter in [0, 1] indicating the position along the tempering path.
+        T_initial (float): Initial temperature at t=0.
+        T_final (float): Final temperature at t=1.
+        method (str): Interpolation method, either 'linear' or 'geometric'.
+
+    Returns:
+        float or jnp.ndarray: Computed inverse temperature beta(t).
+    """
+    # Ensure t is within [0,1]
+    # t = jnp.clip(t, 0.0, 1.0)
+
+    # Compute inverse temperatures
+    beta_initial = 1.0 / T_initial
+    beta_final = 1.0 / T_final
+
+    if method == 'linear':
+        # Linear interpolation in beta-space
+        beta_t = beta_initial + t * (beta_final - beta_initial)
+    elif method == 'geometric':
+        # Geometric interpolation in beta-space
+        # Equivalent to logarithmic spacing
+        log_beta_initial = jnp.log(beta_initial)
+        log_beta_final = jnp.log(beta_final)
+        log_beta_t = log_beta_initial + t * (log_beta_final - log_beta_initial)
+        beta_t = jnp.exp(log_beta_t)
+    else:
+        raise ValueError("Unsupported interpolation method. Choose 'linear' or 'geometric'.")
+
+    return beta_t

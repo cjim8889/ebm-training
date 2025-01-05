@@ -28,6 +28,7 @@ class SoftCoreLennardJonesEnergy(Target):
         min_dr: float = 1e-3,
         c: float = 1.0,
         include_harmonic: bool = False,
+        log_prob_clip: float = None,
         **kwargs,
     ):
         """
@@ -58,6 +59,7 @@ class SoftCoreLennardJonesEnergy(Target):
         self.alpha = alpha
         self.c = c
         self.include_harmonic = include_harmonic
+        self.log_prob_clip = log_prob_clip
 
         self.min_dr = min_dr
         self.shift_fn = shift_fn
@@ -267,7 +269,10 @@ class SoftCoreLennardJonesEnergy(Target):
             return lj_energy
 
     def log_prob(self, x: chex.Array) -> chex.Array:
-        return -self.compute_soft_core_lj_energy(x)
+        p_t = -self.compute_soft_core_lj_energy(x)
+        if self.log_prob_clip is not None:
+            p_t = jnp.clip(p_t, -self.log_prob_clip, self.log_prob_clip)
+        return p_t
 
     def batched_log_prob(self, xs):
         return jax.vmap(self.log_prob)(xs)
@@ -293,7 +298,7 @@ class SoftCoreLennardJonesEnergy(Target):
         fig, axs = plt.subplots(1, 2, figsize=(12, 4))
         axs[0].hist(
             dist_samples.flatten(),
-            bins=100,
+            bins=1000,
             alpha=0.5,
             density=True,
             histtype="step",
@@ -303,7 +308,7 @@ class SoftCoreLennardJonesEnergy(Target):
 
         axs[1].hist(
             energy_samples,
-            bins=100,
+            bins=1000,
             density=True,
             alpha=0.4,
             range=(energy_samples.min(), energy_samples.max()),
