@@ -5,7 +5,8 @@ import matplotlib.pyplot as plt
 from distributions import AnnealedDistribution
 from distributions.multivariate_gaussian import MultivariateGaussian
 from distributions.time_dependent_lennard_jones_butler import (
-    TimeDependentLennardJonesEnergyButler, TimeDependentLennardJonesEnergyButlerWithTemperatureTempered
+    TimeDependentLennardJonesEnergyButler,
+    TimeDependentLennardJonesEnergyButlerWithTemperatureTempered,
 )
 from distributions import SoftCoreLennardJonesEnergy
 
@@ -51,7 +52,7 @@ reference_density = SoftCoreLennardJonesEnergy(
     sigma=1.0,
     epsilon_val=1.0,
     min_dr=1e-3,
-    alpha=0.,
+    alpha=0.0,
     c=0.5,
     include_harmonic=True,
 )
