@@ -9,20 +9,32 @@ from distributions.time_dependent_lennard_jones_butler import (
     TimeDependentLennardJonesEnergyButlerWithTemperatureTempered,
 )
 
+from distributions import SoftCoreLennardJonesEnergy
+
 from utils.smc import generate_samples_with_smc
 
 key = jax.random.PRNGKey(1234)
 
 initial_density = MultivariateGaussian(dim=39, mean=0, sigma=1)
-target_density = TimeDependentLennardJonesEnergyButler(
+# target_density = TimeDependentLennardJonesEnergyButler(
+#     dim=39,
+#     n_particles=13,
+#     alpha=0.2,
+#     sigma=1.0,
+#     epsilon_val=1.0,
+#     min_dr=1e-4,
+#     n=1,
+#     m=1,
+#     c=0.5,
+#     include_harmonic=True,
+# )
+target_density = SoftCoreLennardJonesEnergy(
     dim=39,
     n_particles=13,
     alpha=0.2,
     sigma=1.0,
     epsilon_val=1.0,
     min_dr=1e-4,
-    n=1,
-    m=1,
     c=0.5,
     include_harmonic=True,
 )
@@ -40,7 +52,7 @@ covariance_key = keys[2]
 samples = generate_samples_with_smc(
     key=subkey,
     time_dependent_log_density=path_density.time_dependent_log_prob,
-    num_samples=10240,
+    num_samples=2560,
     ts=ts,
     sample_fn=path_density.sample_initial,
     num_steps=20,
@@ -54,4 +66,4 @@ samples = generate_samples_with_smc(
 print("Sampling done")
 print("ESS", samples["ess"])
 fig = target_density.visualise(samples["positions"][-1])
-plt.savefig("lj13c-2.png")
+plt.savefig("lj13c-3.png")
