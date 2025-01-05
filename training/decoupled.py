@@ -247,6 +247,10 @@ def train_velocity_field_with_decoupled_loss(
             )
             if "ess" in mcmc_samples:
                 wandb.log({"ess": mcmc_samples["ess"]})
+        else:
+            print("Log Z: ", log_Z_t)
+            print("Current TS: ", current_ts)
+            print("MCMC Samples ESS: ", mcmc_samples["ess"])
 
         key, subkey = jax.random.split(key)
         v_theta_samples = _generate(subkey, current_ts, force_finite=True)
