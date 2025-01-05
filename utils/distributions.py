@@ -35,7 +35,7 @@ def remove_mean_decorator(step_fn, n_particles, n_spatial_dim):
     return wrapped_step
 
 
-def compute_distances(x, n_particles, n_dimensions, min_dr=1e-8):
+def compute_distances(x, n_particles, n_dimensions, min_dr=1e-8, repeat=True):
     x = x.reshape(n_particles, n_dimensions)
 
     # Get indices of upper triangular pairs
@@ -46,6 +46,9 @@ def compute_distances(x, n_particles, n_dimensions, min_dr=1e-8):
 
     # Compute distances
     distances = optax.safe_norm(dx, axis=-1, min_norm=min_dr, ord=2)
+    if repeat:
+        # Repeat distances for each pair
+        distances = jnp.repeat(distances, 2)
 
     return distances
 
@@ -101,8 +104,9 @@ def sample_monotonic_uniform_ordered(
     )
     return samples
 
+
 @eqx.filter_jit
-def get_inverse_temperature(t, T_initial, T_final, method='geometric'):
+def get_inverse_temperature(t, T_initial, T_final, method="geometric"):
     """
     Compute the inverse temperature beta(t) given a parameter t in [0,1],
     initial and final temperatures, and the interpolation method.
@@ -123,10 +127,10 @@ def get_inverse_temperature(t, T_initial, T_final, method='geometric'):
     beta_initial = 1.0 / T_initial
     beta_final = 1.0 / T_final
 
-    if method == 'linear':
+    if method == "linear":
         # Linear interpolation in beta-space
         beta_t = beta_initial + t * (beta_final - beta_initial)
-    elif method == 'geometric':
+    elif method == "geometric":
         # Geometric interpolation in beta-space
         # Equivalent to logarithmic spacing
         log_beta_initial = jnp.log(beta_initial)
@@ -134,6 +138,8 @@ def get_inverse_temperature(t, T_initial, T_final, method='geometric'):
         log_beta_t = log_beta_initial + t * (log_beta_final - log_beta_initial)
         beta_t = jnp.exp(log_beta_t)
     else:
-        raise ValueError("Unsupported interpolation method. Choose 'linear' or 'geometric'.")
+        raise ValueError(
+            "Unsupported interpolation method. Choose 'linear' or 'geometric'."
+        )
 
     return beta_t
