@@ -35,7 +35,7 @@ def main():
     parser.add_argument("--depth", type=int, default=3)
     parser.add_argument("--num-timesteps", type=int, default=128)
     parser.add_argument(
-        "--mcmc-type", type=str, default="hmc", choices=["hmc", "smc", "esmc"]
+        "--mcmc-type", type=str, default="hmc", choices=["hmc", "smc", "esmc", "vsmc"]
     )
     parser.add_argument("--mcmc-steps", type=int, default=5)
     parser.add_argument("--mcmc-integration-steps", type=int, default=3)
