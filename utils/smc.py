@@ -158,7 +158,7 @@ def generate_samples_with_smc(
         d = t - t_prev
         if covariances is None:
             cov = estimate_covariance(
-                prev_positions, log_weights_to_weights(prev_log_weights), diagonal=False
+                prev_positions, log_weights_to_weights(prev_log_weights), diagonal=True
             )
 
         # Compute ESS and Resample if necessary
