@@ -91,6 +91,7 @@ def main():
     parser.add_argument("--update-end-time-every", type=int, default=100)
     parser.add_argument("--enable-end-time-progression", action="store_true")
     parser.add_argument("--gradient-norm", type=float, default=1.0)
+    parser.add_argument("--shift", action="store_true")
     parser.add_argument("--score-norm", type=float, default=None)
     parser.add_argument(
         "--method", type=str, default="default", choices=["default", "decoupled"]
@@ -105,8 +106,14 @@ def main():
     # Set random seed
     key = jax.random.PRNGKey(args.seed)
 
-    def shift_fn(x):
-        return x
+    if args.shift:
+
+        def shift_fn(x):
+            return x - jnp.mean(x, axis=0, keepdims=True)
+    else:
+
+        def shift_fn(x):
+            return x
 
     # Set up distributions
     if args.target == "gmm":
@@ -137,9 +144,6 @@ def main():
             data_path_val="data/val_split_DW4.npy",
             key=subkey,
         )
-
-        def shift_fn(x):
-            return x - jnp.mean(x, axis=0, keepdims=True)
     elif args.target == "dw4o":
         input_dim = 8
         key, subkey = jax.random.split(key)
@@ -206,8 +210,6 @@ def main():
             include_harmonic=True,
         )
 
-        def shift_fn(x):
-            return x - jnp.mean(x, axis=0, keepdims=True)
     elif args.target == "lj13c":
         input_dim = 39
         key, subkey = jax.random.split(key)
@@ -233,8 +235,6 @@ def main():
             cubic_spline=True,
         )
 
-        def shift_fn(x):
-            return x - jnp.mean(x, axis=0, keepdims=True)
     elif args.target == "lj13bt":
         input_dim = 39
         key, subkey = jax.random.split(key)
@@ -259,14 +259,9 @@ def main():
             include_harmonic=True,
         )
 
-        def shift_fn(x):
-            return x - jnp.mean(x, axis=0, keepdims=True)
     elif args.target == "sclj13":
         input_dim = 39
         key, subkey = jax.random.split(key)
-
-        def shift_fn(x):
-            return x - jnp.mean(x, axis=0, keepdims=True)
 
         initial_density = MultivariateGaussian(
             dim=input_dim, mean=jnp.zeros(input_dim), sigma=args.initial_sigma
