@@ -1,4 +1,5 @@
 from typing import Callable, Tuple, Optional
+import blackjax
 import chex
 import equinox as eqx
 import jax
@@ -9,6 +10,41 @@ from .integration import (
     generate_samples,
     generate_samples_with_initial_values,
 )
+
+
+@eqx.filter_jit
+def sample_hamiltonian_monte_carlo_blackjax(
+    key: jax.random.PRNGKey,
+    time_dependent_log_density: Callable[[chex.Array, float], float],  # (dim,) -> float
+    x: chex.Array,  # (dim,)
+    t: float,
+    num_steps: int = 10,
+    integration_steps: int = 3,
+    eta: float = 0.1,
+    covariance: Optional[chex.Array] = None,
+    **kwargs,
+):
+    dim = x.shape[-1]
+    inverse_mass_matrix = jnp.eye(dim) if covariance is None else covariance
+
+    hmc = blackjax.hmc(
+        lambda x: time_dependent_log_density(x, t),
+        eta,
+        inverse_mass_matrix,
+        integration_steps,
+    )
+    hmc_kernel = jax.jit(hmc.step)
+    initial_state = hmc.init(x)
+
+    @jax.jit
+    def one_step(state, rng_key):
+        state, _ = hmc_kernel(rng_key, state)
+        return state, state
+
+    keys = jax.random.split(key, num_steps)
+    final_state, _ = jax.lax.scan(one_step, initial_state, keys)
+
+    return final_state.position
 
 
 @eqx.filter_jit

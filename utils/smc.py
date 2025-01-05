@@ -5,7 +5,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 
-from .hmc import sample_hamiltonian_monte_carlo
+from .hmc import sample_hamiltonian_monte_carlo, sample_hamiltonian_monte_carlo_blackjax
 from blackjax.smc.ess import ess
 from blackjax.smc.resampling import systematic
 
@@ -78,24 +78,41 @@ def generate_samples_with_smc(
     ] = systematic,
     incremental_log_delta: Optional[Callable[[chex.Array, float], float]] = None,
     covariances: Optional[chex.Array] = None,
+    estimate_covariance: bool = False,
+    blackjax_hmc: bool = True,
     v_theta: Optional[Callable[[chex.Array, float], chex.Array]] = None,
 ) -> jnp.ndarray:
     batched_shift_fn = jax.vmap(shift_fn)
-    batched_hmc = jax.vmap(
-        lambda key, x, t, covariance: sample_hamiltonian_monte_carlo(
-            key,
-            time_dependent_log_density,
-            x,
-            t,
-            num_steps,
-            integration_steps,
-            eta,
-            rejection_sampling,
-            shift_fn,
-            covariance,
-        ),
-        in_axes=(0, 0, None, None),
-    )
+    if blackjax_hmc:
+        batched_hmc = jax.vmap(
+            lambda key, x, t, covariance: sample_hamiltonian_monte_carlo_blackjax(
+                key,
+                time_dependent_log_density,
+                x,
+                t,
+                num_steps,
+                integration_steps,
+                eta,
+                covariance,
+            ),
+            in_axes=(0, 0, None, None),
+        )
+    else:
+        batched_hmc = jax.vmap(
+            lambda key, x, t, covariance: sample_hamiltonian_monte_carlo(
+                key,
+                time_dependent_log_density,
+                x,
+                t,
+                num_steps,
+                integration_steps,
+                eta,
+                rejection_sampling,
+                shift_fn,
+                covariance,
+            ),
+            in_axes=(0, 0, None, None),
+        )
 
     key, subkey = jax.random.split(key)
     initial_samples = sample_fn(subkey, (num_samples,))
@@ -156,7 +173,7 @@ def generate_samples_with_smc(
         prev_positions = particles_prev["positions"]
         prev_log_weights = particles_prev["log_weights"]
         d = t - t_prev
-        if covariances is None:
+        if covariances is None and estimate_covariance:
             cov = estimate_covariance(
                 prev_positions, log_weights_to_weights(prev_log_weights), diagonal=True
             )
