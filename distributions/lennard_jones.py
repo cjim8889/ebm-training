@@ -2,9 +2,10 @@ import chex
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
+import optax
 import numpy as np
 
-from utils.distributions import batched_remove_mean
+from utils.distributions import batched_remove_mean, compute_distances
 
 from .base import Target
 
@@ -19,7 +20,9 @@ class LennardJonesEnergy(Target):
         data_path_train: str = None,
         data_path_test: str = None,
         data_path_val: str = None,
+        c: float = 1.,
         log_prob_clip: float = None,
+        include_harmonic: bool = False,
         key: jax.random.PRNGKey = jax.random.PRNGKey(0),
     ):
         super().__init__(
@@ -40,10 +43,30 @@ class LennardJonesEnergy(Target):
 
         self.log_prob_clip = log_prob_clip
 
-        self._train_set = self.setup_train_set()
-        self._test_set = self.setup_test_set()
-        self._val_set = self.setup_val_set()
+        self.c = c
+        self.include_harmonic = include_harmonic
 
+        # self._train_set = self.setup_train_set()
+        self._test_set = self.setup_test_set()
+        # self._val_set = self.setup_val_set()
+
+    def harmonic_potential(self, x):
+        """
+        Compute the harmonic potential energy.
+
+        E^osc(x) = 1/2 * Σ ||xi - x_COM||^2
+        """
+        x = x.reshape(self.n_particles, self.n_spatial_dim)
+        x_com = jnp.mean(x, axis=0)
+        distances_to_com = optax.safe_norm(
+            x - x_com,
+            ord=2,
+            axis=-1,
+            min_norm=0.0,
+        )
+
+        return 0.5 * jnp.sum(distances_to_com**2)
+    
     def safe_lennard_jones_potential(
         self,
         pairwise_dr: jnp.ndarray,
@@ -74,20 +97,6 @@ class LennardJonesEnergy(Target):
 
         return total_lj_energy
 
-    def compute_distances(self, x, epsilon=1e-8, min_dr: float = 1e-3):
-        x = x.reshape(self.n_particles, self.n_spatial_dim)
-
-        # Get indices of upper triangular pairs
-        i, j = jnp.triu_indices(self.n_particles, k=1)
-
-        # Calculate displacements between pairs
-        dx = x[i] - x[j]
-
-        # Compute distances
-        distances = jnp.maximum(jnp.sqrt(jnp.sum(dx**2, axis=-1) + epsilon), min_dr)
-
-        return distances
-
     def compute_safe_lj_energy(
         self,
         x: jnp.ndarray,
@@ -107,23 +116,16 @@ class LennardJonesEnergy(Target):
         Returns:
             jnp.ndarray: Total Lennard-Jones energy for each sample, shape [batch_size].
         """
-        pairwise_dr = self.compute_distances(
-            x.reshape(self.n_particles, self.n_spatial_dim), min_dr
-        )
+        pairwise_dr = compute_distances(x, self.n_particles, self.n_spatial_dim, min_dr)
         lj_energy = self.safe_lennard_jones_potential(pairwise_dr, sigma, epsilon_val)
+
+        if self.include_harmonic:
+            lj_energy += self.c * self.harmonic_potential(x)
+
         return lj_energy
 
     def log_prob(self, x: chex.Array) -> chex.Array:
-        return jnp.clip(
-            jnp.nan_to_num(
-                -self.compute_safe_lj_energy(x),
-                nan=0.0,
-                posinf=self.log_prob_clip,
-                neginf=-self.log_prob_clip,
-            ),
-            min=-self.log_prob_clip,
-            max=self.log_prob_clip,
-        )
+        return -self.compute_safe_lj_energy(x)
 
     def score(self, x: chex.Array) -> chex.Array:
         return jax.grad(self.log_prob)(x)
@@ -157,10 +159,7 @@ class LennardJonesEnergy(Target):
         return data
 
     def interatomic_dist(self, x):
-        x = x.reshape(-1, self.n_particles, self.n_spatial_dim)
-        distances = jax.vmap(lambda x: self.compute_distances(x))(x)
-
-        return distances
+        return jax.vmap(lambda x: compute_distances(x, self.n_particles, self.n_spatial_dim))(x)
 
     def batched_log_prob(self, xs):
         return jax.vmap(self.log_prob)(xs)
@@ -198,8 +197,8 @@ class LennardJonesEnergy(Target):
         energy_samples = -self.batched_log_prob(samples)
         energy_test = -self.batched_log_prob(test_data_smaller)
 
-        min_energy = -26
-        max_energy = 0
+        min_energy = -100
+        max_energy = 100
 
         axs[1].hist(
             energy_test,

@@ -9,12 +9,11 @@ from distributions.time_dependent_lennard_jones_butler import (
     TimeDependentLennardJonesEnergyButlerWithTemperatureTempered,
 )
 
-from utils.optimization import power_schedule, inverse_power_schedule
 from utils.smc import generate_samples_with_smc
 
 key = jax.random.PRNGKey(1234)
 
-initial_density = MultivariateGaussian(dim=39, mean=0, sigma=3)
+initial_density = MultivariateGaussian(dim=39, mean=0, sigma=1)
 target_density = TimeDependentLennardJonesEnergyButler(
     dim=39,
     n_particles=13,
@@ -45,7 +44,7 @@ samples = generate_samples_with_smc(
     ts=ts,
     sample_fn=path_density.sample_initial,
     num_steps=10,
-    integration_steps=100,
+    integration_steps=10,
     eta=0.02,
     rejection_sampling=True,
     ess_threshold=0.6,
