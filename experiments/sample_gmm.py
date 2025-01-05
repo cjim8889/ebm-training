@@ -16,7 +16,7 @@ initial_density = MultivariateGaussian(dim=2, mean=0, sigma=20)
 key, subkey = jax.random.split(key)
 target_density = GMM(subkey, dim=2)
 path_density = AnnealedDistribution(
-    initial_density=initial_density, target_density=target_density
+    initial_density=initial_density, target_density=target_density, method="geometric"
 )
 
 key, subkey = jax.random.split(key)
@@ -61,14 +61,13 @@ samples = generate_samples_with_smc(
     num_samples=10240,
     ts=ts,
     sample_fn=path_density.sample_initial,
-    num_steps=10,
+    num_steps=5,
     integration_steps=5,
     eta=0.83,
     rejection_sampling=True,
     ess_threshold=0.5,
-    # covariances=buffer.estimate_covariance(covariance_key, num_samples=10240),
-    # incremental_log_delta=path_density.incremental_log_delta
 )
 fig = target_density.visualise(samples["positions"][-1])
 # plt.show()
+print(samples["ess"])
 plt.savefig("gmm.png")
