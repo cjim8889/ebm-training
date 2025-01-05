@@ -28,7 +28,7 @@ target_density = TimeDependentLennardJonesEnergyButler(
 )
 
 path_density = AnnealedDistribution(
-    initial_density=initial_density, target_density=target_density, method="geometric"
+    initial_density=initial_density, target_density=target_density, method="linear"
 )
 ts = jnp.linspace(0, 1, 128)
 print("Warmup done")
@@ -43,13 +43,13 @@ samples = generate_samples_with_smc(
     num_samples=10240,
     ts=ts,
     sample_fn=path_density.sample_initial,
-    num_steps=10,
+    num_steps=20,
     integration_steps=10,
-    eta=0.02,
+    eta=0.018,
     rejection_sampling=True,
-    ess_threshold=0.6,
+    ess_threshold=0.5,
 )
 print("Sampling done")
 print("ESS", samples["ess"])
 fig = target_density.visualise(samples["positions"][-1])
-plt.savefig("lj13c.png")
+plt.savefig("lj13c-2.png")
