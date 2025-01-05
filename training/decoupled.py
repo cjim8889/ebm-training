@@ -254,8 +254,8 @@ def train_velocity_field_with_decoupled_loss(
         good_samples_indices = systematic_resampling(
             resampling_keys, mcmc_samples["weights"], N // 2
         )
-        good_samples = jax.vmap(lambda i: mcmc_samples["positions"][i], in_axes=0)(
-            good_samples_indices
+        good_samples = jax.vmap(lambda x, i: x[i])(
+            mcmc_samples["positions"], good_samples_indices
         )
 
         samples = jnp.concatenate([good_samples, v_theta_samples["positions"]], axis=1)
