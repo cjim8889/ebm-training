@@ -85,9 +85,8 @@ def main():
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--eval-every", type=int, default=20)
-    parser.add_argument("--target-end-time", type=float, default=1.0)
-    parser.add_argument("--initial-end-time", type=float, default=0.2)
-    parser.add_argument("--end-time-steps", type=int, default=10)
+    parser.add_argument("--initial-end-time", type=int, default=16)
+    parser.add_argument("--end-time-steps", type=int, default=2)
     parser.add_argument("--update-end-time-every", type=int, default=100)
     parser.add_argument("--enable-end-time-progression", action="store_true")
     parser.add_argument("--gradient-norm", type=float, default=1.0)
@@ -385,7 +384,7 @@ def main():
             eval_every=args.eval_every,
             network=args.network,
             dt_log_density_clip=args.dt_pt_clip,
-            target_end_time=args.target_end_time,
+            # target_end_time=args.target_end_time,
             initial_end_time=args.initial_end_time,
             end_time_steps=args.end_time_steps,
             update_end_time_every=args.update_end_time_every,
@@ -419,7 +418,7 @@ def main():
             eval_every=args.eval_every,
             network=args.network,
             dt_log_density_clip=args.dt_pt_clip,
-            target_end_time=args.target_end_time,
+            # target_end_time=args.target_end_time,
             initial_end_time=args.initial_end_time,
             end_time_steps=args.end_time_steps,
             update_end_time_every=args.update_end_time_every,
