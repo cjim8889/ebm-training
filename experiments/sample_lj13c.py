@@ -48,6 +48,8 @@ samples = generate_samples_with_smc(
     eta=0.018,
     rejection_sampling=True,
     ess_threshold=0.5,
+    estimate_covariance=False,
+    blackjax_hmc=True,
 )
 print("Sampling done")
 print("ESS", samples["ess"])
