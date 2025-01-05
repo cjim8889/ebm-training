@@ -60,6 +60,7 @@ def train_velocity_field_with_decoupled_loss(
     offline: bool = False,
     target: str = "",
     eval_every: int = 20,
+    annealing_path: str = "linear",
     dt_log_density_clip: Optional[float] = None,
     debug: bool = False,
     **kwargs: Any,
@@ -67,7 +68,7 @@ def train_velocity_field_with_decoupled_loss(
     path_distribution = AnnealedDistribution(
         initial_density=initial_density,
         target_density=target_density,
-        method="linear"
+        method=annealing_path,
     )
 
     # Initialize current end time
