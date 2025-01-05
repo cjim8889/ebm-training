@@ -46,7 +46,9 @@ def compute_distances(x, n_particles, n_dimensions, min_dr=1e-8):
 
     # Compute distances
     distances = optax.safe_norm(dx, axis=-1, min_norm=min_dr, ord=2)
-
+    # Repeat distances for each pair
+    distances = jnp.repeat(distances, 2)
+    
     return distances
 
 
