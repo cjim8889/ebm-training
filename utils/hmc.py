@@ -88,7 +88,7 @@ def sample_hamiltonian_monte_carlo(
 
         # Leapfrog integration
         (x, v), _ = jax.lax.scan(
-            integration_step, (x, v), None, length=integration_steps
+            integration_step, (x, v), None, length=integration_steps, unroll=4
         )
 
         v = v + 0.5 * eta * grad_log_prob(x)

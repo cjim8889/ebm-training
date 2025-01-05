@@ -108,15 +108,6 @@ def generate_samples_with_smc(
         "log_weights": log_weights,
     }
 
-    # def _delta(positions, t_delta):
-    #     if incremental_log_delta is not None:
-    #         return incremental_log_delta(positions, t_delta)
-
-    #     # Prevent division by zero by adding a small epsilon
-    #     log_density_ratio = time_dependent_log_density(
-    #         positions, 1.0
-    #     ) - time_dependent_log_density(positions, 0.0)
-    #     return log_density_ratio * t_delta
     def _delta(positions, t, t_prev):
         if incremental_log_delta is not None:
             return incremental_log_delta(positions, t, t_prev)
@@ -159,11 +150,10 @@ def generate_samples_with_smc(
 
         prev_positions = particles_prev["positions"]
         prev_log_weights = particles_prev["log_weights"]
-        d = t - t_prev
 
         if covariances is None:
             cov = estimate_covariance(
-                prev_positions, log_weights_to_weights(prev_log_weights)
+                prev_positions, log_weights_to_weights(prev_log_weights), diagonal=False
             )
 
         # Compute ESS and Resample if necessary
