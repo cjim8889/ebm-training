@@ -339,7 +339,7 @@ class TimeDependentLennardJonesEnergyButler(Target):
 
 
 @eqx.filter_jit
-def get_inverse_temperature(t, T_initial, T_final, method='geometric'):
+def get_inverse_temperature(t, T_initial, T_final, method="geometric"):
     """
     Compute the inverse temperature beta(t) given a parameter t in [0,1],
     initial and final temperatures, and the interpolation method.
@@ -360,10 +360,10 @@ def get_inverse_temperature(t, T_initial, T_final, method='geometric'):
     beta_initial = 1.0 / T_initial
     beta_final = 1.0 / T_final
 
-    if method == 'linear':
+    if method == "linear":
         # Linear interpolation in beta-space
         beta_t = beta_initial + t * (beta_final - beta_initial)
-    elif method == 'geometric':
+    elif method == "geometric":
         # Geometric interpolation in beta-space
         # Equivalent to logarithmic spacing
         log_beta_initial = jnp.log(beta_initial)
@@ -371,9 +371,12 @@ def get_inverse_temperature(t, T_initial, T_final, method='geometric'):
         log_beta_t = log_beta_initial + t * (log_beta_final - log_beta_initial)
         beta_t = jnp.exp(log_beta_t)
     else:
-        raise ValueError("Unsupported interpolation method. Choose 'linear' or 'geometric'.")
+        raise ValueError(
+            "Unsupported interpolation method. Choose 'linear' or 'geometric'."
+        )
 
     return beta_t
+
 
 class TimeDependentLennardJonesEnergyButlerWithTemperatureTempered(
     TimeDependentLennardJonesEnergyButler
@@ -418,9 +421,10 @@ class TimeDependentLennardJonesEnergyButlerWithTemperatureTempered(
         self.final_temperature = final_temperature
 
     def time_dependent_log_prob(self, x: chex.Array, t: float) -> chex.Array:
-        beta = get_inverse_temperature(t, self.initial_temperature, self.final_temperature)
+        beta = get_inverse_temperature(
+            t, self.initial_temperature, self.final_temperature
+        )
         p_t = -beta * self.compute_time_dependent_lj_energy(x, t)
-        
 
         if self.log_prob_clip is not None:
             p_t = jnp.clip(p_t, a_min=-self.log_prob_clip, a_max=self.log_prob_clip)
