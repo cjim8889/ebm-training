@@ -30,17 +30,33 @@ def log_weights_to_weights(log_weights: jnp.ndarray) -> jnp.ndarray:
 
 @eqx.filter_jit
 def estimate_covariance(
-    positions: chex.Array, weights: Optional[chex.Array] = None
+    positions: chex.Array, 
+    weights: Optional[chex.Array] = None, 
+    diagonal: bool = True, 
+    regularization: float = 1e-6
 ) -> chex.Array:
-    # """Estimate covariance from particles, optionally using importance weights"""
-    # if weights is None:
-    #     weights = jnp.ones(positions.shape[0]) / positions.shape[0]
+    N, d = positions.shape
+    # Handle weights
+    if weights is None:
+        weights = jnp.ones(N) / N
+    else:
+        # Normalize weights to sum to 1
+        weights = weights / jnp.sum(weights)
 
-    # mean = jnp.average(positions, weights=weights, axis=0)
-    # centered = positions - mean[None, :]
-    # cov = centered.T @ (weights[:, None] * centered)
-    # return cov
-    return jnp.cov(positions, rowvar=False, aweights=weights)
+
+    if not diagonal:
+        return jnp.cov(positions, rowvar=False, aweights=weights) + regularization * jnp.eye(d)
+    else:
+        mean = jnp.average(positions, weights=weights, axis=0)
+        # Compute weighted variance for each dimension
+        # Weighted squared deviations
+        squared_devs = (positions - mean) ** 2
+        var = jnp.average(squared_devs, weights=weights, axis=0)
+        # Construct diagonal covariance matrix
+        cov_diag = jnp.diag(var)
+        # Add regularization
+        cov_diag += regularization * jnp.eye(d)
+        return cov_diag
 
 
 @eqx.filter_jit
@@ -125,7 +141,7 @@ def generate_samples_with_smc(
         new_positions = jnp.take(positions, indices, axis=0)
 
         # Reset log_weights to uniform
-        new_log_weights = jnp.log(jnp.full((num_samples,), 1.0 / num_samples))
+        new_log_weights = jnp.full((num_samples,), -jnp.log(num_samples))
 
         return new_positions, new_log_weights
 
@@ -136,6 +152,9 @@ def generate_samples_with_smc(
         prev_positions = particles_prev["positions"]
         prev_log_weights = particles_prev["log_weights"]
         d = t - t_prev
+
+        if covariances is None:
+            cov = estimate_covariance(prev_positions, log_weights_to_weights(prev_log_weights))
 
         # Compute ESS and Resample if necessary
         ess_val = ess(log_weights=prev_log_weights)  # Scalar
@@ -148,6 +167,7 @@ def generate_samples_with_smc(
             new_positions, new_log_weights = _resample(
                 resample_key, prev_positions, prev_log_weights
             )
+
             return {"positions": new_positions, "log_weights": new_log_weights}
 
         def do_nothing():
@@ -182,6 +202,9 @@ def generate_samples_with_smc(
 
         # Update log weights in log space
         next_log_weights = particles_new["log_weights"] + w_delta
+        next_log_weights = next_log_weights - jax.scipy.special.logsumexp(
+            next_log_weights
+        )
 
         # Update time
         new_carry = (
@@ -203,14 +226,10 @@ def generate_samples_with_smc(
     )
 
     weights = jax.vmap(log_weights_to_weights)(output["log_weights"])
-    # covariances = jax.vmap(
-    #     lambda x, weights: jnp.cov(x, rowvar=False, aweights=weights)
-    # )(output["positions"], weights)
 
     return {
         "positions": output["positions"],
         "weights": weights,
-        # "covariances": covariances,
     }
 
 

@@ -1,5 +1,6 @@
 import chex
 import jax
+import equinox as eqx
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
@@ -337,6 +338,43 @@ class TimeDependentLennardJonesEnergyButler(Target):
         return self.visualise_with_time(samples, 1.0)
 
 
+@eqx.filter_jit
+def get_inverse_temperature(t, T_initial, T_final, method='geometric'):
+    """
+    Compute the inverse temperature beta(t) given a parameter t in [0,1],
+    initial and final temperatures, and the interpolation method.
+
+    Args:
+        t (float or jnp.ndarray): Parameter in [0, 1] indicating the position along the tempering path.
+        T_initial (float): Initial temperature at t=0.
+        T_final (float): Final temperature at t=1.
+        method (str): Interpolation method, either 'linear' or 'geometric'.
+
+    Returns:
+        float or jnp.ndarray: Computed inverse temperature beta(t).
+    """
+    # Ensure t is within [0,1]
+    t = jnp.clip(t, 0.0, 1.0)
+
+    # Compute inverse temperatures
+    beta_initial = 1.0 / T_initial
+    beta_final = 1.0 / T_final
+
+    if method == 'linear':
+        # Linear interpolation in beta-space
+        beta_t = beta_initial + t * (beta_final - beta_initial)
+    elif method == 'geometric':
+        # Geometric interpolation in beta-space
+        # Equivalent to logarithmic spacing
+        log_beta_initial = jnp.log(beta_initial)
+        log_beta_final = jnp.log(beta_final)
+        log_beta_t = log_beta_initial + t * (log_beta_final - log_beta_initial)
+        beta_t = jnp.exp(log_beta_t)
+    else:
+        raise ValueError("Unsupported interpolation method. Choose 'linear' or 'geometric'.")
+
+    return beta_t
+
 class TimeDependentLennardJonesEnergyButlerWithTemperatureTempered(
     TimeDependentLennardJonesEnergyButler
 ):
@@ -353,7 +391,7 @@ class TimeDependentLennardJonesEnergyButlerWithTemperatureTempered(
         m=1,
         c=0.5,
         initial_temperature=250.0,
-        annealing_order=1.0,
+        final_temperature=0.1,
         log_prob_clip=None,
         soft_clip=False,
         score_norm=None,
@@ -377,11 +415,12 @@ class TimeDependentLennardJonesEnergyButlerWithTemperatureTempered(
         )
 
         self.initial_temperature = initial_temperature
-        self.annealing_order = annealing_order
+        self.final_temperature = final_temperature
 
     def time_dependent_log_prob(self, x: chex.Array, t: float) -> chex.Array:
-        p_t = -self.compute_time_dependent_lj_energy(x, t)
-        p_t = p_t / (1 + self.initial_temperature * (1 - t) ** self.annealing_order)
+        beta = get_inverse_temperature(t, self.initial_temperature, self.final_temperature)
+        p_t = -beta * self.compute_time_dependent_lj_energy(x, t)
+        
 
         if self.log_prob_clip is not None:
             p_t = jnp.clip(p_t, a_min=-self.log_prob_clip, a_max=self.log_prob_clip)

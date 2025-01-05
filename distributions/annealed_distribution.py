@@ -1,4 +1,5 @@
 from .base import Target
+from utils.distributions import get_inverse_temperature
 import jax
 import chex
 
@@ -10,6 +11,7 @@ class AnnealedDistribution(Target):
         self,
         initial_density: Target,
         target_density: Target,
+        method: str = "linear",
     ):
         super().__init__(
             dim=initial_density.dim,
@@ -21,17 +23,23 @@ class AnnealedDistribution(Target):
         )
         self.initial_density = initial_density
         self.target_density = target_density
+        self.method = method
 
     def log_prob(self, xs: chex.Array) -> chex.Array:
         return self.time_dependent_log_prob(xs, 1.0)
 
     def time_dependent_log_prob(self, xs: chex.Array, t: chex.Array) -> chex.Array:
-        initial_prob = (1 - t) * self.initial_density.log_prob(xs)
+        if self.method == "linear":
+            beta = t
+        else:
+            beta = get_inverse_temperature(t, 250., 1.0)
+
+        initial_prob = (1 - beta) * self.initial_density.log_prob(xs)
 
         if self.target_density.TIME_DEPENDENT:
-            target_prob = t * self.target_density.time_dependent_log_prob(xs, t)
+            target_prob = beta * self.target_density.time_dependent_log_prob(xs, t)
         else:
-            target_prob = t * self.target_density.log_prob(xs)
+            target_prob = beta * self.target_density.log_prob(xs)
 
         return initial_prob + target_prob
 
