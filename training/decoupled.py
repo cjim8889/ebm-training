@@ -40,10 +40,9 @@ def train_velocity_field_with_decoupled_loss(
     B: int = 256,
     T: int = 32,
     enable_end_time_progression: bool = False,
-    target_end_time: float = 1.0,  # Final target end time
-    initial_end_time: float = 0.2,  # Starting end time
-    end_time_steps: int = 5,  # Number of steps to reach target end time
-    update_end_time_every: int = 200,  # Update frequency in epochs
+    initial_end_time: int = 16,  # Starting end time
+    end_time_steps: int = 2,  # Number of steps to reach target end time
+    update_end_time_every: int = 100,  # Update frequency in epochs
     num_epochs: int = 200,
     num_steps: int = 100,
     learning_rate: float = 1e-03,
@@ -73,11 +72,9 @@ def train_velocity_field_with_decoupled_loss(
 
     # Initialize current end time
     if enable_end_time_progression:
-        end_time_steps = jnp.linspace(initial_end_time, target_end_time, end_time_steps)
-        current_end_time = float(end_time_steps[0])
-        current_end_time_idx = -1
+        current_end_time = initial_end_time
     else:
-        current_end_time = target_end_time
+        current_end_time = T
 
     # Set up optimizer
     gradient_clipping = optax.clip_by_global_norm(gradient_norm)
@@ -207,27 +204,26 @@ def train_velocity_field_with_decoupled_loss(
 
         return v_theta, opt_state, loss
 
-    log_Z_t = None
-
     for epoch in range(num_epochs):
         # Update end time if needed
         if epoch % update_end_time_every == 0:
-            if (
-                enable_end_time_progression
-                and current_end_time_idx < len(end_time_steps) - 1
-            ):
-                current_end_time_idx += 1
-                current_end_time = float(end_time_steps[current_end_time_idx])
+            if enable_end_time_progression and current_end_time < T:
+                current_end_time += end_time_steps
+                current_end_time = min(current_end_time, T)
 
             # Update time steps based on new end time
             if schedule == "linear":
-                current_ts = jnp.linspace(0, current_end_time, T)
+                current_ts = jnp.linspace(
+                    0, current_end_time * 1.0 / T, current_end_time
+                )
             elif schedule == "inverse_power":
                 current_ts = inverse_power_schedule(
-                    T, end_time=current_end_time, gamma=0.5
+                    current_end_time, end_time=current_end_time * 1.0 / T, gamma=0.5
                 )
             elif schedule == "power":
-                current_ts = power_schedule(T, end_time=current_end_time, gamma=0.25)
+                current_ts = power_schedule(
+                    current_end_time, end_time=current_end_time * 1.0 / T, gamma=0.25
+                )
 
             if continuous_schedule:
                 key, subkey = jax.random.split(key)
@@ -292,7 +288,7 @@ def train_velocity_field_with_decoupled_loss(
             )
 
         if epoch % eval_every == 0:
-            eval_ts = jnp.linspace(0, current_end_time, T)
+            eval_ts = jnp.linspace(0, current_end_time * 1.0 / T, current_end_time)
             key, subkey = jax.random.split(key)
             val_samples = generate_samples(
                 subkey,
