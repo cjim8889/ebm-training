@@ -85,6 +85,7 @@ key, warmup_key, sample_key = jax.random.split(key, 3)
 
 print("HMC Warmup done")
 print("Step size:", parameters["step_size"])
+parameters["inverse_mass_matrix"] = jnp.eye(39)
 print(parameters)
 
 hmc = blackjax.hmc(target_density.log_prob, **parameters)
