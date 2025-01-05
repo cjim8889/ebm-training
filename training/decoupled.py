@@ -18,6 +18,7 @@ from utils.hmc import (
 from utils.smc import (
     generate_samples_with_euler_smc,
     generate_samples_with_smc,
+    systematic_resampling,
 )
 from utils.integration import (
     euler_integrate,
@@ -249,7 +250,15 @@ def train_velocity_field_with_decoupled_loss(
         key, subkey = jax.random.split(key)
         v_theta_samples = _generate(subkey, current_ts, force_finite=True)
 
-        samples = v_theta_samples["positions"]
+        resampling_keys = jax.random.split(subkey, current_ts.shape[0])
+        good_samples_indices = systematic_resampling(
+            resampling_keys, mcmc_samples["weights"], N // 2
+        )
+        good_samples = jax.vmap(lambda i: mcmc_samples["positions"][i], in_axes=0)(
+            good_samples_indices
+        )
+
+        samples = jnp.concatenate([good_samples, v_theta_samples["positions"]], axis=1)
         epoch_loss = 0.0
 
         for s in range(num_steps):
