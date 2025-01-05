@@ -338,7 +338,7 @@ def main():
                 "dt_log_density_clip": args.dt_pt_clip,
                 "log_density_clip": args.pt_clip,
                 "soft_clip": args.soft_clip,
-                "target_end_time": args.target_end_time,
+                # "target_end_time": args.target_end_time,
                 "initial_end_time": args.initial_end_time,
                 "end_time_steps": args.end_time_steps,
                 "update_end_time_every": args.update_end_time_every,
