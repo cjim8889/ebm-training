@@ -207,7 +207,7 @@ def train_velocity_field_with_decoupled_loss(
     for epoch in range(num_epochs):
         # Update end time if needed
         if epoch % update_end_time_every == 0:
-            if enable_end_time_progression and current_end_time < T:
+            if enable_end_time_progression and current_end_time < T and epoch != 0:
                 current_end_time += end_time_steps
                 current_end_time = min(current_end_time, T)
 
