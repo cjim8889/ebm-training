@@ -31,13 +31,21 @@ def sample_hamiltonian_monte_carlo(
     if covariance is None:
         covariance = jnp.eye(dim)
         inv_covariance = covariance
+        # For identity covariance, L is also identity
+        L = jnp.eye(dim)
     else:
         # Check if diagonal covariance (1D array) or full matrix
         if covariance.ndim == 1:
+            # Diagonal covariance
             inv_covariance = 1.0 / covariance
             covariance = jnp.diag(covariance)
+            L = jnp.diag(jnp.sqrt(covariance.diagonal()))
         else:
+            # Full covariance matrix
             inv_covariance = jnp.linalg.inv(covariance)
+            # Compute Cholesky decomposition for sampling
+            L = jnp.linalg.cholesky(covariance + 1e-6 * jnp.eye(dim))  # Regularization
+
 
     grad_log_prob = jax.grad(lambda x: time_dependent_log_density(x, t))
 
@@ -60,8 +68,16 @@ def sample_hamiltonian_monte_carlo(
         x = x_current
         key, subkey = jax.random.split(key)
 
-        # Sample momentum
-        v = jax.random.normal(subkey, (dim,))
+        # Sample momentum: v ~ N(0, M)
+        if covariance.ndim == 2:
+            # Full covariance: v = L @ z, z ~ N(0, I)
+            z = jax.random.normal(subkey, (dim,))
+            v = L @ z
+        else:
+            # Diagonal covariance: v_i = sqrt(M_ii) * z_i
+            z = jax.random.normal(subkey, (dim,))
+            v = jnp.sqrt(covariance.diagonal()) * z
+            
         current_h = hamiltonian(x, v)
 
         # Initial half step for momentum

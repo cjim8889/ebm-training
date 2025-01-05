@@ -166,3 +166,6 @@ wandb
 *.lock
 
 .vscode
+
+*.png
+*.eqx
