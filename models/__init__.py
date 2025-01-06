@@ -4,3 +4,4 @@ from .mlp import (
     EquivariantTimeVelocityField,
 )
 from .transformer import TimeVelocityFieldTransformer
+from .egnn import EGNN

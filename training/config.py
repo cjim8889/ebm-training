@@ -49,7 +49,7 @@ class ProgressiveTrainingConfig:
 class ModelConfig:
     hidden_dim: int = 256
     num_layers: int = 3
-    architecture: Literal["mlp", "pdn", "transformer", "emlp"] = "mlp"
+    architecture: Literal["mlp", "pdn", "transformer", "emlp", "egnn"] = "mlp"
 
 
 @dataclass
