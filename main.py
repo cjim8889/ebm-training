@@ -455,7 +455,7 @@ def main():
             n_node=config.density.n_particles,
             hidden_size=config.model.hidden_dim,
             num_layers=config.model.num_layers,
-            attention=True,
+            normalize=True,
         )
 
     if not config.offline:
