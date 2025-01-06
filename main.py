@@ -22,31 +22,75 @@ from models import (
     TimeVelocityFieldTransformer,
 )
 from training import train_velocity_field, train_velocity_field_with_decoupled_loss
+from training.config import (
+    SamplingConfig,
+    TrainingConfig,
+    MCMCConfig,
+    IntegrationConfig,
+    ProgressiveTrainingConfig,
+    ModelConfig,
+    TrainingExperimentConfig,
+    DensityConfig,
+)
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--num-epochs", type=int, default=8000)
-    parser.add_argument("--batch-size", type=int, default=64)
-    parser.add_argument("--num-samples", type=int, default=5120)
-    parser.add_argument("--num-steps", type=int, default=100)
-    parser.add_argument("--learning-rate", type=float, default=1e-3)
+
+    # Model configuration
     parser.add_argument("--hidden-dim", type=int, default=256)
     parser.add_argument("--depth", type=int, default=3)
-    parser.add_argument("--num-timesteps", type=int, default=128)
-    parser.add_argument(
-        "--mcmc-type", type=str, default="hmc", choices=["hmc", "smc", "esmc", "vsmc"]
-    )
-    parser.add_argument("--mcmc-steps", type=int, default=5)
-    parser.add_argument("--mcmc-integration-steps", type=int, default=3)
-    parser.add_argument("--eta", type=float, default=0.2)
-    parser.add_argument("--initial-sigma", type=float, default=20.0)
     parser.add_argument(
         "--network", type=str, default="mlp", choices=["mlp", "pdn", "transformer"]
     )
-    parser.add_argument("--dt-pt-clip", type=float, default=None)
-    parser.add_argument("--soft-clip", action="store_true")
-    parser.add_argument("--pt-clip", type=float, default=None)
+
+    # Sampling configuration
+    parser.add_argument("--num-samples", type=int, default=5120)
+    parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--num-timesteps", type=int, default=128)
+
+    # Training configuration
+    parser.add_argument("--num-epochs", type=int, default=8000)
+    parser.add_argument("--steps-per-epoch", type=int, default=100)
+    parser.add_argument("--learning-rate", type=float, default=1e-3)
+    parser.add_argument("--gradient-norm", type=float, default=None)
+    parser.add_argument("--eval-frequency", type=int, default=20)
+    parser.add_argument(
+        "--optimizer",
+        type=str,
+        choices=["adam", "adamw", "sgd", "rmsprop"],
+        default="adamw",
+    )
+
+    # MCMC configuration
+    parser.add_argument(
+        "--mcmc-method", type=str, default="hmc", choices=["hmc", "smc", "esmc", "vsmc"]
+    )
+    parser.add_argument("--mcmc-steps", type=int, default=5)
+    parser.add_argument("--mcmc-integration-steps", type=int, default=3)
+    parser.add_argument("--mcmc-step-size", type=float, default=0.2)
+    parser.add_argument("--with-rejection", action="store_true")
+
+    # Integration configuration
+    parser.add_argument(
+        "--integration-method", type=str, choices=["euler", "rk4"], default="euler"
+    )
+    parser.add_argument(
+        "--schedule",
+        type=str,
+        choices=["linear", "inverse_power", "power"],
+        default="linear",
+    )
+    parser.add_argument("--continuous-time", action="store_true")
+    parser.add_argument("--dt-clip", type=float, default=None)
+
+    # Progressive training configuration
+    parser.add_argument("--enable-progression", action="store_true")
+    parser.add_argument("--initial-timesteps", type=int, default=16)
+    parser.add_argument("--timestep-increment", type=int, default=2)
+    parser.add_argument("--progression-frequency", type=int, default=100)
+
+    # Density configuration
     parser.add_argument(
         "--target",
         type=str,
@@ -64,40 +108,34 @@ def main():
             "lj13c",
         ],
     )
-    parser.add_argument(
-        "--schedule",
-        type=str,
-        choices=["linear", "inverse_power", "power"],
-        default="linear",
-    )
-    parser.add_argument(
-        "--integrator", type=str, choices=["euler", "rk4"], default="euler"
-    )
-    parser.add_argument(
-        "--optimizer",
-        type=str,
-        choices=["adam", "adamw", "sgd", "rmsprop"],
-        default="adamw",
-    )
-    parser.add_argument("--continuous-schedule", action="store_true")
-    parser.add_argument("--with-rejection-sampling", action="store_true")
-    parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--offline", action="store_true")
-    parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--eval-every", type=int, default=20)
-    parser.add_argument("--initial-end-time", type=int, default=16)
-    parser.add_argument("--end-time-steps", type=int, default=2)
-    parser.add_argument("--update-end-time-every", type=int, default=100)
-    parser.add_argument("--enable-end-time-progression", action="store_true")
-    parser.add_argument("--gradient-norm", type=float, default=None)
-    parser.add_argument("--shift", action="store_true")
+    parser.add_argument("--initial-sigma", type=float, default=20.0)
     parser.add_argument("--score-norm", type=float, default=None)
-    parser.add_argument(
-        "--method", type=str, default="default", choices=["default", "decoupled"]
-    )
     parser.add_argument(
         "--annealing-path", type=str, default="linear", choices=["linear", "geometric"]
     )
+    parser.add_argument("--shift", action="store_true")
+    parser.add_argument("--alpha", type=float, default=None)
+    parser.add_argument("--epsilon-val", type=float, default=None)
+    parser.add_argument("--min-dr", type=float, default=1e-3)
+    parser.add_argument("--m", type=int, default=None)
+    parser.add_argument("--n", type=int, default=None)
+    parser.add_argument("--c", type=float, default=None)
+    parser.add_argument("--log-prob-clip", type=float, default=None)
+    parser.add_argument("--soft-clip", action="store_true")
+    parser.add_argument("--include-harmonic", action="store_true")
+    parser.add_argument("--cubic-spline", action="store_true")
+    parser.add_argument("--data-path-test", type=str, default=None)
+    parser.add_argument("--data-path-val", type=str, default=None)
+    parser.add_argument("--data-path-train", type=str, default=None)
+
+    # Other configuration
+    parser.add_argument(
+        "--method", type=str, default="default", choices=["default", "decoupled"]
+    )
+    parser.add_argument("--offline", action="store_true")
+    parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--seed", type=int, default=0)
+
     args = parser.parse_args()
 
     if args.debug:
@@ -107,250 +145,300 @@ def main():
     # Set random seed
     key = jax.random.PRNGKey(args.seed)
 
-    if args.shift:
+    # Create configuration objects
+    sampling_config = SamplingConfig(
+        num_particles=args.num_samples,
+        batch_size=args.batch_size,
+        num_timesteps=args.num_timesteps,
+    )
 
-        def shift_fn(x):
-            return x - jnp.mean(x, axis=0, keepdims=True)
-    else:
+    training_config = TrainingConfig(
+        num_epochs=args.num_epochs,
+        steps_per_epoch=args.steps_per_epoch,
+        learning_rate=args.learning_rate,
+        gradient_clip_norm=args.gradient_norm,
+        eval_frequency=args.eval_frequency,
+        optimizer=args.optimizer,
+    )
 
-        def shift_fn(x):
-            return x
+    mcmc_config = MCMCConfig(
+        method=args.mcmc_method,
+        num_steps=args.mcmc_steps,
+        num_integration_steps=args.mcmc_integration_steps,
+        step_size=args.mcmc_step_size,
+        with_rejection=args.with_rejection,
+    )
 
-    # Set up distributions
+    integration_config = IntegrationConfig(
+        method=args.integration_method,
+        schedule=args.schedule,
+        continuous_time=args.continuous_time,
+        dt_clip=args.dt_clip,
+    )
+
+    progressive_config = ProgressiveTrainingConfig(
+        enable=args.enable_progression,
+        initial_timesteps=args.initial_timesteps,
+        timestep_increment=args.timestep_increment,
+        update_frequency=args.progression_frequency,
+    )
+
+    model_config = ModelConfig(
+        hidden_dim=args.hidden_dim, num_layers=args.depth, architecture=args.network
+    )
+
+    # Set up shift function
+    shift_fn = (
+        lambda x: x - jnp.mean(x, axis=0, keepdims=True) if args.shift else lambda x: x
+    )
+
+    # Set up input dimensions and other target-specific parameters
     if args.target == "gmm":
         input_dim = 2
-        key, subkey = jax.random.split(key)
-        # Initialize distributions
-        initial_density = MultivariateGaussian(
-            mean=jnp.zeros(input_dim), dim=input_dim, sigma=args.initial_sigma
-        )
-        target_density = GMM(subkey, dim=input_dim)
+        n_particles = None
+        n_spatial_dim = None
     elif args.target == "mw32":
         input_dim = 32
-        key, subkey = jax.random.split(key)
-        initial_density = MultivariateGaussian(
-            mean=jnp.zeros(input_dim), dim=input_dim, sigma=args.initial_sigma
-        )
-        target_density = ManyWellEnergy(dim=input_dim)
-    elif args.target == "dw4":
+        n_particles = None
+        n_spatial_dim = None
+    elif args.target in ["dw4", "dw4o"]:
         input_dim = 8
-        key, subkey = jax.random.split(key)
-        initial_density = TranslationInvariantGaussian(
-            N=4, D=2, sigma=args.initial_sigma, wrap=False
-        )
-        target_density = MultiDoubleWellEnergy(
-            dim=input_dim,
-            n_particles=4,
-            data_path_test="data/test_split_DW4.npy",
-            data_path_val="data/val_split_DW4.npy",
-            key=subkey,
-        )
-    elif args.target == "dw4o":
-        input_dim = 8
-        key, subkey = jax.random.split(key)
-        initial_density = MultivariateGaussian(
-            mean=jnp.zeros(input_dim), dim=input_dim, sigma=args.initial_sigma
-        )
-        target_density = MultiDoubleWellEnergy(
-            dim=input_dim,
-            n_particles=4,
-            data_path_test="data/test_split_DW4.npy",
-            data_path_val="data/val_split_DW4.npy",
-            key=subkey,
-        )
-    elif args.target == "lj13":
+        n_particles = 4
+        n_spatial_dim = 2
+    else:  # LJ variants
         input_dim = 39
-        key, subkey = jax.random.split(key)
+        n_particles = 13
+        n_spatial_dim = 3
 
+    density_config = DensityConfig(
+        target_type=args.target,
+        initial_sigma=args.initial_sigma,
+        score_norm=args.score_norm,
+        annealing_path=args.annealing_path,
+        shift_fn=shift_fn,
+        input_dim=input_dim,
+        n_particles=n_particles,
+        n_spatial_dim=n_spatial_dim,
+        alpha=args.alpha,
+        epsilon_val=args.epsilon_val,
+        min_dr=args.min_dr,
+        m=args.m,
+        n=args.n,
+        c=args.c,
+        log_prob_clip=args.log_prob_clip,
+        soft_clip=args.soft_clip,
+        include_harmonic=args.include_harmonic,
+        cubic_spline=args.cubic_spline,
+        data_path_test=args.data_path_test,
+        data_path_val=args.data_path_val,
+        data_path_train=args.data_path_train,
+    )
+
+    config = TrainingExperimentConfig(
+        sampling=sampling_config,
+        training=training_config,
+        mcmc=mcmc_config,
+        integration=integration_config,
+        progressive=progressive_config,
+        model=model_config,
+        density=density_config,
+        offline=args.offline,
+        debug=args.debug,
+    )
+
+    # Initialize distributions based on density config
+    key, subkey = jax.random.split(key)
+    if config.density.target_type == "gmm":
         initial_density = MultivariateGaussian(
-            dim=input_dim, mean=jnp.zeros(input_dim), sigma=args.initial_sigma
+            mean=jnp.zeros(config.density.input_dim),
+            dim=config.density.input_dim,
+            sigma=config.density.initial_sigma,
+        )
+        target_density = GMM(subkey, dim=config.density.input_dim)
+    elif config.density.target_type == "mw32":
+        initial_density = MultivariateGaussian(
+            mean=jnp.zeros(config.density.input_dim),
+            dim=config.density.input_dim,
+            sigma=config.density.initial_sigma,
+        )
+        target_density = ManyWellEnergy(dim=config.density.input_dim)
+    elif config.density.target_type == "dw4":
+        initial_density = TranslationInvariantGaussian(
+            N=config.density.n_particles,
+            D=config.density.n_spatial_dim,
+            sigma=config.density.initial_sigma,
+            wrap=False,
+        )
+        target_density = MultiDoubleWellEnergy(
+            dim=config.density.input_dim,
+            n_particles=config.density.n_particles,
+            data_path_test=config.density.data_path_test,
+            data_path_val=config.density.data_path_val,
+            key=subkey,
+        )
+    elif config.density.target_type == "dw4o":
+        initial_density = MultivariateGaussian(
+            mean=jnp.zeros(config.density.input_dim),
+            dim=config.density.input_dim,
+            sigma=config.density.initial_sigma,
+        )
+        target_density = MultiDoubleWellEnergy(
+            dim=config.density.input_dim,
+            n_particles=config.density.n_particles,
+            data_path_test=config.density.data_path_test,
+            data_path_val=config.density.data_path_val,
+            key=subkey,
+        )
+    elif config.density.target_type == "lj13":
+        initial_density = MultivariateGaussian(
+            dim=config.density.input_dim,
+            mean=jnp.zeros(config.density.input_dim),
+            sigma=config.density.initial_sigma,
         )
         target_density = LennardJonesEnergy(
-            dim=input_dim,
-            n_particles=13,
-            data_path_test="data/test_split_LJ13-1000.npy",
-            data_path_val="data/val_split_LJ13-1000.npy",
-            data_path_train="data/train_split_LJ13-1000.npy",
-            log_prob_clip=args.pt_clip,
+            dim=config.density.input_dim,
+            n_particles=config.density.n_particles,
+            data_path_test=config.density.data_path_test,
+            data_path_val=config.density.data_path_val,
+            data_path_train=config.density.data_path_train,
+            log_prob_clip=config.density.log_prob_clip,
             key=subkey,
         )
-    elif args.target == "tlj13":
-        input_dim = 39
-        key, subkey = jax.random.split(key)
-
+    elif config.density.target_type == "tlj13":
         initial_density = MultivariateGaussian(
-            dim=input_dim, mean=jnp.zeros(input_dim), sigma=args.initial_sigma
+            dim=config.density.input_dim,
+            mean=jnp.zeros(config.density.input_dim),
+            sigma=config.density.initial_sigma,
         )
         target_density = TimeDependentLennardJonesEnergy(
-            dim=input_dim,
-            n_particles=13,
-            alpha=2.0,
-            min_dr=1e-3,
+            dim=config.density.input_dim,
+            n_particles=config.density.n_particles,
+            alpha=config.density.alpha,
+            min_dr=config.density.min_dr,
         )
-    elif args.target == "lj13b":
-        input_dim = 39
-        key, subkey = jax.random.split(key)
-
+    elif config.density.target_type == "lj13b":
         initial_density = TranslationInvariantGaussian(
-            N=13, D=3, sigma=args.initial_sigma, wrap=False
-        )
-
-        target_density = TimeDependentLennardJonesEnergyButler(
-            dim=input_dim,
-            n_particles=13,
-            sigma=1.0,
-            alpha=0.2,
-            epsilon_val=1.0,
-            min_dr=1e-3,
-            m=1,
-            n=1,
-            c=0.5,
-            log_prob_clip=args.pt_clip,
-            soft_clip=args.soft_clip,
-            score_norm=args.score_norm,
-            include_harmonic=True,
-        )
-
-    elif args.target == "lj13c":
-        input_dim = 39
-        key, subkey = jax.random.split(key)
-
-        initial_density = MultivariateGaussian(
-            dim=input_dim, mean=jnp.zeros(input_dim), sigma=args.initial_sigma
+            N=config.density.n_particles,
+            D=config.density.n_spatial_dim,
+            sigma=config.density.initial_sigma,
+            wrap=False,
         )
         target_density = TimeDependentLennardJonesEnergyButler(
-            dim=input_dim,
-            n_particles=13,
+            dim=config.density.input_dim,
+            n_particles=config.density.n_particles,
             sigma=1.0,
-            alpha=0.2,
-            epsilon_val=1.0,
-            min_dr=1e-3,
-            m=1,
-            n=1,
-            c=0.5,
-            log_prob_clip=args.pt_clip,
-            soft_clip=args.soft_clip,
-            score_norm=args.score_norm,
-            include_harmonic=True,
-            cubic_spline=True,
+            alpha=config.density.alpha,
+            epsilon_val=config.density.epsilon_val,
+            min_dr=config.density.min_dr,
+            m=config.density.m,
+            n=config.density.n,
+            c=config.density.c,
+            log_prob_clip=config.density.log_prob_clip,
+            soft_clip=config.density.soft_clip,
+            score_norm=config.density.score_norm,
+            include_harmonic=config.density.include_harmonic,
         )
-
-    elif args.target == "lj13bt":
-        input_dim = 39
-        key, subkey = jax.random.split(key)
-
+    elif config.density.target_type == "lj13c":
         initial_density = MultivariateGaussian(
-            dim=input_dim, mean=jnp.zeros(input_dim), sigma=args.initial_sigma
+            dim=config.density.input_dim,
+            mean=jnp.zeros(config.density.input_dim),
+            sigma=config.density.initial_sigma,
         )
-
+        target_density = TimeDependentLennardJonesEnergyButler(
+            dim=config.density.input_dim,
+            n_particles=config.density.n_particles,
+            sigma=1.0,
+            alpha=config.density.alpha,
+            epsilon_val=config.density.epsilon_val,
+            min_dr=config.density.min_dr,
+            m=config.density.m,
+            n=config.density.n,
+            c=config.density.c,
+            log_prob_clip=config.density.log_prob_clip,
+            soft_clip=config.density.soft_clip,
+            score_norm=config.density.score_norm,
+            include_harmonic=config.density.include_harmonic,
+            cubic_spline=config.density.cubic_spline,
+        )
+    elif config.density.target_type == "lj13bt":
+        initial_density = MultivariateGaussian(
+            dim=config.density.input_dim,
+            mean=jnp.zeros(config.density.input_dim),
+            sigma=config.density.initial_sigma,
+        )
         target_density = TimeDependentLennardJonesEnergyButlerWithTemperatureTempered(
-            dim=input_dim,
-            n_particles=13,
+            dim=config.density.input_dim,
+            n_particles=config.density.n_particles,
             sigma=1.0,
-            alpha=0.1,
-            epsilon_val=1.0,
-            min_dr=1e-3,
-            m=1,
-            n=1,
-            c=0.5,
-            log_prob_clip=args.pt_clip,
-            soft_clip=args.soft_clip,
-            score_norm=args.score_norm,
-            include_harmonic=True,
+            alpha=config.density.alpha,
+            epsilon_val=config.density.epsilon_val,
+            min_dr=config.density.min_dr,
+            m=config.density.m,
+            n=config.density.n,
+            c=config.density.c,
+            log_prob_clip=config.density.log_prob_clip,
+            soft_clip=config.density.soft_clip,
+            score_norm=config.density.score_norm,
+            include_harmonic=config.density.include_harmonic,
         )
-
-    elif args.target == "sclj13":
-        input_dim = 39
-        key, subkey = jax.random.split(key)
-
+    elif config.density.target_type == "sclj13":
         initial_density = MultivariateGaussian(
-            dim=input_dim, mean=jnp.zeros(input_dim), sigma=args.initial_sigma
+            dim=config.density.input_dim,
+            mean=jnp.zeros(config.density.input_dim),
+            sigma=config.density.initial_sigma,
         )
         target_density = SoftCoreLennardJonesEnergy(
-            dim=input_dim,
-            n_particles=13,
+            dim=config.density.input_dim,
+            n_particles=config.density.n_particles,
             sigma=1.0,
-            epsilon_val=1.0,
-            alpha=0.2,
-            shift_fn=shift_fn,
-            min_dr=1e-3,
-            c=0.5,
-            include_harmonic=True,
-            log_prob_clip=args.pt_clip,
+            epsilon_val=config.density.epsilon_val,
+            alpha=config.density.alpha,
+            shift_fn=config.density.shift_fn,
+            min_dr=config.density.min_dr,
+            c=config.density.c,
+            include_harmonic=config.density.include_harmonic,
+            log_prob_clip=config.density.log_prob_clip,
         )
 
     # Initialize velocity field
     key, model_key = jax.random.split(key)
-    if args.network == "mlp":
+    if config.model.architecture == "mlp":
         v_theta = TimeVelocityField(
             model_key,
-            input_dim=input_dim,
-            hidden_dim=args.hidden_dim,
-            depth=args.depth,
+            input_dim=config.density.input_dim,
+            hidden_dim=config.model.hidden_dim,
+            depth=config.model.num_layers,
         )
-    elif args.network == "pdn":
+    elif config.model.architecture == "pdn":
         v_theta = TimeVelocityFieldWithPairwiseFeature(
             model_key,
-            n_particles=4 if args.target in ["dw4", "dw4o"] else 13,
-            n_spatial_dim=2 if args.target in ["dw4", "dw4o"] else 3,
-            hidden_dim=args.hidden_dim,
-            depth=args.depth,
+            n_particles=config.density.n_particles,
+            n_spatial_dim=config.density.n_spatial_dim,
+            hidden_dim=config.model.hidden_dim,
+            depth=config.model.num_layers,
         )
-    elif args.network == "transformer":
+    elif config.model.architecture == "transformer":
         v_theta = TimeVelocityFieldTransformer(
-            n_particles=4 if args.target in ["dw4", "dw4o"] else 13,
-            n_spatial_dim=2 if args.target in ["dw4", "dw4o"] else 3,
-            hidden_size=args.hidden_dim,
-            intermediate_size=2 * args.hidden_dim,
-            num_layers=args.depth,
+            n_particles=config.density.n_particles,
+            n_spatial_dim=config.density.n_spatial_dim,
+            hidden_size=config.model.hidden_dim,
+            intermediate_size=2 * config.model.hidden_dim,
+            num_layers=config.model.num_layers,
             num_heads=4,
             dropout_rate=0.1,
             attention_dropout_rate=0.1,
             key=model_key,
         )
 
-    if not args.offline:
+    if not config.offline:
         # Handle logging hyperparameters
         wandb.init(
             project="liouville",
-            config={
-                "input_dim": initial_density.dim,
-                "T": args.num_timesteps,
-                "N": args.num_samples,
-                "num_epochs": args.num_epochs,
-                "num_steps": args.num_steps,
-                "learning_rate": args.learning_rate,
-                "gradient_norm": args.gradient_norm,
-                "hidden_dim": args.hidden_dim,
-                "depth": args.depth,
-                "mcmc_type": args.mcmc_type,
-                "num_mcmc_steps": args.mcmc_steps,
-                "num_mcmc_integration_steps": args.mcmc_integration_steps,
-                "eta": args.eta,
-                "schedule": args.schedule,
-                "optimizer": args.optimizer,
-                "integrator": args.integrator,
-                "initial_sigma": args.initial_sigma,
-                "with_rejection_sampling": args.with_rejection_sampling,
-                "continuous_schedule": args.continuous_schedule,
-                "target": args.target,
-                "network": args.network,
-                "dt_log_density_clip": args.dt_pt_clip,
-                "log_density_clip": args.pt_clip,
-                "soft_clip": args.soft_clip,
-                # "target_end_time": args.target_end_time,
-                "initial_end_time": args.initial_end_time,
-                "end_time_steps": args.end_time_steps,
-                "update_end_time_every": args.update_end_time_every,
-                "enable_end_time_progression": args.enable_end_time_progression,
-                "score_norm": args.score_norm,
-                "method": args.method,
-                "annealing_path": args.annealing_path,
-            },
+            config=vars(config),
             reinit=True,
             tags=[
-                args.target,
-                args.network,
+                config.density.target_type,
+                config.model.architecture,
                 args.method,
                 "no_shortcut",
             ],
@@ -363,33 +451,7 @@ def main():
             initial_density=initial_density,
             target_density=target_density,
             v_theta=v_theta,
-            shift_fn=shift_fn,
-            N=args.num_samples,
-            B=args.batch_size,
-            T=args.num_timesteps,
-            num_epochs=args.num_epochs,
-            num_steps=args.num_steps,
-            learning_rate=args.learning_rate,
-            num_mcmc_steps=args.mcmc_steps,
-            num_mcmc_integration_steps=args.mcmc_integration_steps,
-            mcmc_type=args.mcmc_type,
-            eta=args.eta,
-            schedule=args.schedule,
-            integrator=args.integrator,
-            optimizer=args.optimizer,
-            with_rejection_sampling=args.with_rejection_sampling,
-            continuous_schedule=args.continuous_schedule,
-            offline=args.offline,
-            target=args.target,
-            eval_every=args.eval_every,
-            network=args.network,
-            dt_log_density_clip=args.dt_pt_clip,
-            # target_end_time=args.target_end_time,
-            initial_end_time=args.initial_end_time,
-            end_time_steps=args.end_time_steps,
-            update_end_time_every=args.update_end_time_every,
-            enable_end_time_progression=args.enable_end_time_progression,
-            gradient_norm=args.gradient_norm,
+            config=config,
         )
     elif args.method == "decoupled":
         v_theta = train_velocity_field_with_decoupled_loss(
@@ -397,34 +459,7 @@ def main():
             initial_density=initial_density,
             target_density=target_density,
             v_theta=v_theta,
-            shift_fn=shift_fn,
-            N=args.num_samples,
-            B=args.batch_size,
-            T=args.num_timesteps,
-            num_epochs=args.num_epochs,
-            num_steps=args.num_steps,
-            learning_rate=args.learning_rate,
-            num_mcmc_steps=args.mcmc_steps,
-            num_mcmc_integration_steps=args.mcmc_integration_steps,
-            mcmc_type=args.mcmc_type,
-            eta=args.eta,
-            schedule=args.schedule,
-            integrator=args.integrator,
-            optimizer=args.optimizer,
-            with_rejection_sampling=args.with_rejection_sampling,
-            continuous_schedule=args.continuous_schedule,
-            offline=args.offline,
-            target=args.target,
-            eval_every=args.eval_every,
-            network=args.network,
-            dt_log_density_clip=args.dt_pt_clip,
-            # target_end_time=args.target_end_time,
-            initial_end_time=args.initial_end_time,
-            end_time_steps=args.end_time_steps,
-            update_end_time_every=args.update_end_time_every,
-            enable_end_time_progression=args.enable_end_time_progression,
-            gradient_norm=args.gradient_norm,
-            annealing_path=args.annealing_path,
+            config=config,
         )
 
 
