@@ -37,13 +37,13 @@ def get_fully_connected_senders_receivers(
     n_node: int,
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """Compute senders and receivers for fully connected graph."""
-    # Create all pairs of indices
+    # Create all pairs of indices more efficiently using a single arange
     idx = jnp.arange(n_node)
-    senders, receivers = jnp.meshgrid(idx, idx)
-    # Remove self-connections
-    mask = senders != receivers
-    senders = senders[mask]
-    receivers = receivers[mask]
+    # Use broadcasting to avoid meshgrid
+    senders = jnp.repeat(idx, n_node - 1)
+    receivers = jnp.concatenate(
+        [jnp.concatenate([idx[:i], idx[i + 1 :]]) for i in range(n_node)]
+    )
     return senders, receivers
 
 
@@ -55,13 +55,8 @@ def segment_sum(
 
 
 class EGNNLayer(eqx.Module):
-    edge_mlp: eqx.nn.MLP
-    node_mlp: eqx.nn.MLP
     pos_mlp: eqx.nn.MLP
-    attention_mlp: Optional[eqx.nn.MLP]
     pos_aggregate_fn: Callable
-    msg_aggregate_fn: Callable
-    residual: bool
     normalize: bool
     eps: float
     dt: float
@@ -73,117 +68,47 @@ class EGNNLayer(eqx.Module):
         self,
         n_node: int,
         hidden_size: int,
-        output_size: int,
         key: jax.random.PRNGKey,
-        blocks: int = 1,
-        act_fn: Callable = jax.nn.silu,
-        residual: bool = True,
-        attention: bool = False,
         normalize: bool = False,
         tanh: bool = False,
         dt: float = 0.001,
         eps: float = 1e-8,
     ):
-        keys = jax.random.split(key, 4)
         self.dt = dt
         self.n_node = n_node
-        self.residual = residual
         self.normalize = normalize
         self.eps = eps
         self.pos_aggregate_fn = segment_sum
-        self.msg_aggregate_fn = segment_sum
 
         # Precompute senders and receivers for the fixed number of nodes
         self.senders, self.receivers = get_fully_connected_senders_receivers(n_node)
 
-        # Message network
-        edge_in_size = hidden_size * 2 + 1  # incoming + outgoing + radial
-        self.edge_mlp = eqx.nn.MLP(
-            in_size=edge_in_size,
-            out_size=hidden_size,
-            width_size=hidden_size,
-            depth=blocks,
-            activation=act_fn,
-            final_activation=jax.nn.silu,
-            key=keys[0],
-        )
-        self.edge_mlp = init_linear_weights(self.edge_mlp, xavier_init, keys[0])
-
-        # Update network
-        node_in_size = hidden_size * 2  # node features + aggregated messages
-        self.node_mlp = eqx.nn.MLP(
-            in_size=node_in_size,
-            out_size=output_size,
-            width_size=hidden_size,
-            depth=blocks,
-            activation=act_fn,
-            key=keys[1],
-        )
-        self.node_mlp = init_linear_weights(self.node_mlp, xavier_init, keys[1])
-
-        # Position update network
+        # Position update network - takes radial distance and time as input
         self.pos_mlp = eqx.nn.MLP(
-            in_size=hidden_size,
+            in_size=2,  # radial distance and time
             out_size=1,
             width_size=hidden_size,
             depth=1,
-            activation=act_fn,
+            activation=jax.nn.silu,
             final_activation=jax.nn.tanh if tanh else lambda x: x,
-            key=keys[2],
+            key=key,
         )
-        self.pos_mlp = init_linear_weights(self.pos_mlp, xavier_init, keys[2], scale=dt)
-
-        # Attention network
-        self.attention_mlp = None
-        if attention:
-            self.attention_mlp = eqx.nn.MLP(
-                in_size=hidden_size,
-                out_size=hidden_size,
-                width_size=hidden_size,
-                depth=1,
-                activation=jax.nn.sigmoid,
-                final_activation=jax.nn.sigmoid,
-                key=keys[3],
-            )
-            self.attention_mlp = init_linear_weights(
-                self.attention_mlp, xavier_init, keys[3]
-            )
+        self.pos_mlp = init_linear_weights(self.pos_mlp, xavier_init, key, scale=dt)
 
     def _pos_update(
         self,
-        edges: jnp.ndarray,
+        radial: jnp.ndarray,
         coord_diff: jnp.ndarray,
+        t: float,
     ) -> jnp.ndarray:
-        trans = coord_diff * jax.vmap(self.pos_mlp)(edges)
+        # Concatenate radial distances with time for each edge
+        time_array = jnp.full_like(radial, t)
+        edge_features = jnp.concatenate([radial, time_array], axis=-1)
+
+        # Compute position updates conditioned on both distance and time
+        trans = coord_diff * jax.vmap(self.pos_mlp)(edge_features)
         trans = jnp.clip(trans, -100, 100)
         return self.pos_aggregate_fn(trans, self.senders, self.n_node)
-
-    def _message(
-        self,
-        incoming: jnp.ndarray,
-        outgoing: jnp.ndarray,
-        radial: jnp.ndarray,
-    ) -> jnp.ndarray:
-        msg = jnp.concatenate([incoming, outgoing, radial], axis=-1)
-        msg = jax.vmap(self.edge_mlp)(msg)
-        if self.attention_mlp is not None:
-            att = jax.vmap(self.attention_mlp)(msg)
-            msg = msg * att
-        return msg
-
-    def _update(
-        self,
-        nodes: jnp.ndarray,
-        msg: jnp.ndarray,
-        node_attribute: Optional[jnp.ndarray] = None,
-    ) -> jnp.ndarray:
-        x = jnp.concatenate([nodes, msg], axis=-1)
-        if node_attribute is not None:
-            x = jnp.concatenate([x, node_attribute], axis=-1)
-        x = jax.vmap(self.node_mlp)(x)
-        if self.residual:
-            x = nodes + x
-        return x
 
     def _coord2radial(self, coord: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
         coord_diff = coord[self.senders] - coord[self.receivers]
@@ -195,41 +120,23 @@ class EGNNLayer(eqx.Module):
 
     def __call__(
         self,
-        nodes: jnp.ndarray,
         pos: jnp.ndarray,
-        node_attribute: Optional[jnp.ndarray] = None,
-    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+        t: float,
+    ) -> jnp.ndarray:
         # Compute radial features and coordinate differences
         radial, coord_diff = self._coord2radial(pos)
 
-        # Compute messages
-        incoming_nodes = nodes[self.receivers]
-        outgoing_nodes = nodes[self.senders]
-        messages = self._message(incoming_nodes, outgoing_nodes, radial)
-
-        # Aggregate messages
-        aggregated_messages = self.msg_aggregate_fn(
-            messages, self.receivers, self.n_node
-        )
-
-        # Update nodes
-        new_nodes = self._update(nodes, aggregated_messages, node_attribute)
-
-        # Update positions
-        pos_update = self._pos_update(messages, coord_diff)
+        # Update positions using both radial features and time
+        pos_update = self._pos_update(radial, coord_diff, t)
         new_pos = pos + pos_update
 
-        return new_nodes, new_pos
+        return new_pos
 
 
 class EGNN(eqx.Module):
     hidden_size: int
     num_layers: int
     layers: list
-    embedding: eqx.nn.Linear
-    act_fn: Callable
-    residual: bool
-    attention: bool
     normalize: bool
     tanh: bool
     n_node: int
@@ -239,53 +146,36 @@ class EGNN(eqx.Module):
         n_node: int,
         hidden_size: int,
         key: jax.random.PRNGKey,
-        act_fn: Callable = jax.nn.silu,
         num_layers: int = 4,
-        residual: bool = True,
-        attention: bool = False,
         normalize: bool = False,
         tanh: bool = False,
     ):
-        keys = jax.random.split(key, num_layers + 2)
+        keys = jax.random.split(key, num_layers)
 
         self.hidden_size = hidden_size
         self.num_layers = num_layers
-        self.act_fn = act_fn
-        self.residual = residual
-        self.attention = attention
         self.normalize = normalize
         self.tanh = tanh
         self.n_node = n_node
-
-        # Input embedding and output readout
-        self.embedding = eqx.nn.Linear(1, hidden_size, key=keys[0])
-        self.embedding = init_linear_weights(self.embedding, xavier_init, keys[0])
 
         # EGNN layers
         self.layers = [
             EGNNLayer(
                 n_node=n_node,
                 hidden_size=hidden_size,
-                output_size=hidden_size,
-                key=keys[i + 1],
-                act_fn=act_fn,
-                residual=residual,
-                attention=attention,
+                key=keys[i],
                 normalize=normalize,
                 tanh=tanh,
             )
             for i in range(num_layers)
         ]
 
-    def __call__(self, pos: jnp.ndarray, t: float) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    def __call__(self, pos: jnp.ndarray, t: float) -> jnp.ndarray:
         pos = pos.reshape(self.n_node, -1)
-        # Input node embedding
-        h = self.embedding(jnp.array([t]))
-        h = h.repeat(self.n_node, axis=0).reshape(self.n_node, self.hidden_size)
 
         # Message passing
         for layer in self.layers:
-            h, pos = layer(h, pos)
+            pos = layer(pos, t)
 
         pos = pos.reshape(-1)
         return pos
