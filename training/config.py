@@ -17,6 +17,7 @@ class TrainingConfig:
     gradient_clip_norm: Optional[float] = None
     eval_frequency: int = 20
     optimizer: Literal["adam", "adamw", "sgd", "rmsprop"] = "adamw"
+    use_decoupled_loss: bool = False  # Whether to use decoupled loss function
 
 
 @dataclass
@@ -48,7 +49,7 @@ class ProgressiveTrainingConfig:
 class ModelConfig:
     hidden_dim: int = 256
     num_layers: int = 3
-    architecture: Literal["mlp", "pdn", "transformer"] = "mlp"
+    architecture: Literal["mlp", "pdn", "transformer", "emlp"] = "mlp"
 
 
 @dataclass
@@ -76,12 +77,12 @@ class DensityConfig:
     alpha: Optional[float] = None
     epsilon_val: Optional[float] = None
     min_dr: Optional[float] = 1e-3
-    m: Optional[int] = None
-    n: Optional[int] = None
-    c: Optional[float] = None
+    m: Optional[int] = 1
+    n: Optional[int] = 1.0
+    c: Optional[float] = 0.5
     log_prob_clip: Optional[float] = None
     soft_clip: bool = False
-    include_harmonic: bool = False
+    include_harmonic: bool = True
     cubic_spline: bool = False
     # Data paths for some targets
     data_path_test: Optional[str] = None
@@ -91,12 +92,14 @@ class DensityConfig:
 
 @dataclass
 class TrainingExperimentConfig:
-    sampling: SamplingConfig = SamplingConfig()
-    training: TrainingConfig = TrainingConfig()
-    mcmc: MCMCConfig = MCMCConfig()
-    integration: IntegrationConfig = IntegrationConfig()
-    progressive: ProgressiveTrainingConfig = ProgressiveTrainingConfig()
-    model: ModelConfig = ModelConfig()
-    density: DensityConfig = DensityConfig()
+    sampling: SamplingConfig = field(default_factory=SamplingConfig)
+    training: TrainingConfig = field(default_factory=TrainingConfig)
+    mcmc: MCMCConfig = field(default_factory=MCMCConfig)
+    integration: IntegrationConfig = field(default_factory=IntegrationConfig)
+    progressive: ProgressiveTrainingConfig = field(
+        default_factory=ProgressiveTrainingConfig
+    )
+    model: ModelConfig = field(default_factory=ModelConfig)
+    density: DensityConfig = field(default_factory=DensityConfig)
     offline: bool = False
     debug: bool = False
