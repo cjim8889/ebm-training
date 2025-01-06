@@ -89,7 +89,7 @@ def main():
     parser.add_argument("--end-time-steps", type=int, default=2)
     parser.add_argument("--update-end-time-every", type=int, default=100)
     parser.add_argument("--enable-end-time-progression", action="store_true")
-    parser.add_argument("--gradient-norm", type=float, default=1.0)
+    parser.add_argument("--gradient-norm", type=float, default=None)
     parser.add_argument("--shift", action="store_true")
     parser.add_argument("--score-norm", type=float, default=None)
     parser.add_argument(

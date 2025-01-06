@@ -46,7 +46,7 @@ def train_velocity_field_with_decoupled_loss(
     num_epochs: int = 200,
     num_steps: int = 100,
     learning_rate: float = 1e-03,
-    gradient_norm: float = 1.0,
+    gradient_norm: float = None,
     mcmc_type: str = "hmc",
     num_mcmc_steps: int = 5,
     num_mcmc_integration_steps: int = 3,
@@ -77,7 +77,11 @@ def train_velocity_field_with_decoupled_loss(
         current_end_time = T
 
     # Set up optimizer
-    gradient_clipping = optax.clip_by_global_norm(gradient_norm)
+    if gradient_norm is not None:
+        gradient_clipping = optax.clip_by_global_norm(gradient_norm)
+    else:
+        gradient_clipping = optax.identity()
+
     base_optimizer = get_optimizer(optimizer, learning_rate)
     optimizer = optax.chain(optax.zero_nans(), gradient_clipping, base_optimizer)
     optimizer: optax.GradientTransformation = optax.apply_if_finite(optimizer, 5)
