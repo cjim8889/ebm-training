@@ -1,4 +1,4 @@
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 import chex
 import equinox as eqx
@@ -9,80 +9,61 @@ import optax
 
 import wandb
 from distributions import AnnealedDistribution, Target
-from utils.distributions import (
-    sample_monotonic_uniform_ordered,
-)
-from utils.hmc import (
-    generate_samples_with_hmc_correction,
-)
+from utils.distributions import sample_monotonic_uniform_ordered
+from utils.hmc import generate_samples_with_hmc_correction
 from utils.smc import (
     generate_samples_with_euler_smc,
     generate_samples_with_smc,
     systematic_resampling,
 )
-from utils.integration import (
-    euler_integrate,
-    generate_samples,
-)
+from utils.integration import euler_integrate, generate_samples
 from utils.optimization import get_optimizer, inverse_power_schedule, power_schedule
-
+from .config import TrainingExperimentConfig
 from .loss import loss_fn_with_decoupled_log_Z_t, estimate_log_Z_t
 
 
-# Main training loop for training a velocity field with shortcut
 def train_velocity_field_with_decoupled_loss(
     key: jax.random.PRNGKey,
     initial_density: Target,
     target_density: Target,
     v_theta: Callable[[chex.Array, float], chex.Array],
-    shift_fn: Callable[[chex.Array], chex.Array] = lambda x: x,
-    N: int = 512,
-    B: int = 256,
-    T: int = 32,
-    enable_end_time_progression: bool = False,
-    initial_end_time: int = 16,  # Starting end time
-    end_time_steps: int = 2,  # Number of steps to reach target end time
-    update_end_time_every: int = 100,  # Update frequency in epochs
-    num_epochs: int = 200,
-    num_steps: int = 100,
-    learning_rate: float = 1e-03,
-    gradient_norm: float = None,
-    mcmc_type: str = "hmc",
-    num_mcmc_steps: int = 5,
-    num_mcmc_integration_steps: int = 3,
-    eta: float = 0.01,
-    schedule: str = "inverse_power",
-    continuous_schedule: bool = False,
-    integrator: str = "euler",
-    optimizer: str = "adamw",
-    with_rejection_sampling: bool = False,
-    offline: bool = False,
-    target: str = "",
-    eval_every: int = 20,
-    annealing_path: str = "linear",
-    dt_log_density_clip: Optional[float] = None,
-    debug: bool = False,
-    **kwargs: Any,
+    config: TrainingExperimentConfig,
 ) -> Any:
+    """Train a velocity field using decoupled loss function.
+
+    Args:
+        key: Random key for JAX operations
+        initial_density: Initial density distribution
+        target_density: Target density distribution
+        v_theta: Velocity field function
+        config: Training configuration
+
+    Returns:
+        Trained velocity field function
+    """
     path_distribution = AnnealedDistribution(
         initial_density=initial_density,
         target_density=target_density,
-        method=annealing_path,
+        method=config.annealing_path,
     )
 
     # Initialize current end time
-    if enable_end_time_progression:
-        current_end_time = initial_end_time
+    if config.progressive.enable:
+        current_end_time = config.progressive.initial_timesteps
     else:
-        current_end_time = T
+        current_end_time = config.sampling.num_timesteps
 
     # Set up optimizer
-    if gradient_norm is not None:
-        gradient_clipping = optax.clip_by_global_norm(gradient_norm)
+    if config.training.gradient_clip_norm is not None:
+        gradient_clipping = optax.clip_by_global_norm(
+            config.training.gradient_clip_norm
+        )
     else:
         gradient_clipping = optax.identity()
 
-    base_optimizer = get_optimizer(optimizer, learning_rate)
+    base_optimizer = get_optimizer(
+        config.training.optimizer, config.training.learning_rate
+    )
     optimizer = optax.chain(optax.zero_nans(), gradient_clipping, base_optimizer)
     optimizer: optax.GradientTransformation = optax.apply_if_finite(optimizer, 5)
 
@@ -93,11 +74,11 @@ def train_velocity_field_with_decoupled_loss(
         samples = generate_samples(
             key,
             v_theta,
-            N,
+            config.sampling.num_particles,
             ts,
             path_distribution.sample_initial,
             integrator,
-            shift_fn,
+            config.density.shift_fn,
             use_shortcut=False,
         )
 
@@ -111,64 +92,64 @@ def train_velocity_field_with_decoupled_loss(
     def _generate_mcmc(
         key: jax.random.PRNGKey, ts: jnp.ndarray, force_finite: bool = False
     ):
-        if mcmc_type == "hmc":
+        if config.mcmc.method == "hmc":
             samples = generate_samples_with_hmc_correction(
                 key=key,
                 v_theta=v_theta,
                 sample_fn=path_distribution.sample_initial,
                 time_dependent_log_density=path_distribution.time_dependent_log_prob,
-                num_samples=N,
+                num_samples=config.sampling.num_particles,
                 ts=ts,
                 integration_fn=integrator,
-                num_steps=num_mcmc_steps,
-                integration_steps=num_mcmc_integration_steps,
-                eta=eta,
-                rejection_sampling=with_rejection_sampling,
-                shift_fn=shift_fn,
+                num_steps=config.mcmc.num_steps,
+                integration_steps=config.mcmc.num_integration_steps,
+                eta=config.mcmc.step_size,
+                rejection_sampling=config.mcmc.with_rejection,
+                shift_fn=config.density.shift_fn,
                 use_shortcut=False,
             )
-        elif mcmc_type == "esmc":
+        elif config.mcmc.method == "esmc":
             samples = generate_samples_with_euler_smc(
                 key=key,
                 v_theta=v_theta,
                 time_dependent_log_density=path_distribution.time_dependent_log_prob,
-                num_samples=N,
+                num_samples=config.sampling.num_particles,
                 ts=ts,
                 sample_fn=path_distribution.sample_initial,
-                num_steps=num_mcmc_steps,
-                integration_steps=num_mcmc_integration_steps,
-                eta=eta,
-                rejection_sampling=with_rejection_sampling,
-                shift_fn=shift_fn,
+                num_steps=config.mcmc.num_steps,
+                integration_steps=config.mcmc.num_integration_steps,
+                eta=config.mcmc.step_size,
+                rejection_sampling=config.mcmc.with_rejection,
+                shift_fn=config.density.shift_fn,
                 use_shortcut=False,
             )
-        elif mcmc_type == "smc":
+        elif config.mcmc.method == "smc":
             samples = generate_samples_with_smc(
                 key=key,
                 time_dependent_log_density=path_distribution.time_dependent_log_prob,
-                num_samples=N,
+                num_samples=config.sampling.num_particles,
                 ts=ts,
                 sample_fn=path_distribution.sample_initial,
-                num_steps=num_mcmc_steps,
-                integration_steps=num_mcmc_integration_steps,
-                eta=eta,
-                rejection_sampling=with_rejection_sampling,
-                shift_fn=shift_fn,
+                num_steps=config.mcmc.num_steps,
+                integration_steps=config.mcmc.num_integration_steps,
+                eta=config.mcmc.step_size,
+                rejection_sampling=config.mcmc.with_rejection,
+                shift_fn=config.density.shift_fn,
                 estimate_covariance=False,
                 blackjax_hmc=True,
             )
-        elif mcmc_type == "vsmc":
+        elif config.mcmc.method == "vsmc":
             samples = generate_samples_with_smc(
                 key=key,
                 time_dependent_log_density=path_distribution.time_dependent_log_prob,
-                num_samples=N,
+                num_samples=config.sampling.num_particles,
                 ts=ts,
                 sample_fn=path_distribution.sample_initial,
-                num_steps=num_mcmc_steps,
-                integration_steps=num_mcmc_integration_steps,
-                eta=eta,
-                rejection_sampling=with_rejection_sampling,
-                shift_fn=shift_fn,
+                num_steps=config.mcmc.num_steps,
+                integration_steps=config.mcmc.num_integration_steps,
+                eta=config.mcmc.step_size,
+                rejection_sampling=config.mcmc.with_rejection,
+                shift_fn=config.density.shift_fn,
                 v_theta=v_theta,
                 estimate_covariance=False,
                 blackjax_hmc=True,
@@ -177,11 +158,11 @@ def train_velocity_field_with_decoupled_loss(
             samples = generate_samples(
                 key,
                 v_theta,
-                N,
+                config.sampling.num_particles,
                 ts,
                 path_distribution.sample_initial,
                 integrator,
-                shift_fn,
+                config.density.shift_fn,
                 use_shortcut=False,
             )
 
@@ -208,28 +189,38 @@ def train_velocity_field_with_decoupled_loss(
 
         return v_theta, opt_state, loss
 
-    for epoch in range(num_epochs):
+    for epoch in range(config.training.num_epochs):
         # Update end time if needed
-        if epoch % update_end_time_every == 0:
-            if enable_end_time_progression and current_end_time < T and epoch != 0:
-                current_end_time += end_time_steps
-                current_end_time = min(current_end_time, T)
+        if epoch % config.progressive.update_frequency == 0:
+            if (
+                config.progressive.enable
+                and current_end_time < config.sampling.num_timesteps
+                and epoch != 0
+            ):
+                current_end_time += config.progressive.timestep_increment
+                current_end_time = min(current_end_time, config.sampling.num_timesteps)
 
             # Update time steps based on new end time
-            if schedule == "linear":
+            if config.integration.schedule == "linear":
                 current_ts = jnp.linspace(
-                    0, current_end_time * 1.0 / T, current_end_time
+                    0,
+                    current_end_time * 1.0 / config.sampling.num_timesteps,
+                    current_end_time,
                 )
-            elif schedule == "inverse_power":
+            elif config.integration.schedule == "inverse_power":
                 current_ts = inverse_power_schedule(
-                    current_end_time, end_time=current_end_time * 1.0 / T, gamma=0.5
+                    current_end_time,
+                    end_time=current_end_time * 1.0 / config.sampling.num_timesteps,
+                    gamma=0.5,
                 )
-            elif schedule == "power":
+            elif config.integration.schedule == "power":
                 current_ts = power_schedule(
-                    current_end_time, end_time=current_end_time * 1.0 / T, gamma=0.25
+                    current_end_time,
+                    end_time=current_end_time * 1.0 / config.sampling.num_timesteps,
+                    gamma=0.25,
                 )
 
-            if continuous_schedule:
+            if config.integration.continuous_time:
                 key, subkey = jax.random.split(key)
                 current_ts = sample_monotonic_uniform_ordered(subkey, current_ts, True)
 
@@ -243,7 +234,7 @@ def train_velocity_field_with_decoupled_loss(
             path_distribution.time_derivative,
         )
 
-        if not offline:
+        if not config.offline:
             wandb.log(
                 {
                     "log_Z_t": log_Z_t,
@@ -261,7 +252,7 @@ def train_velocity_field_with_decoupled_loss(
 
         resampling_keys = jax.random.split(subkey, current_ts.shape[0])
         good_samples_indices = systematic_resampling(
-            resampling_keys, mcmc_samples["weights"], N // 2
+            resampling_keys, mcmc_samples["weights"], config.sampling.num_particles // 2
         )
         good_samples = jax.vmap(lambda x, i: x[i])(
             mcmc_samples["positions"], good_samples_indices
@@ -270,9 +261,11 @@ def train_velocity_field_with_decoupled_loss(
         samples = jnp.concatenate([good_samples, v_theta_samples["positions"]], axis=1)
         epoch_loss = 0.0
 
-        for s in range(num_steps):
+        for s in range(config.training.steps_per_epoch):
             key, subkey = jax.random.split(key)
-            samps = jax.random.choice(subkey, samples, (B,), replace=False, axis=1)
+            samps = jax.random.choice(
+                subkey, samples, (config.sampling.batch_size,), replace=False, axis=1
+            )
 
             v_theta, opt_state, loss = step(
                 v_theta, opt_state, samps, current_ts, log_Z_t
@@ -280,13 +273,13 @@ def train_velocity_field_with_decoupled_loss(
 
             epoch_loss += loss
             if s % 20 == 0:
-                if not offline:
+                if not config.offline:
                     wandb.log({"loss": loss})
                 else:
                     print(f"Epoch {epoch}, Step {s}, Loss: {loss}")
 
-        avg_loss = epoch_loss / num_steps
-        if not offline:
+        avg_loss = epoch_loss / config.training.steps_per_epoch
+        if not config.offline:
             wandb.log(
                 {"epoch": epoch, "average_loss": avg_loss, "end_time": current_end_time}
             )
@@ -295,90 +288,54 @@ def train_velocity_field_with_decoupled_loss(
                 f"Epoch {epoch}, Average Loss: {avg_loss} Current End Time: {current_end_time}"
             )
 
-        if epoch % eval_every == 0:
-            eval_ts = jnp.linspace(0, current_end_time * 1.0 / T, current_end_time)
+        if epoch % config.training.eval_frequency == 0:
+            eval_ts = jnp.linspace(
+                0,
+                current_end_time * 1.0 / config.sampling.num_timesteps,
+                current_end_time,
+            )
             key, subkey = jax.random.split(key)
             val_samples = generate_samples(
                 subkey,
                 v_theta,
-                N,
+                config.sampling.num_particles,
                 eval_ts,
                 path_distribution.sample_initial,
                 integrator,
-                shift_fn,
+                config.density.shift_fn,
                 use_shortcut=False,
             )
 
-            if target == "gmm":
-                fig = target_density.visualise(val_samples["positions"][-1])
-                if not offline:
-                    wandb.log(
-                        {
-                            f"validation_samples_{T}_step": wandb.Image(fig),
-                        }
-                    )
-                else:
-                    plt.show()
+            # Evaluate samples using target density
+            key, subkey = jax.random.split(key)
+            eval_samples = jax.random.choice(
+                subkey,
+                val_samples["positions"][-1],
+                (config.sampling.num_particles,),
+                replace=False,
+            )
 
-                plt.close(fig)
+            if target_density.TIME_DEPENDENT:
+                eval_metrics = target_density.evaluate(eval_samples, float(eval_ts[-1]))
+            else:
+                eval_metrics = target_density.evaluate(eval_samples)
 
-            elif target == "mw32":
-                key, subkey = jax.random.split(key)
-                fig = target_density.visualise(
-                    jax.random.choice(
-                        subkey, val_samples["positions"][-1], (100,), replace=False
-                    )
-                )
-
-                if not offline:
-                    wandb.log(
-                        {
-                            f"validation_samples_{T}_step": wandb.Image(fig),
-                        }
-                    )
-                else:
-                    plt.show()
-
-                plt.close(fig)
-            elif (
-                target == "dw4"
-                or target == "dw4o"
-                or target == "lj13"
-                or target == "sclj13"
-                or target == "tlj13"
-                or target == "lj13b"
-                or target == "lj13bt"
-                or target == "lj13c"
-            ):
-                key, subkey = jax.random.split(key)
-
-                if target_density.TIME_DEPENDENT:
-                    fig = target_density.visualise_with_time(
-                        jax.random.choice(
-                            subkey, val_samples["positions"][-1], (1024,), replace=False
+            # Log metrics to wandb
+            if not config.offline:
+                wandb.log(
+                    {
+                        f"validation_samples_{config.sampling.num_timesteps}_step": wandb.Image(
+                            eval_metrics["figure"]
                         ),
-                        float(eval_ts[-1]),
-                    )
-                else:
-                    fig = target_density.visualise(
-                        jax.random.choice(
-                            subkey, val_samples["positions"][-1], (1024,), replace=False
-                        )
-                    )
+                    }
+                )
+            else:
+                plt.show()
 
-                if not offline:
-                    wandb.log(
-                        {
-                            f"validation_samples_{T}_step": wandb.Image(fig),
-                        }
-                    )
-                else:
-                    plt.show()
-
-                plt.close(fig)
+            plt.close(eval_metrics["figure"])
 
     # Save trained model to wandb
-    if not offline:
+    if not config.offline:
         eqx.tree_serialise_leaves("v_theta.eqx", v_theta)
         artifact = wandb.Artifact(
             name=f"velocity_field_model_{wandb.run.id}", type="model"

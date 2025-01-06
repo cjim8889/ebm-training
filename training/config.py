@@ -1,0 +1,102 @@
+from dataclasses import dataclass, field
+from typing import Optional, Literal, Callable, Any
+
+
+@dataclass
+class SamplingConfig:
+    num_particles: int = 512  # N: Number of particles to simulate
+    batch_size: int = 256  # B: Batch size for training
+    num_timesteps: int = 32  # T: Number of timesteps for integration
+
+
+@dataclass
+class TrainingConfig:
+    num_epochs: int = 200
+    steps_per_epoch: int = 100
+    learning_rate: float = 1e-3
+    gradient_clip_norm: Optional[float] = None
+    eval_frequency: int = 20
+    optimizer: Literal["adam", "adamw", "sgd", "rmsprop"] = "adamw"
+
+
+@dataclass
+class MCMCConfig:
+    method: Literal["hmc", "smc", "esmc", "vsmc"] = "hmc"
+    num_steps: int = 5
+    num_integration_steps: int = 3
+    step_size: float = 0.01  # eta: MCMC step size
+    with_rejection: bool = False
+
+
+@dataclass
+class IntegrationConfig:
+    method: Literal["euler", "rk4"] = "euler"
+    schedule: Literal["linear", "inverse_power", "power"] = "linear"
+    continuous_time: bool = False
+    dt_clip: Optional[float] = None
+
+
+@dataclass
+class ProgressiveTrainingConfig:
+    enable: bool = False
+    initial_timesteps: int = 16
+    timestep_increment: int = 2
+    update_frequency: int = 100
+
+
+@dataclass
+class ModelConfig:
+    hidden_dim: int = 256
+    num_layers: int = 3
+    architecture: Literal["mlp", "pdn", "transformer"] = "mlp"
+
+
+@dataclass
+class DensityConfig:
+    target_type: Literal[
+        "gmm",
+        "mw32",
+        "dw4",
+        "lj13",
+        "sclj13",
+        "dw4o",
+        "tlj13",
+        "lj13b",
+        "lj13bt",
+        "lj13c",
+    ] = "gmm"
+    initial_sigma: float = 20.0
+    score_norm: Optional[float] = None
+    annealing_path: Literal["linear", "geometric"] = "linear"
+    shift_fn: Callable[[Any], Any] = field(default_factory=lambda: lambda x: x)
+    input_dim: Optional[int] = None
+    # LJ specific parameters
+    n_particles: Optional[int] = None
+    n_spatial_dim: Optional[int] = None
+    alpha: Optional[float] = None
+    epsilon_val: Optional[float] = None
+    min_dr: Optional[float] = 1e-3
+    m: Optional[int] = None
+    n: Optional[int] = None
+    c: Optional[float] = None
+    log_prob_clip: Optional[float] = None
+    soft_clip: bool = False
+    include_harmonic: bool = False
+    cubic_spline: bool = False
+    # Data paths for some targets
+    data_path_test: Optional[str] = None
+    data_path_val: Optional[str] = None
+    data_path_train: Optional[str] = None
+
+
+@dataclass
+class TrainingExperimentConfig:
+    sampling: SamplingConfig = SamplingConfig()
+    training: TrainingConfig = TrainingConfig()
+    mcmc: MCMCConfig = MCMCConfig()
+    integration: IntegrationConfig = IntegrationConfig()
+    progressive: ProgressiveTrainingConfig = ProgressiveTrainingConfig()
+    model: ModelConfig = ModelConfig()
+    density: DensityConfig = DensityConfig()
+    offline: bool = False
+    debug: bool = False

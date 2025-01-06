@@ -54,3 +54,27 @@ class Target:
 
     def visualise_with_time(self, samples: chex.Array, time: float) -> plt.Figure:
         raise NotImplementedError
+
+    def evaluate(self, samples: chex.Array, time: Optional[float] = None) -> dict:
+        """Evaluate samples and return metrics and figures.
+
+        Args:
+            samples: Array of samples to evaluate
+            time: Optional time value for time-dependent distributions
+
+        Returns:
+            Dictionary containing evaluation metrics and figures
+        """
+        if self.TIME_DEPENDENT and time is None:
+            raise ValueError("Time must be provided for time-dependent distributions")
+
+        metrics = {}
+
+        # Generate visualization
+        if self.TIME_DEPENDENT:
+            fig = self.visualise_with_time(samples, time)
+        else:
+            fig = self.visualise(samples)
+
+        metrics["figure"] = fig
+        return metrics
