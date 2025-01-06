@@ -1,3 +1,2 @@
 from .core import train_velocity_field
 from .shortcut import train_velocity_field_with_shortcut
-from .decoupled import train_velocity_field_with_decoupled_loss
