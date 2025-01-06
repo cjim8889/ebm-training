@@ -21,6 +21,7 @@ from models import (
     TimeVelocityFieldWithPairwiseFeature,
     TimeVelocityFieldTransformer,
     EquivariantTimeVelocityField,
+    EGNN,
 )
 from training import train_velocity_field
 from training.config import (
@@ -45,7 +46,7 @@ def main():
         "--network",
         type=str,
         default="mlp",
-        choices=["mlp", "pdn", "transformer", "emlp"],
+        choices=["mlp", "pdn", "transformer", "emlp", "egnn"],
     )
 
     # Sampling configuration
@@ -447,6 +448,14 @@ def main():
             hidden_dim=config.model.hidden_dim,
             depth=config.model.num_layers,
             min_dr=config.density.min_dr,
+        )
+    elif config.model.architecture == "egnn":
+        v_theta = EGNN(
+            key=model_key,
+            n_node=config.density.n_particles,
+            hidden_size=config.model.hidden_dim,
+            num_layers=config.model.num_layers,
+            attention=True,
         )
 
     if not config.offline:
