@@ -160,17 +160,38 @@ def loss_fn(
     time_derivative_log_density: Callable[[chex.Array, float], float],
     score_fn: Callable[[chex.Array, float], chex.Array],
     dt_log_density_clip: Optional[float] = None,
+    log_Z_t: Optional[chex.Array] = None,
 ) -> float:
+    """Computes the loss for training the velocity field.
+
+    Args:
+        v_theta: The velocity field function taking (x, t) and returning velocity vector
+        xs: Batch of points, shape (batch_size, num_samples, dim)
+        ts: Batch of times, shape (batch_size,)
+        time_derivative_log_density: Function computing time derivative of log density
+        score_fn: Score function taking (x, t) and returning gradient of log density
+        dt_log_density_clip: Optional clipping value for time derivative of log density
+        log_Z_t: Optional log partition function estimate for decoupled training
+
+    Returns:
+        float: Mean squared error in satisfying the Liouville equation
+    """
     dt_log_unormalised_density = jax.vmap(
         lambda xs, t: jax.vmap(lambda x: time_derivative_log_density(x, t))(xs),
         in_axes=(0, 0),
     )(xs, ts)
 
-    dt_log_density = jnp.nan_to_num(
-        dt_log_unormalised_density
-        - jnp.mean(dt_log_unormalised_density, axis=-1, keepdims=True),
-        nan=0.0,
-    )
+    if log_Z_t is not None:
+        dt_log_density = jnp.nan_to_num(
+            dt_log_unormalised_density - log_Z_t,
+            nan=0.0,
+        )
+    else:
+        dt_log_density = jnp.nan_to_num(
+            dt_log_unormalised_density
+            - jnp.mean(dt_log_unormalised_density, axis=-1, keepdims=True),
+            nan=0.0,
+        )
 
     if dt_log_density_clip is not None:
         dt_log_density = jnp.clip(
@@ -188,31 +209,20 @@ def estimate_log_Z_t(
     ts: chex.Array,
     time_derivative_log_density: Callable[[chex.Array, float], float],
 ) -> chex.Array:
+    """Estimate the log partition function using weighted samples.
+
+    Args:
+        xs: Samples from the distribution
+        weights: Importance weights for the samples
+        ts: Time points
+        time_derivative_log_density: Function computing time derivative of log density
+
+    Returns:
+        Estimate of log partition function
+    """
     dt_log_unormalised_density = jax.vmap(
         lambda xs, t: jax.vmap(lambda x: time_derivative_log_density(x, t))(xs),
         in_axes=(0, 0),
     )(xs, ts)
 
     return jnp.sum(dt_log_unormalised_density * weights, axis=-1, keepdims=True)
-
-
-def loss_fn_with_decoupled_log_Z_t(
-    v_theta: Callable[[chex.Array, float], chex.Array],
-    xs: chex.Array,
-    log_Z_t: chex.Array,
-    ts: chex.Array,
-    time_derivative_log_density: Callable[[chex.Array, float], float],
-    score_fn: Callable[[chex.Array, float], chex.Array],
-) -> float:
-    dt_log_unormalised_density = jax.vmap(
-        lambda xs, t: jax.vmap(lambda x: time_derivative_log_density(x, t))(xs),
-        in_axes=(0, 0),
-    )(xs, ts)
-
-    dt_log_density = jnp.nan_to_num(
-        dt_log_unormalised_density - log_Z_t,
-        nan=0.0,
-    )
-
-    epsilons = time_batched_epsilon(v_theta, xs, dt_log_density, ts, score_fn)
-    return jnp.mean(epsilons**2)

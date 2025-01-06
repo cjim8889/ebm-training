@@ -20,8 +20,9 @@ from models import (
     TimeVelocityField,
     TimeVelocityFieldWithPairwiseFeature,
     TimeVelocityFieldTransformer,
+    EquivariantTimeVelocityField,
 )
-from training import train_velocity_field, train_velocity_field_with_decoupled_loss
+from training import train_velocity_field
 from training.config import (
     SamplingConfig,
     TrainingConfig,
@@ -41,7 +42,10 @@ def main():
     parser.add_argument("--hidden-dim", type=int, default=256)
     parser.add_argument("--depth", type=int, default=3)
     parser.add_argument(
-        "--network", type=str, default="mlp", choices=["mlp", "pdn", "transformer"]
+        "--network",
+        type=str,
+        default="mlp",
+        choices=["mlp", "pdn", "transformer", "emlp"],
     )
 
     # Sampling configuration
@@ -50,7 +54,7 @@ def main():
     parser.add_argument("--num-timesteps", type=int, default=128)
 
     # Training configuration
-    parser.add_argument("--num-epochs", type=int, default=8000)
+    parser.add_argument("--num-epochs", type=int, default=10000)
     parser.add_argument("--steps-per-epoch", type=int, default=100)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--gradient-norm", type=float, default=None)
@@ -114,12 +118,16 @@ def main():
         "--annealing-path", type=str, default="linear", choices=["linear", "geometric"]
     )
     parser.add_argument("--shift", action="store_true")
-    parser.add_argument("--alpha", type=float, default=None)
-    parser.add_argument("--epsilon-val", type=float, default=None)
+    parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.2,
+    )
+    parser.add_argument("--epsilon-val", type=float, default=1.0)
     parser.add_argument("--min-dr", type=float, default=1e-3)
-    parser.add_argument("--m", type=int, default=None)
-    parser.add_argument("--n", type=int, default=None)
-    parser.add_argument("--c", type=float, default=None)
+    parser.add_argument("--m", type=int, default=1)
+    parser.add_argument("--n", type=int, default=1)
+    parser.add_argument("--c", type=float, default=0.5)
     parser.add_argument("--log-prob-clip", type=float, default=None)
     parser.add_argument("--soft-clip", action="store_true")
     parser.add_argument("--include-harmonic", action="store_true")
@@ -130,7 +138,9 @@ def main():
 
     # Other configuration
     parser.add_argument(
-        "--method", type=str, default="default", choices=["default", "decoupled"]
+        "--use-decoupled-loss",
+        action="store_true",
+        help="Whether to use decoupled loss function",
     )
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--debug", action="store_true")
@@ -159,6 +169,7 @@ def main():
         gradient_clip_norm=args.gradient_norm,
         eval_frequency=args.eval_frequency,
         optimizer=args.optimizer,
+        use_decoupled_loss=args.use_decoupled_loss,
     )
 
     mcmc_config = MCMCConfig(
@@ -188,9 +199,8 @@ def main():
     )
 
     # Set up shift function
-    shift_fn = (
-        lambda x: x - jnp.mean(x, axis=0, keepdims=True) if args.shift else lambda x: x
-    )
+    def shift_fn(x):
+        return x - jnp.mean(x, axis=0, keepdims=True) if args.shift else x
 
     # Set up input dimensions and other target-specific parameters
     if args.target == "gmm":
@@ -429,6 +439,15 @@ def main():
             attention_dropout_rate=0.1,
             key=model_key,
         )
+    elif config.model.architecture == "emlp":
+        v_theta = EquivariantTimeVelocityField(
+            key=model_key,
+            n_particles=config.density.n_particles,
+            n_spatial_dim=config.density.n_spatial_dim,
+            hidden_dim=config.model.hidden_dim,
+            depth=config.model.num_layers,
+            min_dr=config.density.min_dr,
+        )
 
     if not config.offline:
         # Handle logging hyperparameters
@@ -439,28 +458,19 @@ def main():
             tags=[
                 config.density.target_type,
                 config.model.architecture,
-                args.method,
+                "decoupled" if config.training.use_decoupled_loss else "standard",
                 "no_shortcut",
             ],
         )
 
     # Train model
-    if args.method == "default":
-        v_theta = train_velocity_field(
-            key=key,
-            initial_density=initial_density,
-            target_density=target_density,
-            v_theta=v_theta,
-            config=config,
-        )
-    elif args.method == "decoupled":
-        v_theta = train_velocity_field_with_decoupled_loss(
-            key=key,
-            initial_density=initial_density,
-            target_density=target_density,
-            v_theta=v_theta,
-            config=config,
-        )
+    v_theta = train_velocity_field(
+        key=key,
+        initial_density=initial_density,
+        target_density=target_density,
+        v_theta=v_theta,
+        config=config,
+    )
 
 
 if __name__ == "__main__":

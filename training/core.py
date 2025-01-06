@@ -11,11 +11,15 @@ import wandb
 from distributions import AnnealedDistribution, Target
 from utils.distributions import sample_monotonic_uniform_ordered
 from utils.hmc import generate_samples_with_hmc_correction
-from utils.smc import generate_samples_with_euler_smc
+from utils.smc import (
+    generate_samples_with_euler_smc,
+    generate_samples_with_smc,
+    systematic_resampling,
+)
 from utils.integration import euler_integrate, generate_samples
 from utils.optimization import get_optimizer, inverse_power_schedule, power_schedule
 from .config import TrainingExperimentConfig
-from .loss import loss_fn
+from .loss import loss_fn, estimate_log_Z_t
 
 
 def train_velocity_field(
@@ -25,7 +29,7 @@ def train_velocity_field(
     v_theta: Callable[[chex.Array, float], chex.Array],
     config: TrainingExperimentConfig,
 ) -> Any:
-    """Train a velocity field using standard loss function.
+    """Train a velocity field using either standard or decoupled loss function.
 
     Args:
         key: Random key for JAX operations
@@ -40,6 +44,7 @@ def train_velocity_field(
     path_distribution = AnnealedDistribution(
         initial_density=initial_density,
         target_density=target_density,
+        method=config.density.annealing_path,
     )
 
     # Initialize current end time
@@ -66,6 +71,27 @@ def train_velocity_field(
     integrator = euler_integrate
 
     def _generate(key: jax.random.PRNGKey, ts: jnp.ndarray, force_finite: bool = False):
+        samples = generate_samples(
+            key,
+            v_theta,
+            config.sampling.num_particles,
+            ts,
+            path_distribution.sample_initial,
+            integrator,
+            config.density.shift_fn,
+            use_shortcut=False,
+        )
+
+        if force_finite:
+            samples["positions"] = jnp.nan_to_num(
+                samples["positions"], nan=0.0, posinf=1.0, neginf=-1.0
+            )
+
+        return samples
+
+    def _generate_mcmc(
+        key: jax.random.PRNGKey, ts: jnp.ndarray, force_finite: bool = False
+    ):
         if config.mcmc.method == "hmc":
             samples = generate_samples_with_hmc_correction(
                 key=key,
@@ -97,25 +123,52 @@ def train_velocity_field(
                 shift_fn=config.density.shift_fn,
                 use_shortcut=False,
             )
-        else:
-            samples = generate_samples(
-                key,
-                v_theta,
-                config.sampling.num_particles,
-                ts,
-                path_distribution.sample_initial,
-                integrator,
-                config.density.shift_fn,
-                use_shortcut=False,
+        elif config.mcmc.method == "smc":
+            samples = generate_samples_with_smc(
+                key=key,
+                time_dependent_log_density=path_distribution.time_dependent_log_prob,
+                num_samples=config.sampling.num_particles,
+                ts=ts,
+                sample_fn=path_distribution.sample_initial,
+                num_steps=config.mcmc.num_steps,
+                integration_steps=config.mcmc.num_integration_steps,
+                eta=config.mcmc.step_size,
+                rejection_sampling=config.mcmc.with_rejection,
+                shift_fn=config.density.shift_fn,
+                estimate_covariance=False,
+                blackjax_hmc=True,
             )
+        elif config.mcmc.method == "vsmc":
+            samples = generate_samples_with_smc(
+                key=key,
+                time_dependent_log_density=path_distribution.time_dependent_log_prob,
+                num_samples=config.sampling.num_particles,
+                ts=ts,
+                sample_fn=path_distribution.sample_initial,
+                num_steps=config.mcmc.num_steps,
+                integration_steps=config.mcmc.num_integration_steps,
+                eta=config.mcmc.step_size,
+                rejection_sampling=config.mcmc.with_rejection,
+                shift_fn=config.density.shift_fn,
+                v_theta=v_theta,
+                estimate_covariance=False,
+                blackjax_hmc=True,
+            )
+        else:
+            samples = _generate(key, ts, force_finite)
 
         if force_finite:
-            samples = jnp.nan_to_num(samples, nan=0.0, posinf=1.0, neginf=-1.0)
+            if isinstance(samples, dict):
+                samples["positions"] = jnp.nan_to_num(
+                    samples["positions"], nan=0.0, posinf=1.0, neginf=-1.0
+                )
+            else:
+                samples = jnp.nan_to_num(samples, nan=0.0, posinf=1.0, neginf=-1.0)
 
         return samples
 
     @eqx.filter_jit
-    def step(v_theta, opt_state, xs, ts):
+    def step(v_theta, opt_state, xs, ts, log_Z_t=None):
         loss, grads = eqx.filter_value_and_grad(loss_fn)(
             v_theta,
             xs,
@@ -123,6 +176,7 @@ def train_velocity_field(
             time_derivative_log_density=path_distribution.time_derivative,
             score_fn=path_distribution.score_fn,
             dt_log_density_clip=config.integration.dt_clip,
+            log_Z_t=log_Z_t,
         )
 
         updates, opt_state = optimizer.update(grads, opt_state, v_theta)
@@ -165,8 +219,51 @@ def train_velocity_field(
                 key, subkey = jax.random.split(key)
                 current_ts = sample_monotonic_uniform_ordered(subkey, current_ts, True)
 
-        key, subkey = jax.random.split(key)
-        samples = _generate(key, current_ts, force_finite=True)
+        # Generate samples based on training mode
+        if config.training.use_decoupled_loss:
+            key, subkey = jax.random.split(key)
+            mcmc_samples = _generate_mcmc(subkey, current_ts, force_finite=True)
+            key, subkey = jax.random.split(key)
+            log_Z_t = estimate_log_Z_t(
+                mcmc_samples["positions"],
+                mcmc_samples["weights"],
+                current_ts,
+                path_distribution.time_derivative,
+            )
+
+            if not config.offline:
+                wandb.log({"log_Z_t": log_Z_t})
+                if "ess" in mcmc_samples:
+                    wandb.log({"ess": mcmc_samples["ess"]})
+            else:
+                print("Log Z: ", log_Z_t)
+                print("Current TS: ", current_ts)
+                if "ess" in mcmc_samples:
+                    print("MCMC Samples ESS: ", mcmc_samples["ess"])
+
+            key, subkey = jax.random.split(key)
+            v_theta_samples = _generate(subkey, current_ts, force_finite=True)
+
+            resampling_keys = jax.random.split(subkey, current_ts.shape[0])
+            good_samples_indices = systematic_resampling(
+                resampling_keys,
+                mcmc_samples["weights"],
+                config.sampling.num_particles // 2,
+            )
+            good_samples = jax.vmap(lambda x, i: x[i])(
+                mcmc_samples["positions"], good_samples_indices
+            )
+
+            samples = jnp.concatenate(
+                [good_samples, v_theta_samples["positions"]], axis=1
+            )
+        else:
+            key, subkey = jax.random.split(key)
+            samples = _generate_mcmc(key, current_ts, force_finite=True)
+            if isinstance(samples, dict):
+                samples = samples["positions"]
+            log_Z_t = None
+
         epoch_loss = 0.0
 
         for s in range(config.training.steps_per_epoch):
@@ -175,7 +272,9 @@ def train_velocity_field(
                 subkey, samples, (config.sampling.batch_size,), replace=False, axis=1
             )
 
-            v_theta, opt_state, loss = step(v_theta, opt_state, samps, current_ts)
+            v_theta, opt_state, loss = step(
+                v_theta, opt_state, samps, current_ts, log_Z_t
+            )
 
             epoch_loss += loss
             if s % 20 == 0:
@@ -215,7 +314,10 @@ def train_velocity_field(
             # Evaluate samples using target density
             key, subkey = jax.random.split(key)
             eval_samples = jax.random.choice(
-                subkey, val_samples[-1], (config.sampling.num_particles,), replace=False
+                subkey,
+                val_samples["positions"][-1],
+                (config.sampling.num_particles,),
+                replace=False,
             )
 
             if target_density.TIME_DEPENDENT:

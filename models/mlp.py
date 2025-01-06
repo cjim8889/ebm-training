@@ -102,3 +102,39 @@ class TimeVelocityFieldWithPairwiseFeature(eqx.Module):
         x_concat = jnp.concatenate([x_concat, dists.flatten()], axis=0)
 
         return self.mlp(x_concat)
+
+
+class EquivariantTimeVelocityField(eqx.Module):
+    mlp: eqx.nn.MLP
+    n_particles: int
+    n_spatial_dim: int
+    min_dr: float
+
+    def __init__(
+        self, key, n_particles, n_spatial_dim, hidden_dim, depth=3, min_dr=1e-4
+    ):
+        self.n_particles = n_particles
+        self.n_spatial_dim = n_spatial_dim
+        self.min_dr = min_dr
+        num_pairwise = n_particles * (n_particles - 1) // 2
+
+        self.mlp = eqx.nn.MLP(
+            in_size=1 + num_pairwise,
+            out_size=n_particles * n_spatial_dim,
+            width_size=hidden_dim,
+            activation=jax.nn.gelu,
+            depth=depth,
+            key=key,
+        )
+
+    def __call__(self, *input):
+        assert len(input) == 2
+        xs, t = input
+
+        interatomic_distances = compute_distances(
+            xs, self.n_particles, self.n_spatial_dim, repeat=False, min_dr=self.min_dr
+        )
+        features = jnp.concatenate(
+            [interatomic_distances.flatten(), jnp.array([t])], axis=-1
+        )
+        return self.mlp(features)
