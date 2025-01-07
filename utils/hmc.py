@@ -1,9 +1,11 @@
-from typing import Callable, Tuple, Optional
+from typing import Callable, Optional, Tuple
+
 import blackjax
 import chex
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+from blackjax.mcmc.hmc import HMCState
 
 from .integration import (
     euler_integrate,
@@ -22,6 +24,7 @@ def sample_hamiltonian_monte_carlo_blackjax(
     integration_steps: int = 3,
     eta: float = 0.1,
     covariance: Optional[chex.Array] = None,
+    shift_fn: Callable[[chex.Array], chex.Array] = lambda x: x,
     **kwargs,
 ):
     dim = x.shape[-1]
@@ -39,6 +42,11 @@ def sample_hamiltonian_monte_carlo_blackjax(
     @jax.jit
     def one_step(state, rng_key):
         state, _ = hmc_kernel(rng_key, state)
+        state = HMCState(
+            position=shift_fn(state.position),
+            logdensity=state.logdensity,
+            logdensity_grad=state.logdensity_grad,
+        )
         return state, state
 
     keys = jax.random.split(key, num_steps)
