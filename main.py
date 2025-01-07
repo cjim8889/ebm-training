@@ -345,6 +345,9 @@ def main():
             data_path_test=config.density.data_path_test,
             data_path_val=config.density.data_path_val,
             key=subkey,
+            log_prob_clip=config.density.log_prob_clip,
+            log_prob_clip_min=config.density.log_prob_clip_min,
+            log_prob_clip_max=config.density.log_prob_clip_max,
         )
     elif config.density.target_type == "dw4o":
         initial_density = MultivariateGaussian(
@@ -358,6 +361,9 @@ def main():
             data_path_test=config.density.data_path_test,
             data_path_val=config.density.data_path_val,
             key=subkey,
+            log_prob_clip=config.density.log_prob_clip,
+            log_prob_clip_min=config.density.log_prob_clip_min,
+            log_prob_clip_max=config.density.log_prob_clip_max,
         )
     elif config.density.target_type == "lj13":
         initial_density = MultivariateGaussian(
@@ -372,6 +378,8 @@ def main():
             data_path_val=config.density.data_path_val,
             data_path_train=config.density.data_path_train,
             log_prob_clip=config.density.log_prob_clip,
+            log_prob_clip_min=config.density.log_prob_clip_min,
+            log_prob_clip_max=config.density.log_prob_clip_max,
             key=subkey,
         )
     elif config.density.target_type == "tlj13":
@@ -404,6 +412,8 @@ def main():
             n=config.density.n,
             c=config.density.c,
             log_prob_clip=config.density.log_prob_clip,
+            log_prob_clip_min=config.density.log_prob_clip_min,
+            log_prob_clip_max=config.density.log_prob_clip_max,
             soft_clip=config.density.soft_clip,
             score_norm=config.density.score_norm,
             include_harmonic=config.density.include_harmonic,
@@ -425,6 +435,8 @@ def main():
             n=config.density.n,
             c=config.density.c,
             log_prob_clip=config.density.log_prob_clip,
+            log_prob_clip_min=config.density.log_prob_clip_min,
+            log_prob_clip_max=config.density.log_prob_clip_max,
             soft_clip=config.density.soft_clip,
             score_norm=config.density.score_norm,
             include_harmonic=config.density.include_harmonic,
@@ -447,6 +459,8 @@ def main():
             n=config.density.n,
             c=config.density.c,
             log_prob_clip=config.density.log_prob_clip,
+            log_prob_clip_min=config.density.log_prob_clip_min,
+            log_prob_clip_max=config.density.log_prob_clip_max,
             soft_clip=config.density.soft_clip,
             score_norm=config.density.score_norm,
             include_harmonic=config.density.include_harmonic,
@@ -468,6 +482,8 @@ def main():
             c=config.density.c,
             include_harmonic=config.density.include_harmonic,
             log_prob_clip=config.density.log_prob_clip,
+            log_prob_clip_min=config.density.log_prob_clip_min,
+            log_prob_clip_max=config.density.log_prob_clip_max,
         )
     elif config.density.target_type == "sclj13t":
         initial_density = TranslationInvariantGaussian(
@@ -486,6 +502,8 @@ def main():
             c=config.density.c,
             include_harmonic=config.density.include_harmonic,
             log_prob_clip=config.density.log_prob_clip,
+            log_prob_clip_min=config.density.log_prob_clip_min,
+            log_prob_clip_max=config.density.log_prob_clip_max,
         )
 
     # Initialize velocity field
