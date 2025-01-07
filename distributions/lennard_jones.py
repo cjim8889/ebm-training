@@ -44,6 +44,8 @@ class LennardJonesEnergy(Target):
         self.data_path_train = data_path_train
 
         self.log_prob_clip = log_prob_clip
+        self.log_prob_clip_min = log_prob_clip_min
+        self.log_prob_clip_max = log_prob_clip_max
 
         self.c = c
         self.include_harmonic = include_harmonic
