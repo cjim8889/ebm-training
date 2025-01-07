@@ -37,6 +37,7 @@ target_density = SoftCoreLennardJonesEnergy(
     min_dr=1e-4,
     c=0.5,
     include_harmonic=True,
+    log_prob_clip=100.,
 )
 
 path_density = AnnealedDistribution(
@@ -49,19 +50,23 @@ key = keys[0]
 subkey = keys[1]
 covariance_key = keys[2]
 
+def shift_fn(x):
+    return x - jnp.mean(x, axis=0, keepdims=True)
+
 samples = generate_samples_with_smc(
     key=subkey,
     time_dependent_log_density=path_density.time_dependent_log_prob,
     num_samples=2560,
     ts=ts,
     sample_fn=path_density.sample_initial,
-    num_steps=20,
+    num_steps=5,
     integration_steps=10,
     eta=0.018,
     rejection_sampling=True,
     ess_threshold=0.5,
     estimate_covariance=False,
     blackjax_hmc=True,
+    shift_fn=shift_fn,
 )
 print("Sampling done")
 print("ESS", samples["ess"])

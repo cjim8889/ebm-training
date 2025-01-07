@@ -94,6 +94,7 @@ def generate_samples_with_smc(
                 integration_steps,
                 eta,
                 covariance,
+                shift_fn,
             ),
             in_axes=(0, 0, None, None),
         )

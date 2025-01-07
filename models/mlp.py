@@ -71,7 +71,7 @@ class TimeVelocityFieldWithPairwiseFeature(eqx.Module):
                 in_size=input_dim + 2 + num_pairwise,  # x, t, d, pairwise distances
                 out_size=input_dim,
                 width_size=hidden_dim,
-                activation=jax.nn.sigmoid,
+                activation=jax.nn.silu,
                 depth=depth,
                 key=key,
             )
@@ -80,7 +80,7 @@ class TimeVelocityFieldWithPairwiseFeature(eqx.Module):
                 in_size=input_dim + 1 + num_pairwise,  # x, t, pairwise distances
                 out_size=input_dim,
                 width_size=hidden_dim,
-                activation=jax.nn.sigmoid,
+                activation=jax.nn.silu,
                 depth=depth,
                 key=key,
             )
@@ -101,7 +101,7 @@ class TimeVelocityFieldWithPairwiseFeature(eqx.Module):
         )
         x_concat = jnp.concatenate([x_concat, dists.flatten()], axis=0)
 
-        return self.mlp(x_concat)
+        return xs + self.mlp(x_concat)
 
 
 class EquivariantTimeVelocityField(eqx.Module):
