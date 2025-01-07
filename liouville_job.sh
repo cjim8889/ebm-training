@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #PBS -l select=1:ncpus=4:mem=64gb:ngpus=1:gpu_type=L40S
-#PBS -l walltime=24:00:00
+#PBS -l walltime=48:00:00
 #PBS -j oe
 #PBS -o liouville_output.log
 #PBS -M wc5118@ic.ac.uk                                               
@@ -14,25 +14,23 @@ eval "$(~/anaconda3/bin/conda shell.bash hook)"
 source activate py12
 
 python main.py \
-  --num-epochs=8000 \
-  --batch-size=256 \
-  --num-samples=5120 \
-  --num-steps=100 \
-  --learning-rate=1e-3 \
-  --hidden-dim=256 \
-  --depth=4 \
-  --num-timesteps=128 \
-  --mcmc-steps=5 \
-  --mcmc-integration-steps=10 \
-  --eta=0.05 \
-  --initial-sigma=2.0 \
-  --schedule="linear" \
-  --integrator="euler" \
-  --optimizer="adamw" \
-  --target="lj13bt" \
-  --seed=97979 \
-  --continuous-schedule \
-  --soft-clip \
-  --target-end-time 1. \
-  --pt-clip 500 
+  --num-samples 5120 \
+  --depth 5 \
+  --hidden-dim 512 \
+  --network mlp \
+  --num-epochs 10000 \
+  --steps-per-epoch 20 \
+  --mcmc-method vsmc \
+  --mcmc-step-size 0.02 \
+  --mcmc-steps 5 \
+  --mcmc-integration-steps 10 \
+  --initial-sigma 1. \
+  --with-rejection \
+  --target sclj13 \
+  --seed 888 \
+  --alpha 0.4 \
+  --include-harmonic \
+  --log-prob-clip 100 \
+  --use-decoupled-loss
+
 
