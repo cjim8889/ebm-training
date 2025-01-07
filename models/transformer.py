@@ -5,8 +5,6 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from utils.distributions import compute_distances
-
 
 class PositionalEncoding(eqx.Module):
     d_model: int
