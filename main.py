@@ -63,8 +63,55 @@ def main():
     parser.add_argument(
         "--optimizer",
         type=str,
-        choices=["adam", "adamw", "sgd", "rmsprop"],
+        choices=[
+            "adam",
+            "adamw",
+            "sgd",
+            "rmsprop",
+            "adafactor",
+            "adagrad",
+            "adadelta",
+            "lamb",
+            "lion",
+            "adamax",
+            "fromage",
+            "noisy_sgd",
+        ],
         default="adamw",
+    )
+    # Optimizer parameters
+    parser.add_argument(
+        "--weight-decay",
+        type=float,
+        default=0.0,
+        help="Weight decay coefficient (L2 regularization)",
+    )
+    parser.add_argument(
+        "--beta1",
+        type=float,
+        default=0.9,
+        help="First moment decay rate (for Adam-like optimizers)",
+    )
+    parser.add_argument(
+        "--beta2",
+        type=float,
+        default=0.999,
+        help="Second moment decay rate (for Adam-like optimizers)",
+    )
+    parser.add_argument(
+        "--epsilon",
+        type=float,
+        default=1e-8,
+        help="Small constant for numerical stability",
+    )
+    parser.add_argument(
+        "--momentum", type=float, default=0.9, help="Momentum coefficient for SGD"
+    )
+    parser.add_argument(
+        "--nesterov", action="store_true", help="Whether to use Nesterov momentum"
+    )
+    parser.add_argument(
+        "--noise-scale", type=float, default=0.01, help="Noise scale for noisy SGD"
     )
 
     # MCMC configuration
@@ -171,6 +218,13 @@ def main():
         eval_frequency=args.eval_frequency,
         optimizer=args.optimizer,
         use_decoupled_loss=args.use_decoupled_loss,
+        weight_decay=args.weight_decay,
+        beta1=args.beta1,
+        beta2=args.beta2,
+        epsilon=args.epsilon,
+        momentum=args.momentum,
+        nesterov=args.nesterov,
+        noise_scale=args.noise_scale,
     )
 
     mcmc_config = MCMCConfig(
