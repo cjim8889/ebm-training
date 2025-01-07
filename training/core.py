@@ -62,7 +62,15 @@ def train_velocity_field(
         gradient_clipping = optax.identity()
 
     base_optimizer = get_optimizer(
-        config.training.optimizer, config.training.learning_rate
+        config.training.optimizer,
+        config.training.learning_rate,
+        weight_decay=config.training.weight_decay,
+        b1=config.training.beta1,
+        b2=config.training.beta2,
+        eps=config.training.epsilon,
+        momentum=config.training.momentum,
+        nesterov=config.training.nesterov,
+        noise_scale=config.training.noise_scale,
     )
     optimizer = optax.chain(optax.zero_nans(), gradient_clipping, base_optimizer)
     optimizer: optax.GradientTransformation = optax.apply_if_finite(optimizer, 5)
