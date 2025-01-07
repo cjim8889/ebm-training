@@ -253,18 +253,18 @@ def train_velocity_field(
             key, subkey = jax.random.split(key)
             v_theta_samples = _generate(subkey, current_ts, force_finite=True)
 
-            resampling_keys = jax.random.split(subkey, current_ts.shape[0])
-            good_samples_indices = systematic_resampling(
-                resampling_keys,
-                mcmc_samples["weights"],
-                config.sampling.num_particles // 2,
-            )
-            good_samples = jax.vmap(lambda x, i: x[i])(
-                mcmc_samples["positions"], good_samples_indices
-            )
+            # resampling_keys = jax.random.split(subkey, current_ts.shape[0])
+            # good_samples_indices = systematic_resampling(
+            #     resampling_keys,
+            #     mcmc_samples["weights"],
+            #     config.sampling.num_particles // 2,
+            # )
+            # good_samples = jax.vmap(lambda x, i: x[i])(
+            #     mcmc_samples["positions"], good_samples_indices
+            # )
 
             samples = jnp.concatenate(
-                [good_samples, v_theta_samples["positions"]], axis=1
+                [mcmc_samples["positions"], v_theta_samples["positions"]], axis=1
             )
         else:
             key, subkey = jax.random.split(key)
