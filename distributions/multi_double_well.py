@@ -21,6 +21,9 @@ class MultiDoubleWellEnergy(Target):
         b: float = -4.0,
         c: float = 0.0,
         offset: float = 4.0,
+        log_prob_clip: Optional[float] = None,
+        log_prob_clip_min: Optional[float] = None,
+        log_prob_clip_max: Optional[float] = None,
     ):
         super().__init__(
             dim=dim,
@@ -43,6 +46,10 @@ class MultiDoubleWellEnergy(Target):
         self.b = b
         self.c = c
         self.offset = offset
+
+        self.log_prob_clip = log_prob_clip
+        self.log_prob_clip_min = log_prob_clip_min
+        self.log_prob_clip_max = log_prob_clip_max
 
         self._val_set = self.setup_val_set()
         self._test_set = self.setup_test_set()
@@ -76,7 +83,20 @@ class MultiDoubleWellEnergy(Target):
         return total_energy
 
     def log_prob(self, x: chex.Array) -> chex.Array:
-        return -self.multi_double_well_energy(x)
+        p_t = -self.multi_double_well_energy(x)
+
+        # Handle legacy log_prob_clip parameter for backward compatibility
+        if self.log_prob_clip is not None:
+            clip_min = -self.log_prob_clip
+            clip_max = self.log_prob_clip
+        else:
+            clip_min = self.log_prob_clip_min
+            clip_max = self.log_prob_clip_max
+
+        if clip_min is not None or clip_max is not None:
+            p_t = jnp.clip(p_t, a_min=clip_min, a_max=clip_max)
+
+        return p_t
 
     def score(self, x: chex.Array) -> chex.Array:
         return jax.grad(self.log_prob)(x)
