@@ -102,6 +102,8 @@ class DensityConfig:
     n: Optional[int] = 1.0
     c: Optional[float] = 0.5
     log_prob_clip: Optional[float] = None
+    log_prob_clip_min: Optional[float] = None
+    log_prob_clip_max: Optional[float] = None
     soft_clip: bool = False
     include_harmonic: bool = True
     cubic_spline: bool = False
