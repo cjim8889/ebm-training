@@ -273,7 +273,7 @@ class SoftCoreLennardJonesEnergy(Target):
             return lj_energy
 
     def log_prob(self, x: chex.Array) -> chex.Array:
-        p_t = -self.compute_safe_lj_energy(x)
+        p_t = -self.compute_soft_core_lj_energy(x)
 
         # Handle legacy log_prob_clip parameter for backward compatibility
         if self.log_prob_clip is not None:

@@ -406,6 +406,8 @@ class TimeDependentLennardJonesEnergyButlerWithTemperatureTempered(
         initial_temperature=250.0,
         final_temperature=0.1,
         log_prob_clip=None,
+        log_prob_clip_min=None,
+        log_prob_clip_max=None,
         soft_clip=False,
         score_norm=None,
         include_harmonic=False,
@@ -422,6 +424,8 @@ class TimeDependentLennardJonesEnergyButlerWithTemperatureTempered(
             m,
             c,
             log_prob_clip,
+            log_prob_clip_min,
+            log_prob_clip_max,
             soft_clip,
             score_norm,
             include_harmonic,
@@ -436,7 +440,18 @@ class TimeDependentLennardJonesEnergyButlerWithTemperatureTempered(
         )
         p_t = -beta * self.compute_time_dependent_lj_energy(x, t)
 
+        # Handle legacy log_prob_clip parameter for backward compatibility
         if self.log_prob_clip is not None:
-            p_t = jnp.clip(p_t, a_min=-self.log_prob_clip, a_max=self.log_prob_clip)
+            clip_min = -self.log_prob_clip
+            clip_max = self.log_prob_clip
+        else:
+            clip_min = self.log_prob_clip_min
+            clip_max = self.log_prob_clip_max
+
+        if clip_min is not None or clip_max is not None:
+            if self.soft_clip:
+                p_t = soft_clip(p_t, min_val=clip_min, max_val=clip_max)
+            else:
+                p_t = jnp.clip(p_t, a_min=clip_min, a_max=clip_max)
 
         return p_t
