@@ -159,6 +159,7 @@ def main():
             "lj13bt",
             "lj13c",
             "sclj13t",
+            "lj13ct",
         ],
     )
     parser.add_argument("--initial-sigma", type=float, default=20.0)
@@ -423,6 +424,31 @@ def main():
             dim=config.density.input_dim,
             mean=jnp.zeros(config.density.input_dim),
             sigma=config.density.initial_sigma,
+        )
+        target_density = TimeDependentLennardJonesEnergyButler(
+            dim=config.density.input_dim,
+            n_particles=config.density.n_particles,
+            sigma=1.0,
+            alpha=config.density.alpha,
+            epsilon_val=config.density.epsilon_val,
+            min_dr=config.density.min_dr,
+            m=config.density.m,
+            n=config.density.n,
+            c=config.density.c,
+            log_prob_clip=config.density.log_prob_clip,
+            log_prob_clip_min=config.density.log_prob_clip_min,
+            log_prob_clip_max=config.density.log_prob_clip_max,
+            soft_clip=config.density.soft_clip,
+            score_norm=config.density.score_norm,
+            include_harmonic=config.density.include_harmonic,
+            cubic_spline=config.density.cubic_spline,
+        )
+    elif config.density.target_type == "lj13ct":
+        initial_density = TranslationInvariantGaussian(
+            N=config.density.n_particles,
+            D=config.density.n_spatial_dim,
+            sigma=config.density.initial_sigma,
+            wrap=False,
         )
         target_density = TimeDependentLennardJonesEnergyButler(
             dim=config.density.input_dim,
