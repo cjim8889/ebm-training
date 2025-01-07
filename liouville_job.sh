@@ -38,6 +38,7 @@ python main.py \
   --optimizer sgd \
   --momentum 0.95 \
   --nesterov \
-  --cubic-spline
+  --cubic-spline \
+  --log-prob-clip 200
 
 
