@@ -90,6 +90,7 @@ def get_optimizer(
             b2=b2,
             eps=eps,
             weight_decay=weight_decay,
+            nesterov=nesterov,
         )
     elif name == "lamb":
         return optax.lamb(

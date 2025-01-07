@@ -5,29 +5,59 @@ import jax.numpy as jnp
 from utils.distributions import compute_distances
 
 
+class MLPWithLayerNorm(eqx.Module):
+    layers: list
+    activation: callable
+
+    def __init__(
+        self, in_size, out_size, width_size, depth, key, activation=jax.nn.silu
+    ):
+        keys = jax.random.split(key, depth + 1)
+        layers = []
+        current_size = in_size
+
+        # Hidden layers
+        for i in range(depth):
+            layers.append(eqx.nn.Linear(current_size, width_size, key=keys[i]))
+            layers.append(eqx.nn.LayerNorm(width_size))
+            current_size = width_size
+
+        # Output layer
+        layers.append(eqx.nn.Linear(current_size, out_size, key=keys[-1]))
+
+        self.layers = layers
+        self.activation = activation
+
+    def __call__(self, x):
+        for i, layer in enumerate(self.layers[:-1]):
+            if isinstance(layer, eqx.nn.Linear):
+                x = layer(x)
+                x = self.activation(x)
+            else:  # LayerNorm
+                x = layer(x)
+        return self.layers[-1](x)  # Final layer without activation
+
+
 class TimeVelocityField(eqx.Module):
-    mlp: eqx.nn.MLP
+    mlp: MLPWithLayerNorm
     shortcut: bool
 
     def __init__(self, key, input_dim, hidden_dim, depth=3, shortcut=False):
-        # Define an MLP with time as an input
         self.shortcut = shortcut
 
         if shortcut:
-            self.mlp = eqx.nn.MLP(
+            self.mlp = MLPWithLayerNorm(
                 in_size=input_dim + 2,  # x, t, and d
                 out_size=input_dim,
                 width_size=hidden_dim,
-                activation=jax.nn.sigmoid,
                 depth=depth,
                 key=key,
             )
         else:
-            self.mlp = eqx.nn.MLP(
+            self.mlp = MLPWithLayerNorm(
                 in_size=input_dim + 1,  # x, and t
                 out_size=input_dim,
                 width_size=hidden_dim,
-                activation=jax.nn.sigmoid,
                 depth=depth,
                 key=key,
             )
@@ -46,7 +76,7 @@ class TimeVelocityField(eqx.Module):
 
 
 class TimeVelocityFieldWithPairwiseFeature(eqx.Module):
-    mlp: eqx.nn.MLP
+    mlp: MLPWithLayerNorm
     n_particles: int
     n_spatial_dim: int
     shortcut: bool
@@ -67,20 +97,18 @@ class TimeVelocityFieldWithPairwiseFeature(eqx.Module):
         num_pairwise = n_particles * (n_particles - 1) // 2
 
         if shortcut:
-            self.mlp = eqx.nn.MLP(
+            self.mlp = MLPWithLayerNorm(
                 in_size=input_dim + 2 + num_pairwise,  # x, t, d, pairwise distances
                 out_size=input_dim,
                 width_size=hidden_dim,
-                activation=jax.nn.silu,
                 depth=depth,
                 key=key,
             )
         else:
-            self.mlp = eqx.nn.MLP(
+            self.mlp = MLPWithLayerNorm(
                 in_size=input_dim + 1 + num_pairwise,  # x, t, pairwise distances
                 out_size=input_dim,
                 width_size=hidden_dim,
-                activation=jax.nn.silu,
                 depth=depth,
                 key=key,
             )
@@ -105,7 +133,7 @@ class TimeVelocityFieldWithPairwiseFeature(eqx.Module):
 
 
 class EquivariantTimeVelocityField(eqx.Module):
-    mlp: eqx.nn.MLP
+    mlp: MLPWithLayerNorm
     n_particles: int
     n_spatial_dim: int
     min_dr: float
@@ -118,11 +146,10 @@ class EquivariantTimeVelocityField(eqx.Module):
         self.min_dr = min_dr
         num_pairwise = n_particles * (n_particles - 1) // 2
 
-        self.mlp = eqx.nn.MLP(
+        self.mlp = MLPWithLayerNorm(
             in_size=1 + num_pairwise,
             out_size=n_particles * n_spatial_dim,
             width_size=hidden_dim,
-            activation=jax.nn.gelu,
             depth=depth,
             key=key,
         )
