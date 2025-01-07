@@ -58,7 +58,7 @@ def main():
     parser.add_argument("--num-epochs", type=int, default=10000)
     parser.add_argument("--steps-per-epoch", type=int, default=100)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
-    parser.add_argument("--gradient-norm", type=float, default=None)
+    parser.add_argument("--gradient-norm", type=float, default=1.)
     parser.add_argument("--eval-frequency", type=int, default=20)
     parser.add_argument(
         "--optimizer",
@@ -158,6 +158,7 @@ def main():
             "lj13b",
             "lj13bt",
             "lj13c",
+            "sclj13t",
         ],
     )
     parser.add_argument("--initial-sigma", type=float, default=20.0)
@@ -450,6 +451,24 @@ def main():
         initial_density = MultivariateGaussian(
             dim=config.density.input_dim,
             mean=jnp.zeros(config.density.input_dim),
+            sigma=config.density.initial_sigma,
+        )
+        target_density = SoftCoreLennardJonesEnergy(
+            dim=config.density.input_dim,
+            n_particles=config.density.n_particles,
+            sigma=1.0,
+            epsilon_val=config.density.epsilon_val,
+            alpha=config.density.alpha,
+            shift_fn=config.density.shift_fn,
+            min_dr=config.density.min_dr,
+            c=config.density.c,
+            include_harmonic=config.density.include_harmonic,
+            log_prob_clip=config.density.log_prob_clip,
+        )
+    elif config.density.target_type == "sclj13t":
+        initial_density = TranslationInvariantGaussian(
+            N=config.density.n_particles,
+            D=config.density.n_spatial_dim,
             sigma=config.density.initial_sigma,
         )
         target_density = SoftCoreLennardJonesEnergy(
