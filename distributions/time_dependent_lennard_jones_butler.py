@@ -62,6 +62,8 @@ class TimeDependentLennardJonesEnergyButler(Target):
         m: float = 1,
         c: float = 0.5,
         log_prob_clip: float = None,
+        log_prob_clip_min: float = None,
+        log_prob_clip_max: float = None,
         soft_clip: bool = False,
         score_norm: float = None,
         include_harmonic: bool = False,
@@ -89,6 +91,8 @@ class TimeDependentLennardJonesEnergyButler(Target):
         self.c = c
 
         self.log_prob_clip = log_prob_clip
+        self.log_prob_clip_min = log_prob_clip_min
+        self.log_prob_clip_max = log_prob_clip_max
         self.soft_clip = soft_clip
         self.score_norm = score_norm
         self.include_harmonic = include_harmonic
@@ -231,13 +235,19 @@ class TimeDependentLennardJonesEnergyButler(Target):
     def time_dependent_log_prob(self, x: chex.Array, t: float) -> chex.Array:
         p_t = -self.compute_time_dependent_lj_energy(x, t)
 
+        # Handle legacy log_prob_clip parameter for backward compatibility
         if self.log_prob_clip is not None:
+            clip_min = -self.log_prob_clip
+            clip_max = self.log_prob_clip
+        else:
+            clip_min = self.log_prob_clip_min
+            clip_max = self.log_prob_clip_max
+
+        if clip_min is not None or clip_max is not None:
             if self.soft_clip:
-                p_t = soft_clip(
-                    p_t, min_val=-self.log_prob_clip, max_val=self.log_prob_clip
-                )
+                p_t = soft_clip(p_t, min_val=clip_min, max_val=clip_max)
             else:
-                p_t = jnp.clip(p_t, a_min=-self.log_prob_clip, a_max=self.log_prob_clip)
+                p_t = jnp.clip(p_t, a_min=clip_min, a_max=clip_max)
 
         return p_t
 

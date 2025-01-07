@@ -58,7 +58,7 @@ def main():
     parser.add_argument("--num-epochs", type=int, default=10000)
     parser.add_argument("--steps-per-epoch", type=int, default=100)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
-    parser.add_argument("--gradient-norm", type=float, default=1.)
+    parser.add_argument("--gradient-norm", type=float, default=1.0)
     parser.add_argument("--eval-frequency", type=int, default=20)
     parser.add_argument(
         "--optimizer",
@@ -178,6 +178,8 @@ def main():
     parser.add_argument("--n", type=int, default=1)
     parser.add_argument("--c", type=float, default=0.5)
     parser.add_argument("--log-prob-clip", type=float, default=None)
+    parser.add_argument("--log-prob-clip-min", type=float, default=None)
+    parser.add_argument("--log-prob-clip-max", type=float, default=None)
     parser.add_argument("--soft-clip", action="store_true")
     parser.add_argument("--include-harmonic", action="store_true")
     parser.add_argument("--cubic-spline", action="store_true")
@@ -292,6 +294,8 @@ def main():
         n=args.n,
         c=args.c,
         log_prob_clip=args.log_prob_clip,
+        log_prob_clip_min=args.log_prob_clip_min,
+        log_prob_clip_max=args.log_prob_clip_max,
         soft_clip=args.soft_clip,
         include_harmonic=args.include_harmonic,
         cubic_spline=args.cubic_spline,
