@@ -26,9 +26,9 @@ python main.py \
   --mcmc-integration-steps 10 \
   --initial-sigma 1. \
   --with-rejection \
-  --target lj13ct \
+  --target sclj13 \
   --seed 888 \
-  --alpha 0.0 \
+  --alpha 0.4 \
   --include-harmonic \
   --use-decoupled-loss \
   --batch-size 128 \
