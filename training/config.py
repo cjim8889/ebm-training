@@ -16,8 +16,29 @@ class TrainingConfig:
     learning_rate: float = 1e-3
     gradient_clip_norm: Optional[float] = None
     eval_frequency: int = 20
-    optimizer: Literal["adam", "adamw", "sgd", "rmsprop"] = "adamw"
+    optimizer: Literal[
+        "adam",
+        "adamw",
+        "sgd",
+        "rmsprop",
+        "adafactor",
+        "adagrad",
+        "adadelta",
+        "lamb",
+        "lion",
+        "adamax",
+        "fromage",
+        "noisy_sgd",
+    ] = "adamw"
     use_decoupled_loss: bool = False  # Whether to use decoupled loss function
+    # Optimizer parameters
+    weight_decay: float = 0.0
+    beta1: float = 0.9  # b1 for Adam-like optimizers
+    beta2: float = 0.999  # b2 for Adam-like optimizers
+    epsilon: float = 1e-8  # eps for numerical stability
+    momentum: float = 0.9  # momentum for SGD
+    nesterov: bool = False  # whether to use Nesterov momentum
+    noise_scale: float = 0.01  # eta for noisy SGD
 
 
 @dataclass
