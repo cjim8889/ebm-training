@@ -25,10 +25,12 @@ class SoftCoreLennardJonesEnergy(Target):
         epsilon_val: float = 1.0,
         alpha: float = 0.1,
         shift_fn: Callable[[jnp.ndarray], jnp.ndarray] = lambda x: x,
-        min_dr: float = 1e-3,
-        c: float = 1.0,
+        min_dr: float = 1e-4,
+        c: float = 0.5,
         include_harmonic: bool = False,
         log_prob_clip: float = None,
+        log_prob_clip_min: float = None,
+        log_prob_clip_max: float = None,
         **kwargs,
     ):
         """
@@ -60,6 +62,8 @@ class SoftCoreLennardJonesEnergy(Target):
         self.c = c
         self.include_harmonic = include_harmonic
         self.log_prob_clip = log_prob_clip
+        self.log_prob_clip_min = log_prob_clip_min
+        self.log_prob_clip_max = log_prob_clip_max
 
         self.min_dr = min_dr
         self.shift_fn = shift_fn
@@ -269,9 +273,19 @@ class SoftCoreLennardJonesEnergy(Target):
             return lj_energy
 
     def log_prob(self, x: chex.Array) -> chex.Array:
-        p_t = -self.compute_soft_core_lj_energy(x)
+        p_t = -self.compute_safe_lj_energy(x)
+
+        # Handle legacy log_prob_clip parameter for backward compatibility
         if self.log_prob_clip is not None:
-            p_t = jnp.clip(p_t, -self.log_prob_clip, self.log_prob_clip)
+            clip_min = -self.log_prob_clip
+            clip_max = self.log_prob_clip
+        else:
+            clip_min = self.log_prob_clip_min
+            clip_max = self.log_prob_clip_max
+
+        if clip_min is not None or clip_max is not None:
+            p_t = jnp.clip(p_t, a_min=clip_min, a_max=clip_max)
+
         return p_t
 
     def batched_log_prob(self, xs):

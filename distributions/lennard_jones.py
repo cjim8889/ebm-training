@@ -20,8 +20,10 @@ class LennardJonesEnergy(Target):
         data_path_train: str = None,
         data_path_test: str = None,
         data_path_val: str = None,
-        c: float = 1.,
+        c: float = 1.0,
         log_prob_clip: float = None,
+        log_prob_clip_min: float = None,
+        log_prob_clip_max: float = None,
         include_harmonic: bool = False,
         key: jax.random.PRNGKey = jax.random.PRNGKey(0),
     ):
@@ -66,7 +68,7 @@ class LennardJonesEnergy(Target):
         )
 
         return 0.5 * jnp.sum(distances_to_com**2)
-    
+
     def safe_lennard_jones_potential(
         self,
         pairwise_dr: jnp.ndarray,
@@ -125,7 +127,20 @@ class LennardJonesEnergy(Target):
         return lj_energy
 
     def log_prob(self, x: chex.Array) -> chex.Array:
-        return -self.compute_safe_lj_energy(x)
+        p_t = -self.compute_safe_lj_energy(x)
+
+        # Handle legacy log_prob_clip parameter for backward compatibility
+        if self.log_prob_clip is not None:
+            clip_min = -self.log_prob_clip
+            clip_max = self.log_prob_clip
+        else:
+            clip_min = self.log_prob_clip_min
+            clip_max = self.log_prob_clip_max
+
+        if clip_min is not None or clip_max is not None:
+            p_t = jnp.clip(p_t, a_min=clip_min, a_max=clip_max)
+
+        return p_t
 
     def score(self, x: chex.Array) -> chex.Array:
         return jax.grad(self.log_prob)(x)
@@ -159,7 +174,9 @@ class LennardJonesEnergy(Target):
         return data
 
     def interatomic_dist(self, x):
-        return jax.vmap(lambda x: compute_distances(x, self.n_particles, self.n_spatial_dim))(x)
+        return jax.vmap(
+            lambda x: compute_distances(x, self.n_particles, self.n_spatial_dim)
+        )(x)
 
     def batched_log_prob(self, xs):
         return jax.vmap(self.log_prob)(xs)
