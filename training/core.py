@@ -240,6 +240,7 @@ def train_velocity_field(
             )
 
             if not config.offline:
+                log_Z_t = jnp.nan_to_num(log_Z_t, nan=0.0, posinf=1.0, neginf=-1.0)
                 wandb.log({"log_Z_t": log_Z_t})
                 if "ess" in mcmc_samples:
                     wandb.log({"ess": mcmc_samples["ess"]})
