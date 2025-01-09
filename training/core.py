@@ -276,13 +276,31 @@ def train_velocity_field(
         epoch_loss = 0.0
 
         for s in range(config.training.steps_per_epoch):
+            # Subsample particles
             key, subkey = jax.random.split(key)
             samps = jax.random.choice(
                 subkey, samples, (config.sampling.batch_size,), replace=False, axis=1
             )
 
+            # Subsample time points
+            key, subkey = jax.random.split(key)
+            time_indices = jax.random.choice(
+                subkey,
+                jnp.arange(current_ts.shape[0]),
+                (config.training.time_batch_size,),
+                replace=False,
+            )
+            time_indices = jnp.sort(time_indices)  # Keep time points ordered
+            batch_ts = current_ts[time_indices]
+            batch_samples = samps[time_indices]
+
+            if log_Z_t is not None:
+                batch_log_Z_t = log_Z_t[time_indices]
+            else:
+                batch_log_Z_t = None
+
             v_theta, opt_state, loss = step(
-                v_theta, opt_state, samps, current_ts, log_Z_t
+                v_theta, opt_state, batch_samples, batch_ts, batch_log_Z_t
             )
 
             epoch_loss += loss
