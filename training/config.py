@@ -39,6 +39,7 @@ class TrainingConfig:
     momentum: float = 0.9  # momentum for SGD
     nesterov: bool = False  # whether to use Nesterov momentum
     noise_scale: float = 0.01  # eta for noisy SGD
+    time_batch_size: int = 32  # Number of time points to use in each batch
 
 
 @dataclass
