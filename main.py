@@ -61,6 +61,12 @@ def main():
     parser.add_argument("--gradient-norm", type=float, default=1.0)
     parser.add_argument("--eval-frequency", type=int, default=20)
     parser.add_argument(
+        "--time-batch-size",
+        type=int,
+        default=32,
+        help="Number of time points to use in each batch",
+    )
+    parser.add_argument(
         "--optimizer",
         type=str,
         choices=[
@@ -229,6 +235,7 @@ def main():
         momentum=args.momentum,
         nesterov=args.nesterov,
         noise_scale=args.noise_scale,
+        time_batch_size=args.time_batch_size,
     )
 
     mcmc_config = MCMCConfig(
@@ -400,7 +407,6 @@ def main():
             N=config.density.n_particles,
             D=config.density.n_spatial_dim,
             sigma=config.density.initial_sigma,
-            wrap=False,
         )
         target_density = TimeDependentLennardJonesEnergyButler(
             dim=config.density.input_dim,
