@@ -69,7 +69,7 @@ def epsilon(
     v = v_theta(x, t)
     lhs = div_v + jnp.dot(v, score)
 
-    return jnp.nan_to_num(lhs + dt_log_density, nan=0.0, posinf=1.0, neginf=-1.0)
+    return jnp.nan_to_num(lhs + dt_log_density, posinf=1.0, neginf=-1.0)
 
 
 batched_epsilon = jax.vmap(epsilon, in_axes=(None, 0, 0, None, None))
@@ -198,8 +198,10 @@ def loss_fn(
             dt_log_density, -dt_log_density_clip, dt_log_density_clip
         )
 
-    epsilons = time_batched_epsilon(v_theta, xs, dt_log_density, ts, score_fn)
-    return jnp.mean(epsilons**2)
+    epsilons = time_batched_epsilon(v_theta, xs, dt_log_density, ts, score_fn).reshape(-1)
+
+    return 0.5 * jnp.mean(epsilons**2) + 0.5 * jnp.mean(jnp.abs(epsilons))
+    
 
 
 @eqx.filter_jit
