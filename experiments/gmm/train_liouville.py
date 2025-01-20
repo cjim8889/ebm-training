@@ -13,6 +13,7 @@ from flow_sampler.utils.mog_utils import GMM, MultivariateGaussian, plot_MoG40
 from flow_sampler.models.mlp_models import TimeVelocityField
 from flow_sampler.utils.sampling_utils import time_schedule, generate_samples, generate_samples_with_hmc, generate_samples_with_langevin_dynamics
 from flow_sampler.utils.loss_utils import loss_fn, get_dt_logZt
+from flow_sampler.utils.gradient_varest import GradientVarianceEstimator
 
 def train_velocity_field(
     initial_density,
@@ -114,6 +115,8 @@ def train_velocity_field(
     
     ts = time_schedule(T, schedule_alpha, schedule_gamma)[schedule]()
 
+    variance_estimator = GradientVarianceEstimator(v_theta)
+
     for epoch in range(num_epochs):
         if mcmc_type == "langevin":
             samples = generate_samples_with_langevin_dynamics(
@@ -169,6 +172,10 @@ def train_velocity_field(
                 score_fn=score_function
             )
             loss.backward()
+
+            # Track gradient variance before optimizer step
+            variance_estimator.update()
+
             optimiser.step()
             epoch_loss += loss.item()
 
@@ -179,7 +186,10 @@ def train_velocity_field(
         print(f"Epoch {epoch}, Average Loss: {avg_loss}")
         wandb.log({"epoch": epoch, "average_loss": avg_loss})
 
-        if epoch % 20 == 0:
+        grad_summary = variance_estimator.get_summary()
+        wandb.log({"var_grad/mean_var": grad_summary['mean_variance']})
+
+        if epoch % 50 == 0:
             for sample_steps in [4, 8, 16, T]:
                 linear_ts = torch.linspace(0, 1, sample_steps)
                 val_samples = generate_samples(
