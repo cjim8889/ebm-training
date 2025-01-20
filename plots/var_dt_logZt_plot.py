@@ -63,13 +63,3 @@ ax.spines['right'].set_visible(False)
 # ax.tick_params(axis='both', colors='gray')
 
 plt.savefig("std_dt_logZt_plot.png", dpi=300, bbox_inches='tight', pad_inches=0.01)
-
-# history = run.scan_history(
-#     keys=[
-#         "_step", 
-#         "average_loss"
-#     ],  # Specify the metric you want
-# )
-# for row in history:
-#     print(row)
-#     exit()
