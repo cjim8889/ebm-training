@@ -12,7 +12,7 @@ from flow_sampler.utils.torch_utils import seed_everything
 from flow_sampler.utils.mog_utils import GMM, MultivariateGaussian, plot_MoG40
 from flow_sampler.models.mlp_models import TimeVelocityField
 from flow_sampler.utils.sampling_utils import time_schedule, generate_samples, generate_samples_with_hmc, generate_samples_with_langevin_dynamics
-from flow_sampler.utils.loss_utils import loss_fn
+from flow_sampler.utils.loss_utils import loss_fn, get_dt_logZt
 
 def train_velocity_field(
     initial_density,
@@ -139,6 +139,20 @@ def train_velocity_field(
             )
         else:
             samples = generate_samples(v_theta, N, ts, sample_initial)
+
+        std_dt_log_Zt_way1, std_dt_log_Zt_way2 = get_dt_logZt(v_theta, samples, ts, time_derivative_log_density, score_function)
+        wandb.log({
+            "mean_std/std_dt_log_Zt_way1": np.mean(std_dt_log_Zt_way1), 
+            "mean_std/std_dt_log_Zt_way2": np.mean(std_dt_log_Zt_way2)
+        })
+        wandb.log({
+            "last10steps_std/std_dt_log_Zt_way1": np.mean(std_dt_log_Zt_way1[-10:]), 
+            "last10steps_std/std_dt_log_Zt_way2": np.mean(std_dt_log_Zt_way2[-10:])
+        })
+        wandb.log({
+            "first10steps_std/std_dt_log_Zt_way1": np.mean(std_dt_log_Zt_way1[:10]), 
+            "first10steps_std/std_dt_log_Zt_way2": np.mean(std_dt_log_Zt_way2[:10])
+        })
 
         epoch_loss = 0.0
         for s in range(num_steps):
