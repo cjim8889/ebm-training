@@ -1,12 +1,11 @@
 import torch
 from einops import rearrange, repeat
 
-def loss_fn(v_theta, xs, ts, time_derivative_log_density, score_fn):
+def loss_fn(v_theta, xs, ts, time_derivative_log_density, score_fn, dt_logZt_estor='mcmc'):
     ts = ts.to(xs.device)
     ts = repeat(ts, 't -> n t', n=xs.size(0))
     
     dt_log_unormalised_density = time_derivative_log_density(xs, ts)
-    dt_log_density = dt_log_unormalised_density - dt_log_unormalised_density.mean(dim=0, keepdim=True)
 
     score = score_fn(xs, ts)
 
@@ -42,6 +41,15 @@ def loss_fn(v_theta, xs, ts, time_derivative_log_density, score_fn):
     
     div_v = rearrange(div_v, "(b t) -> b t", b=b)
     v = rearrange(v, "(b t) d -> b t d", b=b)
+
+    if dt_logZt_estor == 'mcmc':
+        dt_logZt = dt_log_unormalised_density.mean(dim=0, keepdim=True)
+    elif dt_logZt_estor == 'mcmc_velocity':
+        dt_logZt = dt_log_unormalised_density + div_v + (v * score).sum(dim=-1)
+        dt_logZt = dt_logZt.mean(dim=0, keepdim=True).detach()
+    else:
+        raise ValueError(f"Invalid dt_logZt_estor: {dt_logZt_estor}")
+    dt_log_density = dt_log_unormalised_density - dt_logZt
 
     lhs = div_v + (v * score).sum(dim=-1)
     eps = (lhs + dt_log_density).nan_to_num_(posinf=1.0, neginf=-1.0, nan=0.0)

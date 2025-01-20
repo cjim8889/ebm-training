@@ -40,6 +40,7 @@ def train_velocity_field(
     input_dim: int = 2,
     hidden_dim: int = 128,
     depth: int = 3,
+    dt_logZt_estor: str = "mcmc",
     **kwargs: Any,
 ) -> Any:
     """
@@ -88,6 +89,7 @@ def train_velocity_field(
             "num_mcmc_integration_steps": num_mcmc_integration_steps,
             "eta": eta,
             "schedule": schedule,
+            "dt_logZt_estor": dt_logZt_estor,
             **kwargs,
         },
         name=run_name,
@@ -145,16 +147,16 @@ def train_velocity_field(
 
         std_dt_log_Zt_way1, std_dt_log_Zt_way2 = get_dt_logZt(v_theta, samples, ts, time_derivative_log_density, score_function)
         wandb.log({
-            "mean_std/std_dt_log_Zt_way1": np.mean(std_dt_log_Zt_way1), 
-            "mean_std/std_dt_log_Zt_way2": np.mean(std_dt_log_Zt_way2)
+            "mean_std/std_dt_log_Zt_mcmc": np.mean(std_dt_log_Zt_way1), 
+            "mean_std/std_dt_log_Zt_mcmc_velocity": np.mean(std_dt_log_Zt_way2)
         })
         wandb.log({
-            "last10steps_std/std_dt_log_Zt_way1": np.mean(std_dt_log_Zt_way1[-10:]), 
-            "last10steps_std/std_dt_log_Zt_way2": np.mean(std_dt_log_Zt_way2[-10:])
+            "last10steps_std/std_dt_log_Zt_mcmc": np.mean(std_dt_log_Zt_way1[-10:]), 
+            "last10steps_std/std_dt_log_Zt_mcmc_velocity": np.mean(std_dt_log_Zt_way2[-10:])
         })
         wandb.log({
-            "first10steps_std/std_dt_log_Zt_way1": np.mean(std_dt_log_Zt_way1[:10]), 
-            "first10steps_std/std_dt_log_Zt_way2": np.mean(std_dt_log_Zt_way2[:10])
+            "first10steps_std/std_dt_log_Zt_mcmc": np.mean(std_dt_log_Zt_way1[:10]), 
+            "first10steps_std/std_dt_log_Zt_mcmc_velocity": np.mean(std_dt_log_Zt_way2[:10])
         })
 
         epoch_loss = 0.0
@@ -169,7 +171,8 @@ def train_velocity_field(
             loss = loss_fn(
                 v_theta, samps, ts, 
                 time_derivative_log_density=time_derivative_log_density,
-                score_fn=score_function
+                score_fn=score_function,
+                dt_logZt_estor=dt_logZt_estor,
             )
             loss.backward()
 
@@ -265,10 +268,11 @@ def run(cfg: DictConfig) -> None:
         schedule_alpha=cfg.schedule.schedule_alpha,  # Added
         schedule_gamma=cfg.schedule.schedule_gamma,
         nestrov=True,
-        run_name=cfg.wandb.run_name,
+        run_name=cfg.wandb.run_name + f'_{cfg.dt_logZt_estor}',
         input_dim=2,
         hidden_dim=128,
         depth=3,
+        dt_logZt_estor=cfg.dt_logZt_estor
     )
 
 @hydra.main(config_path="../configs", config_name="gmm.yaml", version_base=None)

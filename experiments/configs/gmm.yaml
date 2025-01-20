@@ -6,6 +6,8 @@ defaults:
 
 seed: 80801
 
+dt_logZt_estor: mcmc_velocity  # mcmc or mcmc_velocity
+
 schedule:
   name: inverse_power  # ["linear", "inverse_tangent", "inverse_power"]
   schedule_alpha: 0.5
@@ -41,4 +43,4 @@ optimiser:
 
 wandb:
   project: liouville
-  run_name: velocity_field_training_torch
+  run_name: nfs_gmm
