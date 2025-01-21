@@ -347,20 +347,18 @@ def train_velocity_field(
                 replace=False,
             )
 
+            key, subkey = jax.random.split(key)
             if target_density.TIME_DEPENDENT:
-                eval_metrics = target_density.evaluate(eval_samples, float(eval_ts[-1]))
+                eval_metrics = target_density.evaluate(
+                    subkey, eval_samples, float(eval_ts[-1])
+                )
             else:
-                eval_metrics = target_density.evaluate(eval_samples)
+                eval_metrics = target_density.evaluate(subkey, eval_samples)
 
             # Log metrics to wandb
             if not config.offline:
-                wandb.log(
-                    {
-                        f"validation_samples_{config.sampling.num_timesteps}_step": wandb.Image(
-                            eval_metrics["figure"]
-                        ),
-                    }
-                )
+                # eval_metrics["figure"] = wandb.Image(eval_metrics["figure"])
+                wandb.log(eval_metrics)
             else:
                 plt.show()
 
