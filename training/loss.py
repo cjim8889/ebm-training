@@ -198,10 +198,44 @@ def loss_fn(
             dt_log_density, -dt_log_density_clip, dt_log_density_clip
         )
 
-    epsilons = time_batched_epsilon(v_theta, xs, dt_log_density, ts, score_fn).reshape(-1)
+    epsilons = time_batched_epsilon(v_theta, xs, dt_log_density, ts, score_fn).reshape(
+        -1
+    )
 
     return 0.5 * jnp.mean(epsilons**2) + 0.5 * jnp.mean(jnp.abs(epsilons))
-    
+
+
+def control_variate_epsilon(
+    v_theta: Callable[[chex.Array, float], chex.Array],
+    x: chex.Array,
+    t: float,
+    score_fn: Callable[[chex.Array, float], chex.Array],
+) -> float:
+    """Computes the local error in satisfying the Liouville equation.
+
+    Args:
+        v_theta: The velocity field function taking (x, t) and returning velocity vector
+        x: The point at which to compute the error
+        dt_log_density: Time derivative of log density at (x, t)
+        t: Current time
+        score_fn: Score function taking (x, t) and returning gradient of log density
+
+    Returns:
+        float: Local error in satisfying the Liouville equation
+    """
+    return jnp.nan_to_num(
+        divergence_velocity(v_theta, x, t) + jnp.dot(v_theta(x, t), score_fn(x, t)),
+        posinf=1.0,
+        neginf=-1.0,
+    )
+
+
+batched_control_variate_epsilon = jax.vmap(
+    control_variate_epsilon, in_axes=(None, 0, None, None)
+)
+time_batched_control_variate_epsilon = eqx.filter_jit(
+    jax.vmap(batched_control_variate_epsilon, in_axes=(None, 0, 0, None))
+)
 
 
 @eqx.filter_jit
@@ -210,6 +244,9 @@ def estimate_log_Z_t(
     weights: chex.Array,
     ts: chex.Array,
     time_derivative_log_density: Callable[[chex.Array, float], float],
+    v_theta: Callable[[chex.Array, float], chex.Array] = None,
+    score_fn: Callable[[chex.Array, float], chex.Array] = None,
+    use_control_variate: bool = False,
 ) -> chex.Array:
     """Estimate the log partition function using weighted samples.
 
@@ -218,6 +255,8 @@ def estimate_log_Z_t(
         weights: Importance weights for the samples
         ts: Time points
         time_derivative_log_density: Function computing time derivative of log density
+        v_theta: Velocity field function
+        use_control_variate: Whether to use control variate
 
     Returns:
         Estimate of log partition function
@@ -226,5 +265,9 @@ def estimate_log_Z_t(
         lambda xs, t: jax.vmap(lambda x: time_derivative_log_density(x, t))(xs),
         in_axes=(0, 0),
     )(xs, ts)
+
+    if use_control_variate:
+        epsilons = time_batched_control_variate_epsilon(v_theta, xs, ts, score_fn)
+        dt_log_unormalised_density = dt_log_unormalised_density + epsilons
 
     return jnp.sum(dt_log_unormalised_density * weights, axis=-1, keepdims=True)

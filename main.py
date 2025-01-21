@@ -62,6 +62,11 @@ def main():
     parser.add_argument("--eval-frequency", type=int, default=20)
     parser.add_argument("--n-samples-eval", type=int, default=1024)
     parser.add_argument(
+        "--use-cv",
+        action="store_true",
+        help="Whether to use control variate",
+    )
+    parser.add_argument(
         "--time-batch-size",
         type=int,
         default=32,
@@ -245,6 +250,7 @@ def main():
         num_integration_steps=args.mcmc_integration_steps,
         step_size=args.mcmc_step_size,
         with_rejection=args.with_rejection,
+        use_control_variate=args.use_cv,
     )
 
     integration_config = IntegrationConfig(
@@ -598,6 +604,7 @@ def main():
                 config.model.architecture,
                 "decoupled" if config.training.use_decoupled_loss else "standard",
                 "no_shortcut",
+                "cv" if config.mcmc.use_control_variate else "no_cv",
             ],
         )
 
