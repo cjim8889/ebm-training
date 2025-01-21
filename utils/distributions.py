@@ -59,9 +59,45 @@ def compute_w2_distance(x, y):
     return ott.tools.unreg.wassdis_p(x=x, y=y, p=2.0)
 
 
-@jax.jit
-def compute_total_variation_distance(p_x, p_y):
-    return 0.5 * jnp.sum(jnp.abs(p_x - p_y))
+def compute_total_variation_distance(
+    samples_p, samples_q, num_bins=200, lower_bound=-5.0, upper_bound=5.0
+):
+    """
+    Compute the Total Variation (TV) distance between two distributions (p and q) in N-dimensional space.
+
+    Args:
+    samples_p: Array of shape (n_samples, d) representing samples from distribution P
+    samples_q: Array of shape (n_samples, d) representing samples from distribution Q
+    num_bins: Number of bins to use for histogram estimation per dimension
+    lower_bound: Lower bound of the sample space for each dimension
+    upper_bound: Upper bound of the sample space for each dimension
+
+    Returns:
+    TV distance: Scalar value representing the Total Variation distance
+    """
+    # Create bin edges for each dimension
+    bin_edges = [
+        jnp.linspace(lower_bound, upper_bound, num_bins + 1)
+        for _ in range(samples_p.shape[1])
+    ]
+
+    # Compute histograms for both distributions (normalized)
+    hist_p, _ = jnp.histogramdd(samples_p, bins=bin_edges, density=True)
+    hist_q, _ = jnp.histogramdd(samples_q, bins=bin_edges, density=True)
+
+    # Normalize histograms explicitly to ensure their sum is 1
+    hist_p /= jnp.sum(hist_p)
+    hist_q /= jnp.sum(hist_q)
+
+    # Compute Total Variation distance as the half sum of absolute differences
+    tv_distance = 0.5 * jnp.sum(jnp.abs(hist_p - hist_q))
+
+    return tv_distance
+
+
+compute_total_variation_distance = jax.jit(
+    compute_total_variation_distance, static_argnums=(2, 3, 4)
+)
 
 
 @eqx.filter_jit

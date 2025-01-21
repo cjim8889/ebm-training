@@ -14,7 +14,26 @@ cd $PBS_O_WORKDIR
 eval "$(~/anaconda3/bin/conda shell.bash hook)"
 source activate torch_cuda_env
 
-python train_ebm.py --batch_size 256 --lr 1e-4 --beta1 0.0 --hidden_features 64 --depth 3 --max_epochs 120 --seed 88
-
+CUDA_VISIBLE_DEVICES=0 uv run main.py  --num-samples 5120 \
+  --depth 4 \
+  --hidden-dim 128 \
+  --network mlp \
+  --num-epochs 10000 \
+  --steps-per-epoch 200 \
+  --mcmc-method vsmc \
+  --mcmc-step-size 0.2 \
+  --mcmc-steps 5 \
+  --mcmc-integration-steps 5 \
+  --initial-sigma 20. \
+  --with-rejection \
+  --target gmm \
+  --seed 888 \
+  --use-decoupled-loss \
+  --batch-size 128 \
+  --learning-rate 6e-04 \
+  --gradient-norm 1. \
+  --optimizer adamw \
+  --weight-decay 1e-04 \
+  --time-batch-size 64
 # Deactivate the virtual environment
 deactivate
