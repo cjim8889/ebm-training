@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 from utils.distributions import (
     compute_total_variation_distance,
     compute_w2_distance_1d_pot,
-    compute_w2_distance_pot,
+    compute_w1_distance_1d_pot,
+    compute_wasserstein_distance_pot,
 )
 from utils.plotting import plot_contours_2D, plot_marginal_pair
 
@@ -117,6 +118,12 @@ class GMM(Target):
         if self.dim == 2:
             plot_contours_2D(self.log_prob, ax, bound=self._plot_bound, levels=50)
 
+        # Remove ticks, axis lines and numbers
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+
         return fig
 
     def evaluate(self, key, samples, time=None):
@@ -129,10 +136,21 @@ class GMM(Target):
             key, (min(self.n_model_samples_eval, samples.shape[0]),)
         )
 
-        x_w2_distance = compute_w2_distance_pot(samples, true_samples)
+        x_w1_distance, x_w2_distance = compute_wasserstein_distance_pot(
+            samples, true_samples
+        )
+
+        log_prob_samples = self.log_prob(samples)
+        log_prob_true_samples = self.log_prob(true_samples)
+
         e_w2_distance = compute_w2_distance_1d_pot(
-            self.log_prob(samples),
-            self.log_prob(true_samples),
+            log_prob_samples,
+            log_prob_true_samples,
+        )
+
+        e_w1_distance = compute_w1_distance_1d_pot(
+            log_prob_samples,
+            log_prob_true_samples,
         )
 
         total_variation = compute_total_variation_distance(
@@ -144,7 +162,9 @@ class GMM(Target):
         )
 
         metrics["w2_distance"] = x_w2_distance
+        metrics["w1_distance"] = x_w1_distance
         metrics["e_w2_distance"] = e_w2_distance
+        metrics["e_w1_distance"] = e_w1_distance
         metrics["total_variation"] = total_variation
 
         return metrics
