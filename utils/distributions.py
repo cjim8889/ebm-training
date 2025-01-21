@@ -63,9 +63,12 @@ def compute_w2_distance(x, y):
 def compute_w2_distance_pot(x, y):
     a = jnp.ones(x.shape[0]) / x.shape[0]
     b = jnp.ones(y.shape[0]) / y.shape[0]
-    M = pot.dist(x, y)
+    M = pot.dist(x, y, metric="euclidean")
 
-    return jnp.sqrt(pot.emd2(a, b, M))
+    G = pot.emd(a, b, M)
+    w2_dist = jnp.sum(G * M) / G.sum()
+
+    return w2_dist
 
 
 def compute_w2_distance_1d_pot(x, y):
