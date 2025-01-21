@@ -43,6 +43,7 @@ def train_velocity_field(
     """
     # Track best models and their W2 distances
     best_w2_distances = []  # List of tuples (w2_distance, run_id)
+    model_version = 0  # Track model versions
 
     path_distribution = AnnealedDistribution(
         initial_density=initial_density,
@@ -376,26 +377,42 @@ def train_velocity_field(
                         should_save = True
 
                     if should_save:
-                        model_id = (
-                            f"velocity_field_model_{wandb.run.id}_w2_{current_w2:.4f}"
+                        model_version += 1
+                        model_name = f"velocity_field_model_{wandb.run.id}"
+                        model_path = (
+                            f"{model_name}_v{model_version}_w2_{current_w2:.4f}.eqx"
                         )
-                        eqx.tree_serialise_leaves(f"{model_id}.eqx", v_theta)
-                        artifact = wandb.Artifact(name=model_id, type="model")
-                        artifact.add_file(local_path=f"{model_id}.eqx", name="model")
-                        artifact.save()
-                        wandb.log_artifact(artifact)
+
+                        eqx.tree_serialise_leaves(model_path, v_theta)
+                        artifact = wandb.Artifact(
+                            name=model_name,
+                            type="model",
+                            metadata={
+                                "w2_distance": current_w2,
+                                "version": model_version,
+                            },
+                        )
+                        artifact.add_file(local_path=model_path, name="model.eqx")
 
                         # Update best_w2_distances
-                        best_w2_distances.append((current_w2, model_id))
+                        best_w2_distances.append((current_w2, model_version))
                         best_w2_distances.sort()  # Sort by W2 distance (ascending)
                         if len(best_w2_distances) > 3:
-                            # Remove worst model from W&B
-                            _, worst_model_id = best_w2_distances.pop()
-                            api = wandb.Api()
-                            artifact = api.artifact(
-                                f"{wandb.run.entity}/{wandb.run.project}/{worst_model_id}:latest"
-                            )
-                            artifact.delete()
+                            best_w2_distances.pop()  # Remove worst model from tracking
+
+                        # Create aliases for the top 3 models
+                        rank = len(
+                            [w2 for w2, _ in best_w2_distances if w2 <= current_w2]
+                        )
+                        if rank <= 3:  # If it's in top 3
+                            aliases = [f"top{rank}"]
+                            if rank == 1:  # If it's the best model
+                                aliases.append("best")
+                            wandb.log_artifact(artifact, aliases=aliases)
+                        else:
+                            wandb.log_artifact(
+                                artifact
+                            )  # Log without alias, will be cleaned up
             else:
                 plt.show()
 
@@ -405,7 +422,7 @@ def train_velocity_field(
     if not config.offline and len(best_w2_distances) > 0:
         # Log summary of best models
         wandb.run.summary["best_w2_distances"] = [w2 for w2, _ in best_w2_distances]
-        wandb.run.summary["best_model_ids"] = [mid for _, mid in best_w2_distances]
+        wandb.run.summary["best_model_versions"] = [ver for _, ver in best_w2_distances]
         wandb.finish()
 
     return v_theta
