@@ -355,14 +355,15 @@ def train_velocity_field(
             else:
                 eval_metrics = target_density.evaluate(subkey, eval_samples)
 
+            figure = eval_metrics.pop("figure")
             # Log metrics to wandb
             if not config.offline:
-                # eval_metrics["figure"] = wandb.Image(eval_metrics["figure"])
+                eval_metrics["figure"] = wandb.Image(figure)
                 wandb.log(eval_metrics)
             else:
                 plt.show()
 
-            plt.close(eval_metrics["figure"])
+            plt.close(figure)
 
     # Save trained model to wandb
     if not config.offline:

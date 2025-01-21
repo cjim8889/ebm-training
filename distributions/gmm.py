@@ -115,10 +115,10 @@ class GMM(Target):
     def evaluate(self, key, samples, time=None):
         metrics = super().evaluate(key, samples, time)
 
-        if samples.shape[0] > 1024:
-            samples = samples[:1024]
+        if samples.shape[0] > 512:
+            samples = samples[:512]
 
-        true_samples = self.sample(key, (max(1024, samples.shape[0]),))
+        true_samples = self.sample(key, (min(512, samples.shape[0]),))
 
         x_w2_distance = compute_w2_distance(samples, true_samples)
         e_w2_distance = compute_w2_distance(
@@ -127,7 +127,11 @@ class GMM(Target):
         )
 
         total_variation = compute_total_variation_distance(
-            jnp.exp(self.log_prob(samples)), jnp.exp(self.log_prob(true_samples))
+            samples,
+            true_samples,
+            num_bins=200,
+            lower_bound=-self._plot_bound,
+            upper_bound=self._plot_bound,
         )
 
         metrics["w2_distance"] = x_w2_distance
