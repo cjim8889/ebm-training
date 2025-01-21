@@ -1,11 +1,17 @@
-import jax.numpy as jnp
-import distrax
 import chex
+import distrax
 import jax
-from .base import Target
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
+
+from utils.distributions import (
+    compute_total_variation_distance,
+    compute_w2_distance_1d_pot,
+    compute_w2_distance_pot,
+)
 from utils.plotting import plot_contours_2D, plot_marginal_pair
-from utils.distributions import compute_w2_distance, compute_total_variation_distance
+
+from .base import Target
 
 
 class GMM(Target):
@@ -120,10 +126,10 @@ class GMM(Target):
 
         true_samples = self.sample(key, (min(512, samples.shape[0]),))
 
-        x_w2_distance = compute_w2_distance(samples, true_samples)
-        e_w2_distance = compute_w2_distance(
-            self.log_prob(samples).reshape(-1, 1),
-            self.log_prob(true_samples).reshape(-1, 1),
+        x_w2_distance = compute_w2_distance_pot(samples, true_samples)
+        e_w2_distance = compute_w2_distance_1d_pot(
+            self.log_prob(samples),
+            self.log_prob(true_samples),
         )
 
         total_variation = compute_total_variation_distance(

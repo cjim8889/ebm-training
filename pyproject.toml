@@ -22,4 +22,5 @@ dependencies = [
     "jax-md @ git+https://github.com/google/jax-md.git",
     "setuptools>=75.2.0",
     "ott-jax==0.5.0",
+    "pot>=0.9.5",
 ]
