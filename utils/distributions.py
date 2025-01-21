@@ -71,8 +71,24 @@ def compute_w2_distance_pot(x, y):
     return w2_dist
 
 
+def compute_wasserstein_distance_pot(x, y):
+    a = jnp.ones(x.shape[0]) / x.shape[0]
+    b = jnp.ones(y.shape[0]) / y.shape[0]
+    M = pot.dist(x, y, metric="euclidean")
+    M_sq = M**2
+
+    w2_dist = jnp.sqrt(pot.emd2(a, b, M_sq))
+    w1_dist = pot.emd2(a, b, M)
+
+    return w1_dist, w2_dist
+
+
 def compute_w2_distance_1d_pot(x, y):
     return pot.wasserstein_1d(x, y, p=2.0)
+
+
+def compute_w1_distance_1d_pot(x, y):
+    return pot.wasserstein_1d(x, y, p=1.0)
 
 
 def compute_total_variation_distance(
