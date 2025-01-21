@@ -13,14 +13,15 @@ class MultivariateGaussian(Target):
         dim: int = 2,
         mean: float = 0.0,
         sigma: float = 1.0,
+        n_samples_eval: int = 1024,
     ):
         super().__init__(
             dim=dim,
             log_Z=0.0,
             can_sample=True,
             n_plots=1,
-            n_model_samples_eval=1000,
-            n_target_samples_eval=1000,
+            n_model_samples_eval=n_samples_eval,
+            n_target_samples_eval=n_samples_eval,
         )
         self.sigma = jnp.asarray(sigma)
         if self.sigma.ndim == 0:

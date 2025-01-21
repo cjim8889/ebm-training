@@ -60,6 +60,7 @@ def main():
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--gradient-norm", type=float, default=1.0)
     parser.add_argument("--eval-frequency", type=int, default=20)
+    parser.add_argument("--n-samples-eval", type=int, default=1024)
     parser.add_argument(
         "--time-batch-size",
         type=int,
@@ -310,6 +311,7 @@ def main():
         data_path_test=args.data_path_test,
         data_path_val=args.data_path_val,
         data_path_train=args.data_path_train,
+        n_samples_eval=args.n_samples_eval,
     )
 
     config = TrainingExperimentConfig(

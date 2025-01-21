@@ -112,6 +112,7 @@ class DensityConfig:
     data_path_test: Optional[str] = None
     data_path_val: Optional[str] = None
     data_path_train: Optional[str] = None
+    n_samples_eval: Optional[int] = 1024
 
 
 @dataclass

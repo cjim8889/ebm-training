@@ -25,14 +25,15 @@ class GMM(Target):
         loc_scaling: float = 40,
         scale_scaling: float = 1.0,
         fixed_mean: bool = True,
+        n_samples_eval: int = 1024,
     ) -> None:
         super().__init__(
             dim=dim,
             log_Z=0.0,
             can_sample=True,
             n_plots=1,
-            n_model_samples_eval=1000,
-            n_target_samples_eval=1000,
+            n_model_samples_eval=n_samples_eval,
+            n_target_samples_eval=n_samples_eval,
         )
 
         self.n_mixes = n_mixes
@@ -121,10 +122,12 @@ class GMM(Target):
     def evaluate(self, key, samples, time=None):
         metrics = super().evaluate(key, samples, time)
 
-        if samples.shape[0] > 512:
-            samples = samples[:512]
+        if samples.shape[0] > self.n_model_samples_eval:
+            samples = samples[: self.n_model_samples_eval]
 
-        true_samples = self.sample(key, (min(512, samples.shape[0]),))
+        true_samples = self.sample(
+            key, (min(self.n_model_samples_eval, samples.shape[0]),)
+        )
 
         x_w2_distance = compute_w2_distance_pot(samples, true_samples)
         e_w2_distance = compute_w2_distance_1d_pot(
