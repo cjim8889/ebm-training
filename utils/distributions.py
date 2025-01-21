@@ -156,9 +156,7 @@ def divergence_velocity(
     def v_x(x):
         return v_theta(x, t)
 
-    jacobian = jax.jacfwd(v_x)(x)
-    div_v = jnp.trace(jacobian)
-    return div_v
+    return jnp.trace(jax.jacfwd(v_x)(x))
 
 
 @eqx.filter_jit

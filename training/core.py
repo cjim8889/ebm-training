@@ -241,7 +241,11 @@ def train_velocity_field(
                 mcmc_samples["weights"],
                 current_ts,
                 path_distribution.time_derivative,
+                v_theta=v_theta,
+                score_fn=path_distribution.score_fn,
+                use_control_variate=config.mcmc.use_control_variate,
             )
+            log_Z_t = jax.lax.stop_gradient(log_Z_t)
 
             if not config.offline:
                 log_Z_t = jnp.nan_to_num(log_Z_t, nan=0.0, posinf=1.0, neginf=-1.0)
