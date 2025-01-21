@@ -49,6 +49,7 @@ class MCMCConfig:
     num_integration_steps: int = 3
     step_size: float = 0.01  # eta: MCMC step size
     with_rejection: bool = False
+    use_control_variate: bool = False
 
 
 @dataclass
