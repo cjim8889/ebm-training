@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 import optax
 import ott
+import ot as pot
 
 
 def batched_remove_mean(x, n_particles, n_spatial_dim):
@@ -57,6 +58,18 @@ def compute_distances(x, n_particles, n_dimensions, min_dr=1e-8, repeat=True):
 @jax.jit
 def compute_w2_distance(x, y):
     return ott.tools.unreg.wassdis_p(x=x, y=y, p=2.0)
+
+
+def compute_w2_distance_pot(x, y):
+    a = jnp.ones(x.shape[0]) / x.shape[0]
+    b = jnp.ones(y.shape[0]) / y.shape[0]
+    M = pot.dist(x, y)
+
+    return jnp.sqrt(pot.emd2(a, b, M))
+
+
+def compute_w2_distance_1d_pot(x, y):
+    return pot.wasserstein_1d(x, y, p=2.0)
 
 
 def compute_total_variation_distance(
