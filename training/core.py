@@ -41,6 +41,9 @@ def train_velocity_field(
     Returns:
         Trained velocity field function
     """
+    # Track best models and their W2 distances
+    best_w2_distances = []  # List of tuples (w2_distance, run_id)
+
     path_distribution = AnnealedDistribution(
         initial_density=initial_density,
         target_density=target_density,
@@ -360,21 +363,49 @@ def train_velocity_field(
             if not config.offline:
                 eval_metrics["figure"] = wandb.Image(figure)
                 wandb.log(eval_metrics)
+
+                # Only save model if W2 distance improves and is among top 3
+                if "w2_distance" in eval_metrics:
+                    current_w2 = eval_metrics["w2_distance"]
+
+                    # Check if this model is better than any existing ones
+                    should_save = False
+                    if len(best_w2_distances) < 3:
+                        should_save = True
+                    elif current_w2 < max(w2 for w2, _ in best_w2_distances):
+                        should_save = True
+
+                    if should_save:
+                        model_id = (
+                            f"velocity_field_model_{wandb.run.id}_w2_{current_w2:.4f}"
+                        )
+                        eqx.tree_serialise_leaves(f"{model_id}.eqx", v_theta)
+                        artifact = wandb.Artifact(name=model_id, type="model")
+                        artifact.add_file(local_path=f"{model_id}.eqx", name="model")
+                        artifact.save()
+                        wandb.log_artifact(artifact)
+
+                        # Update best_w2_distances
+                        best_w2_distances.append((current_w2, model_id))
+                        best_w2_distances.sort()  # Sort by W2 distance (ascending)
+                        if len(best_w2_distances) > 3:
+                            # Remove worst model from W&B
+                            _, worst_model_id = best_w2_distances.pop()
+                            api = wandb.Api()
+                            artifact = api.artifact(
+                                f"{wandb.run.entity}/{wandb.run.project}/{worst_model_id}:latest"
+                            )
+                            artifact.delete()
             else:
                 plt.show()
 
             plt.close(figure)
 
-    # Save trained model to wandb
-    if not config.offline:
-        eqx.tree_serialise_leaves("v_theta.eqx", v_theta)
-        artifact = wandb.Artifact(
-            name=f"velocity_field_model_{wandb.run.id}", type="model"
-        )
-        artifact.add_file(local_path="v_theta.eqx", name="model")
-        artifact.save()
-
-        wandb.log_artifact(artifact)
+    # Save final model state
+    if not config.offline and len(best_w2_distances) > 0:
+        # Log summary of best models
+        wandb.run.summary["best_w2_distances"] = [w2 for w2, _ in best_w2_distances]
+        wandb.run.summary["best_model_ids"] = [mid for _, mid in best_w2_distances]
         wandb.finish()
 
     return v_theta
