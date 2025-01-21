@@ -588,7 +588,7 @@ def main():
     if not config.offline:
         # Handle logging hyperparameters
         wandb.init(
-            project="liouville",
+            project="liouville_workshop",
             config=vars(config),
             reinit=True,
             tags=[
