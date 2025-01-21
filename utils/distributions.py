@@ -2,9 +2,10 @@ from typing import Callable
 
 import chex
 import equinox as eqx
-import optax
 import jax
 import jax.numpy as jnp
+import optax
+import ott
 
 
 def batched_remove_mean(x, n_particles, n_spatial_dim):
@@ -51,6 +52,16 @@ def compute_distances(x, n_particles, n_dimensions, min_dr=1e-8, repeat=True):
         distances = jnp.repeat(distances, 2)
 
     return distances
+
+
+@jax.jit
+def compute_w2_distance(x, y):
+    return ott.tools.unreg.wassdis_p(x=x, y=y, p=2.0)
+
+
+@jax.jit
+def compute_total_variation_distance(p_x, p_y):
+    return 0.5 * jnp.sum(jnp.abs(p_x - p_y))
 
 
 @eqx.filter_jit

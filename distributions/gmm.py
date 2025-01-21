@@ -5,6 +5,7 @@ import jax
 from .base import Target
 import matplotlib.pyplot as plt
 from utils.plotting import plot_contours_2D, plot_marginal_pair
+from utils.distributions import compute_w2_distance, compute_total_variation_distance
 
 
 class GMM(Target):
@@ -110,3 +111,27 @@ class GMM(Target):
             plot_contours_2D(self.log_prob, ax, bound=self._plot_bound, levels=50)
 
         return fig
+
+    def evaluate(self, key, samples, time=None):
+        metrics = super().evaluate(key, samples, time)
+
+        if samples.shape[0] > 1024:
+            samples = samples[:1024]
+
+        true_samples = self.sample(key, (max(1024, samples.shape[0]),))
+
+        x_w2_distance = compute_w2_distance(samples, true_samples)
+        e_w2_distance = compute_w2_distance(
+            self.log_prob(samples).reshape(-1, 1),
+            self.log_prob(true_samples).reshape(-1, 1),
+        )
+
+        total_variation = compute_total_variation_distance(
+            jnp.exp(self.log_prob(samples)), jnp.exp(self.log_prob(true_samples))
+        )
+
+        metrics["w2_distance"] = x_w2_distance
+        metrics["e_w2_distance"] = e_w2_distance
+        metrics["total_variation"] = total_variation
+
+        return metrics

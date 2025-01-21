@@ -54,6 +54,15 @@ def segment_sum(
     return jax.ops.segment_sum(data, segment_ids, num_segments)
 
 
+def segment_mean(
+    data: jnp.ndarray, segment_ids: jnp.ndarray, num_segments: int
+) -> jnp.ndarray:
+    seg_sum = jax.ops.segment_sum(data, segment_ids, num_segments)
+    seg_count = jax.ops.segment_sum(jnp.ones_like(data), segment_ids, num_segments)
+    seg_count = jnp.maximum(seg_count, 1)  # Avoid 0 division
+    return seg_sum / seg_count
+
+
 class EGNNLayer(eqx.Module):
     pos_mlp: eqx.nn.MLP
     pos_aggregate_fn: Callable
@@ -78,7 +87,7 @@ class EGNNLayer(eqx.Module):
         self.n_node = n_node
         self.normalize = normalize
         self.eps = eps
-        self.pos_aggregate_fn = segment_sum
+        self.pos_aggregate_fn = segment_mean
 
         # Precompute senders and receivers for the fixed number of nodes
         self.senders, self.receivers = get_fully_connected_senders_receivers(n_node)
@@ -101,21 +110,17 @@ class EGNNLayer(eqx.Module):
         coord_diff: jnp.ndarray,
         t: float,
     ) -> jnp.ndarray:
-        # Concatenate radial distances with time for each edge
-        time_array = jnp.full_like(radial, t)
-        edge_features = jnp.concatenate([radial, time_array], axis=-1)
-
-        # Compute position updates conditioned on both distance and time
-        trans = coord_diff * jax.vmap(self.pos_mlp)(edge_features)
-        trans = jnp.clip(trans, -100, 100)
+        edge_features = jnp.concatenate([radial, jnp.full_like(radial, t)], axis=-1)
+        edge_scalars = jax.vmap(self.pos_mlp)(edge_features)
+        trans = jnp.clip(coord_diff * edge_scalars, -100.0, 100.0)
         return self.pos_aggregate_fn(trans, self.senders, self.n_node)
 
     def _coord2radial(self, coord: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
         coord_diff = coord[self.senders] - coord[self.receivers]
-        radial = jnp.sum(coord_diff**2, 1)[:, jnp.newaxis]
+        radial = jnp.sum(coord_diff**2, axis=1, keepdims=True)
         if self.normalize:
-            norm = jnp.sqrt(radial)
-            coord_diff = coord_diff / (norm + self.eps)
+            norm = jnp.sqrt(radial + self.eps)
+            coord_diff = coord_diff / norm
         return radial, coord_diff
 
     def __call__(
