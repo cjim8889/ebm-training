@@ -16,12 +16,10 @@ dependencies = [
     "numpy>=2.1.2",
     "pandas>=2.2.3",
     "wandb>=0.18.3",
-    "optax",
+    "optax>=0.2.4",
     "scikit-learn>=1.5.2",
     "blackjax>=1.2.4",
     "jax-md @ git+https://github.com/google/jax-md.git",
     "setuptools>=75.2.0",
+    "ott-jax==0.5.0",
 ]
-
-[tool.uv.sources]
-optax = { git = "https://github.com/google-deepmind/optax.git", rev = "b8c2e13" }

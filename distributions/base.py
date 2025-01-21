@@ -55,7 +55,9 @@ class Target:
     def visualise_with_time(self, samples: chex.Array, time: float) -> plt.Figure:
         raise NotImplementedError
 
-    def evaluate(self, samples: chex.Array, time: Optional[float] = None) -> dict:
+    def evaluate(
+        self, key: chex.PRNGKey, samples: chex.Array, time: Optional[float] = None
+    ) -> dict:
         """Evaluate samples and return metrics and figures.
 
         Args:
