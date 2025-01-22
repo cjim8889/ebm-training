@@ -138,13 +138,11 @@ def divergence_velocity_with_shortcut(
     x: chex.Array,
     t: float,
     d: float,
-) -> float:
+) -> chex.Array:
     def v_x(x):
         return v_theta(x, t, d)
 
-    jacobian = jax.jacfwd(v_x)(x)
-    div_v = jnp.trace(jacobian)
-    return div_v
+    return jnp.trace(jax.jacfwd(v_x)(x))
 
 
 @eqx.filter_jit

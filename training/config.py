@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional, Literal, Callable, Any
+from typing import Optional, Literal, Callable, Any, List
 
 
 @dataclass
@@ -40,6 +40,8 @@ class TrainingConfig:
     nesterov: bool = False  # whether to use Nesterov momentum
     noise_scale: float = 0.01  # eta for noisy SGD
     time_batch_size: int = 32  # Number of time points to use in each batch
+    shortcut_size: List[int] = field(default_factory=lambda: [16, 32, 64, 128])
+    use_shortcut: bool = False
 
 
 @dataclass

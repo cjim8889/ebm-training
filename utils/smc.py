@@ -81,6 +81,7 @@ def generate_samples_with_smc(
     estimate_covariance: bool = False,
     blackjax_hmc: bool = True,
     v_theta: Optional[Callable[[chex.Array, float], chex.Array]] = None,
+    use_shortcut: bool = False,
 ) -> jnp.ndarray:
     batched_shift_fn = jax.vmap(shift_fn)
     if blackjax_hmc:
@@ -131,14 +132,17 @@ def generate_samples_with_smc(
         if incremental_log_delta is not None:
             return incremental_log_delta(positions, t - t_prev)
         else:
-            return time_dependent_log_density(positions, t) - time_dependent_log_density(
-                positions, t_prev
-            )
+            return time_dependent_log_density(
+                positions, t
+            ) - time_dependent_log_density(positions, t_prev)
 
     batched_delta = jax.vmap(_delta, in_axes=(0, None, None))
 
     if v_theta is not None:
-        batched_v_theta = jax.vmap(v_theta, in_axes=(0, None))
+        if use_shortcut:
+            batched_v_theta = jax.vmap(v_theta, in_axes=(0, None, None))
+        else:
+            batched_v_theta = jax.vmap(v_theta, in_axes=(0, None))
 
     def _resample(key, positions, log_weights):
         """
@@ -217,9 +221,14 @@ def generate_samples_with_smc(
 
         # If v_theta is provided, use it to propagate particles first
         if v_theta is not None:
-            propagated_positions = shifted_positions + d * batched_v_theta(
-                shifted_positions, t_prev
-            )
+            if use_shortcut:
+                propagated_positions = shifted_positions + d * batched_v_theta(
+                    shifted_positions, t_prev, d
+                )
+            else:
+                propagated_positions = shifted_positions + d * batched_v_theta(
+                    shifted_positions, t_prev
+                )
 
         # Apply HMC to propagate particles
         propagated_positions = batched_hmc(
