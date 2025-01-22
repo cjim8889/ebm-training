@@ -57,12 +57,15 @@ def evaluate_model(
         for i, es in enumerate(config.training.shortcut_size):
             eval_samples = val_samples[i][-1]
             key, subkey = jax.random.split(key)
-            if target_density.TIME_DEPENDENT:
-                eval_metrics = target_density.evaluate(
-                    subkey, eval_samples, float(eval_ts[i][-1])
-                )
-            else:
-                eval_metrics = target_density.evaluate(subkey, eval_samples)
+            eval_metrics = target_density.evaluate(
+                subkey,
+                eval_samples,
+                time=float(eval_ts[i][-1]),
+                use_shortcut=config.training.use_shortcut,
+                ts=eval_ts[i],
+                v_theta=v_theta,
+                base_log_prob_fn=path_distribution.base_log_prob,
+            )
             total_eval_metrics[f"validation_{es}_step"] = eval_metrics
     else:
         eval_ts = jnp.linspace(
@@ -83,12 +86,15 @@ def evaluate_model(
         )
         eval_samples = val_samples["positions"][-1]
         key, subkey = jax.random.split(key)
-        if target_density.TIME_DEPENDENT:
-            eval_metrics = target_density.evaluate(
-                subkey, eval_samples, float(eval_ts[-1])
-            )
-        else:
-            eval_metrics = target_density.evaluate(subkey, eval_samples)
+        eval_metrics = target_density.evaluate(
+            subkey,
+            eval_samples,
+            time=float(eval_ts[-1]),
+            use_shortcut=config.training.use_shortcut,
+            ts=eval_ts,
+            v_theta=v_theta,
+            base_log_prob_fn=path_distribution.base_log_prob,
+        )
         total_eval_metrics[f"validation_{config.sampling.num_timesteps}_step"] = (
             eval_metrics
         )

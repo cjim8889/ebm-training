@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, Tuple
 
 import chex
 import equinox as eqx
@@ -228,3 +228,112 @@ def get_inverse_temperature(t, T_initial, T_final, method="geometric"):
         )
 
     return beta_t
+
+
+@eqx.filter_jit
+def reverse_time_flow(
+    v_theta: Callable,
+    final_samples: jnp.ndarray,
+    final_time: float,
+    ts: jnp.ndarray,
+    use_shortcut: bool = False,
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    # Reverse ts to integrate backward
+    ts_rev = ts[::-1]
+
+    if use_shortcut:
+        batched_v_theta = jax.vmap(v_theta, in_axes=(0, None, None))
+    else:
+        batched_v_theta = jax.vmap(v_theta, in_axes=(0, None))
+
+    def step(carry, t):
+        x_next, log_prob_next, t_next = carry
+
+        dt = t - t_next  # dt is negative for backward integration
+        if use_shortcut:
+            v_t = batched_v_theta(x_next, t, jnp.abs(dt))
+        else:
+            v_t = batched_v_theta(x_next, t)
+        x_prev = x_next + dt * v_t  # Since dt < 0, this moves backward
+
+        # Compute divergence
+        if use_shortcut:
+            div_v_t = jax.vmap(
+                lambda x: divergence_velocity_with_shortcut(v_theta, x, t, jnp.abs(dt))
+            )(x_next)
+        else:
+            div_v_t = jax.vmap(lambda x: divergence_velocity(v_theta, x, t))(x_next)
+        log_prob_prev = log_prob_next + dt * div_v_t  # Accumulate log_prob
+
+        return (x_prev, log_prob_prev, t), None
+
+    # Initialize carry with final samples and zero log-probabilities
+    num_samples = final_samples.shape[0]
+    initial_log_probs = jnp.zeros(num_samples)
+    carry = (final_samples, initial_log_probs, final_time)
+
+    (xs, log_probs, _), _ = jax.lax.scan(step, carry, ts_rev)
+
+    return xs, log_probs
+
+
+@eqx.filter_jit
+def estimate_kl_divergence(
+    v_theta: Callable[[chex.Array, float, float], chex.Array],
+    num_samples: int,
+    key: jax.random.PRNGKey,
+    ts: chex.Array,
+    log_prob_p_fn: Callable[[chex.Array], chex.Array],
+    sample_p_fn: Callable[[jax.random.PRNGKey, int], chex.Array],
+    base_log_prob_fn: Callable[[chex.Array], chex.Array],
+    final_time: float = 1.0,
+    use_shortcut: bool = False,
+) -> chex.Array:
+    # Generate samples from p(x)
+    samples_p = sample_p_fn(key, (num_samples,))
+    log_probs_p = log_prob_p_fn(samples_p)  # Compute log p(x) for these samples
+
+    # Perform reverse-time integration to compute samples and log probabilities under q(x)
+    samples_rev, log_probs_q = reverse_time_flow(
+        v_theta, samples_p, final_time, ts, use_shortcut
+    )
+
+    # Compute log q(x(T)) = log q(x(0)) + accumulated log_probs
+    base_log_probs = base_log_prob_fn(samples_rev)  # Compute log q(x(0))
+    log_q_x = base_log_probs + log_probs_q
+
+    # Compute KL divergence: KL(p || q) = E_p[log p(x) - log q(x)]
+    kl_divergence = jnp.mean(log_probs_p - log_q_x)
+
+    return kl_divergence
+
+
+@jax.jit
+def compute_log_effective_sample_size(
+    log_p: chex.Array, log_q: chex.Array
+) -> chex.Array:
+    """
+    Compute the log Effective Sample Size (log ESS Fraction) given samples from `q` and log-probability functions.
+
+    **Parameters:**
+        samples (Array): Samples from proposal distribution `q`. Shape: (N, ...)
+        log_prob_p_fn (Callable[[Array], Array]): Function to compute log probabilities under `p`.
+        log_prob_q_fn (Callable[[Array], Array]): Function to compute log probabilities under `q`.
+
+    **Returns:**
+        Array: Scalar representing log(ESS / N).
+    """
+    # Ensure shapes match
+    if log_p.shape != log_q.shape:
+        raise ValueError(
+            f"Shape mismatch: log_p has shape {log_p.shape}, log_q has shape {log_q.shape}."
+        )
+
+    n_samples = log_p.shape[0]
+    log_w = log_p - log_q  # Log importance weights
+
+    log_sum_w = jax.scipy.special.logsumexp(log_w)
+    log_sum_w_sq = jax.scipy.special.logsumexp(2.0 * log_w)
+    log_ess_frac = 2.0 * log_sum_w - log_sum_w_sq - jnp.log(n_samples)
+
+    return log_ess_frac
