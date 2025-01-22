@@ -1,3 +1,4 @@
+import os
 import argparse
 import torch
 import numpy as np
@@ -14,6 +15,7 @@ from flow_sampler.models.mlp_models import TimeVelocityField
 from flow_sampler.utils.sampling_utils import time_schedule, generate_samples, generate_samples_with_hmc, generate_samples_with_langevin_dynamics
 from flow_sampler.utils.loss_utils import loss_fn, get_dt_logZt
 from flow_sampler.utils.gradient_varest import GradientVarianceEstimator
+from flow_sampler.utils.evaluate import eval_data_w2, eval_energy_w2, eval_total_variation
 
 def train_velocity_field(
     initial_density,
@@ -41,6 +43,7 @@ def train_velocity_field(
     hidden_dim: int = 128,
     depth: int = 3,
     dt_logZt_estor: str = "mcmc",
+    ckpt_log_path: str = None,
     **kwargs: Any,
 ) -> Any:
     """
@@ -94,7 +97,7 @@ def train_velocity_field(
         },
         name=run_name,
         reinit=True,
-        mode="online",    # online disabled
+        mode="disabled",    # online disabled
     )
 
     # Set up various functions
@@ -193,6 +196,7 @@ def train_velocity_field(
         wandb.log({"var_grad/mean_var": grad_summary['mean_variance']})
 
         if epoch % 50 == 0:
+            # visualise generated samples
             for sample_steps in [4, 8, 16, T]:
                 linear_ts = torch.linspace(0, 1, sample_steps)
                 val_samples = generate_samples(
@@ -205,8 +209,19 @@ def train_velocity_field(
                 )
                 wandb.log({f"samples_T={sample_steps}": wandb.Image(fig)})
 
+            # evaluate metrics
+            test_samples = generate_samples(
+                    v_theta, 1000, linear_ts, sample_initial
+                )[:, -1, :].detach()
+            # data_w2_dist = eval_data_w2(target_density, test_samples)
+            energy_w2_dist = eval_energy_w2(target_density, test_samples)
+
+            # save checkpoint
+            torch.save(v_theta.state_dict(), f"velocity_field_{epoch}.pt")
+
 def run(cfg: DictConfig) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    os.makedirs(cfg.ckpt_log_path, exist_ok=True)
 
     gmm = GMM(
         dim=cfg.target.input_dim, 
@@ -272,7 +287,8 @@ def run(cfg: DictConfig) -> None:
         input_dim=2,
         hidden_dim=128,
         depth=3,
-        dt_logZt_estor=cfg.dt_logZt_estor
+        dt_logZt_estor=cfg.dt_logZt_estor,
+        ckpt_log_path=cfg.ckpt_log_path
     )
 
 @hydra.main(config_path="../configs", config_name="gmm.yaml", version_base=None)

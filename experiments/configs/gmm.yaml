@@ -7,6 +7,7 @@ defaults:
 seed: 80801
 
 dt_logZt_estor: mcmc_velocity  # mcmc or mcmc_velocity
+ckpt_log_path: /home/zo122/DIFFUSION/sampling_project/ebm-training/ckpts/gmm
 
 schedule:
   name: inverse_power  # ["linear", "inverse_tangent", "inverse_power"]
