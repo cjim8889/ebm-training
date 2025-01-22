@@ -132,7 +132,7 @@ class GMM(Target):
 
     def evaluate(self, key, samples, time=None, **kwargs):
         if self.dim == 2:
-            metrics = super().evaluate(key, samples, time)
+            metrics = super().evaluate(key, samples, time=time, **kwargs)
         else:
             metrics = {}
 
