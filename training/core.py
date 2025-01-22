@@ -1,4 +1,4 @@
-from typing import Any, Callable
+from typing import Any, Callable, Dict, List, Tuple
 
 import chex
 import equinox as eqx
@@ -12,14 +12,189 @@ from distributions import AnnealedDistribution, Target
 from utils.distributions import sample_monotonic_uniform_ordered
 from utils.hmc import generate_samples_with_hmc_correction
 from utils.smc import (
-    generate_samples_with_euler_smc,
     generate_samples_with_smc,
-    systematic_resampling,
 )
-from utils.integration import euler_integrate, generate_samples
+from utils.integration import (
+    euler_integrate,
+    generate_samples,
+    generate_samples_with_different_ts,
+)
 from utils.optimization import get_optimizer, inverse_power_schedule, power_schedule
 from .config import TrainingExperimentConfig
-from .loss import loss_fn, estimate_log_Z_t
+from .loss import loss_fn, Particle
+from .normalizing_constant import estimate_log_Z_t
+
+
+def evaluate_model(
+    key: jax.random.PRNGKey,
+    v_theta: Callable,
+    config: TrainingExperimentConfig,
+    path_distribution: AnnealedDistribution,
+    integrator: Callable,
+    target_density: Target,
+    current_end_time: int,
+) -> Dict[str, Any]:
+    """Run a single evaluation pass and return metrics."""
+    total_eval_metrics = {}
+
+    if config.training.use_shortcut:
+        eval_ts = [
+            jnp.linspace(0, 1.0, eval_step)
+            for eval_step in config.training.shortcut_size
+        ]
+        key, subkey = jax.random.split(key)
+        val_samples = generate_samples_with_different_ts(
+            subkey,
+            v_theta,
+            config.sampling.num_particles,
+            eval_ts,
+            path_distribution.sample_initial,
+            integrator,
+            config.density.shift_fn,
+            use_shortcut=config.training.use_shortcut,
+        )
+
+        for i, es in enumerate(config.training.shortcut_size):
+            eval_samples = val_samples[i][-1]
+            key, subkey = jax.random.split(key)
+            if target_density.TIME_DEPENDENT:
+                eval_metrics = target_density.evaluate(
+                    subkey, eval_samples, float(eval_ts[i][-1])
+                )
+            else:
+                eval_metrics = target_density.evaluate(subkey, eval_samples)
+            total_eval_metrics[f"validation_{es}_step"] = eval_metrics
+    else:
+        eval_ts = jnp.linspace(
+            0,
+            current_end_time * 1.0 / config.sampling.num_timesteps,
+            current_end_time,
+        )
+        key, subkey = jax.random.split(key)
+        val_samples = generate_samples(
+            subkey,
+            v_theta,
+            config.sampling.num_particles,
+            eval_ts,
+            path_distribution.sample_initial,
+            integrator,
+            config.density.shift_fn,
+            use_shortcut=config.training.use_shortcut,
+        )
+        eval_samples = val_samples["positions"][-1]
+        key, subkey = jax.random.split(key)
+        if target_density.TIME_DEPENDENT:
+            eval_metrics = target_density.evaluate(
+                subkey, eval_samples, float(eval_ts[-1])
+            )
+        else:
+            eval_metrics = target_density.evaluate(subkey, eval_samples)
+        total_eval_metrics[f"validation_{config.sampling.num_timesteps}_step"] = (
+            eval_metrics
+        )
+
+    return total_eval_metrics
+
+
+def aggregate_eval_metrics(
+    all_eval_results: List[Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
+    """Aggregate metrics across multiple evaluation runs."""
+    aggregated_metrics = {}
+
+    for step_key in all_eval_results[0].keys():
+        step_metrics = [result[step_key] for result in all_eval_results]
+        agg_metrics = {}
+
+        for metric_name in step_metrics[0].keys():
+            if metric_name == "figure":
+                continue  # Handle figures separately
+
+            values = [m[metric_name] for m in step_metrics]
+            agg_metrics[f"{metric_name}_mean"] = jnp.mean(jnp.array(values))
+            agg_metrics[f"{metric_name}_var"] = jnp.var(jnp.array(values))
+
+        # Use figure from last evaluation run
+        agg_metrics["figure"] = step_metrics[-1].get("figure")
+        aggregated_metrics[step_key] = agg_metrics
+
+    return aggregated_metrics
+
+
+def log_metrics(
+    aggregated_metrics: Dict[str, Dict[str, Any]], config: TrainingExperimentConfig
+):
+    """Handle metric logging to appropriate destinations."""
+    if not config.offline:
+        for step_key, metrics in aggregated_metrics.items():
+            figure = metrics.pop("figure", None)
+            prefixed_metrics = {f"{step_key}/{k}": v for k, v in metrics.items()}
+            if figure is not None:
+                prefixed_metrics[f"{step_key}/figure"] = wandb.Image(figure)
+            wandb.log(prefixed_metrics)
+            plt.close(figure)
+    else:
+        for step_key, metrics in aggregated_metrics.items():
+            figure = metrics.pop("figure", None)
+            print(f"Evaluation results for {step_key}:")
+            for metric_name, value in metrics.items():
+                print(f"{metric_name}: {value}")
+            if figure is not None:
+                plt.show()
+                plt.close(figure)
+
+
+def save_model_if_best(
+    v_theta: Any,
+    aggregated_metrics: Dict[str, Dict[str, Any]],
+    best_w2_distances: List[Tuple[float, int]],
+    model_version: int,
+) -> Tuple[List[Tuple[float, int]], int]:
+    """Save model if it improves upon previous best metrics."""
+    if not wandb.run:
+        return best_w2_distances, model_version
+
+    largest_step_key = max(aggregated_metrics.keys())
+    largest_step_metrics = aggregated_metrics[largest_step_key]
+    current_w2 = largest_step_metrics.get("w2_distance_mean", None)
+
+    if current_w2 is None:
+        return best_w2_distances, model_version
+
+    should_save = False
+    if len(best_w2_distances) < 3:
+        should_save = True
+    elif current_w2 < max(w2 for w2, _ in best_w2_distances):
+        should_save = True
+
+    if should_save:
+        model_version += 1
+        model_name = f"velocity_field_model_{wandb.run.id}"
+        model_path = f"{model_name}_v{model_version}_w2_{current_w2:.4f}.eqx"
+
+        eqx.tree_serialise_leaves(model_path, v_theta)
+        artifact = wandb.Artifact(
+            name=model_name,
+            type="model",
+            metadata={
+                "w2_distance": current_w2,
+                "version": model_version,
+            },
+        )
+        artifact.add_file(local_path=model_path, name="model.eqx")
+
+        best_w2_distances.append((current_w2, model_version))
+        best_w2_distances.sort()
+        if len(best_w2_distances) > 3:
+            best_w2_distances.pop()
+
+        rank = len([w2 for w2, _ in best_w2_distances if w2 <= current_w2])
+        aliases = [f"top{rank}"] if rank <= 3 else []
+        if rank == 1:
+            aliases.append("best")
+        wandb.log_artifact(artifact, aliases=aliases)
+
+    return best_w2_distances, model_version
 
 
 def train_velocity_field(
@@ -29,21 +204,9 @@ def train_velocity_field(
     v_theta: Callable[[chex.Array, float], chex.Array],
     config: TrainingExperimentConfig,
 ) -> Any:
-    """Train a velocity field using either standard or decoupled loss function.
-
-    Args:
-        key: Random key for JAX operations
-        initial_density: Initial density distribution
-        target_density: Target density distribution
-        v_theta: Velocity field function
-        config: Training configuration
-
-    Returns:
-        Trained velocity field function
-    """
-    # Track best models and their W2 distances
-    best_w2_distances = []  # List of tuples (w2_distance, run_id)
-    model_version = 0  # Track model versions
+    """Train a velocity field using either standard or decoupled loss function."""
+    best_w2_distances = []
+    model_version = 0
 
     path_distribution = AnnealedDistribution(
         initial_density=initial_density,
@@ -51,13 +214,27 @@ def train_velocity_field(
         method=config.density.annealing_path,
     )
 
-    # Initialize current end time
-    if config.progressive.enable:
-        current_end_time = config.progressive.initial_timesteps
-    else:
-        current_end_time = config.sampling.num_timesteps
+    current_end_time = config.sampling.num_timesteps
 
-    # Set up optimizer
+    # Set up base time steps
+    if config.integration.schedule == "linear":
+        base_ts = jnp.linspace(0, 1.0, current_end_time)
+    elif config.integration.schedule == "inverse_power":
+        base_ts = inverse_power_schedule(
+            current_end_time,
+            end_time=1.0,
+            gamma=0.5,
+        )
+    elif config.integration.schedule == "power":
+        base_ts = power_schedule(
+            current_end_time,
+            end_time=1.0,
+            gamma=0.25,
+        )
+    else:
+        raise ValueError(f"Unknown schedule {config.integration.schedule}")
+
+    # Optimizer setup
     if config.training.gradient_clip_norm is not None:
         gradient_clipping = optax.clip_by_global_norm(
             config.training.gradient_clip_norm
@@ -91,14 +268,12 @@ def train_velocity_field(
             path_distribution.sample_initial,
             integrator,
             config.density.shift_fn,
-            use_shortcut=False,
+            use_shortcut=config.training.use_shortcut,
         )
-
         if force_finite:
             samples["positions"] = jnp.nan_to_num(
                 samples["positions"], nan=0.0, posinf=1.0, neginf=-1.0
             )
-
         return samples
 
     def _generate_mcmc(
@@ -118,22 +293,7 @@ def train_velocity_field(
                 eta=config.mcmc.step_size,
                 rejection_sampling=config.mcmc.with_rejection,
                 shift_fn=config.density.shift_fn,
-                use_shortcut=False,
-            )
-        elif config.mcmc.method == "esmc":
-            samples = generate_samples_with_euler_smc(
-                key=key,
-                v_theta=v_theta,
-                time_dependent_log_density=path_distribution.time_dependent_log_prob,
-                num_samples=config.sampling.num_particles,
-                ts=ts,
-                sample_fn=path_distribution.sample_initial,
-                num_steps=config.mcmc.num_steps,
-                integration_steps=config.mcmc.num_integration_steps,
-                eta=config.mcmc.step_size,
-                rejection_sampling=config.mcmc.with_rejection,
-                shift_fn=config.density.shift_fn,
-                use_shortcut=False,
+                use_shortcut=config.training.use_shortcut,
             )
         elif config.mcmc.method == "smc":
             samples = generate_samples_with_smc(
@@ -149,89 +309,41 @@ def train_velocity_field(
                 shift_fn=config.density.shift_fn,
                 estimate_covariance=False,
                 blackjax_hmc=True,
-            )
-        elif config.mcmc.method == "vsmc":
-            samples = generate_samples_with_smc(
-                key=key,
-                time_dependent_log_density=path_distribution.time_dependent_log_prob,
-                num_samples=config.sampling.num_particles,
-                ts=ts,
-                sample_fn=path_distribution.sample_initial,
-                num_steps=config.mcmc.num_steps,
-                integration_steps=config.mcmc.num_integration_steps,
-                eta=config.mcmc.step_size,
-                rejection_sampling=config.mcmc.with_rejection,
-                shift_fn=config.density.shift_fn,
-                v_theta=v_theta,
-                estimate_covariance=False,
-                blackjax_hmc=True,
+                use_shortcut=config.training.use_shortcut,
             )
         else:
             samples = _generate(key, ts, force_finite)
 
         if force_finite:
-            if isinstance(samples, dict):
-                samples["positions"] = jnp.nan_to_num(
-                    samples["positions"], nan=0.0, posinf=1.0, neginf=-1.0
-                )
-            else:
-                samples = jnp.nan_to_num(samples, nan=0.0, posinf=1.0, neginf=-1.0)
-
+            samples["positions"] = jnp.nan_to_num(
+                samples["positions"], nan=0.0, posinf=1.0, neginf=-1.0
+            )
         return samples
 
     @eqx.filter_jit
-    def step(v_theta, opt_state, xs, ts, log_Z_t=None):
+    def step(v_theta, opt_state, particles):
         loss, grads = eqx.filter_value_and_grad(loss_fn)(
             v_theta,
-            xs,
-            ts,
-            time_derivative_log_density=path_distribution.time_derivative,
-            score_fn=path_distribution.score_fn,
-            dt_log_density_clip=config.integration.dt_clip,
-            log_Z_t=log_Z_t,
+            particles,
+            path_distribution.time_derivative,
+            path_distribution.score_fn,
+            config.density.shift_fn,
         )
-
         updates, opt_state = optimizer.update(grads, opt_state, v_theta)
         v_theta = eqx.apply_updates(v_theta, updates)
-
         return v_theta, opt_state, loss
 
+    shortcut_size_d = 1.0 / jnp.array(config.training.shortcut_size)
+
     for epoch in range(config.training.num_epochs):
-        # Update end time if needed
-        if epoch % config.progressive.update_frequency == 0:
-            if (
-                config.progressive.enable
-                and current_end_time < config.sampling.num_timesteps
-                and epoch != 0
-            ):
-                current_end_time += config.progressive.timestep_increment
-                current_end_time = min(current_end_time, config.sampling.num_timesteps)
+        # Handle time steps for this epoch
+        if config.integration.continuous_time:
+            key, subkey = jax.random.split(key)
+            current_ts = sample_monotonic_uniform_ordered(subkey, base_ts, True)
+        else:
+            current_ts = base_ts
 
-            # Update time steps based on new end time
-            if config.integration.schedule == "linear":
-                current_ts = jnp.linspace(
-                    0,
-                    current_end_time * 1.0 / config.sampling.num_timesteps,
-                    current_end_time,
-                )
-            elif config.integration.schedule == "inverse_power":
-                current_ts = inverse_power_schedule(
-                    current_end_time,
-                    end_time=current_end_time * 1.0 / config.sampling.num_timesteps,
-                    gamma=0.5,
-                )
-            elif config.integration.schedule == "power":
-                current_ts = power_schedule(
-                    current_end_time,
-                    end_time=current_end_time * 1.0 / config.sampling.num_timesteps,
-                    gamma=0.25,
-                )
-
-            if config.integration.continuous_time:
-                key, subkey = jax.random.split(key)
-                current_ts = sample_monotonic_uniform_ordered(subkey, current_ts, True)
-
-        # Generate samples based on training mode
+        # Sample generation
         if config.training.use_decoupled_loss:
             key, subkey = jax.random.split(key)
             mcmc_samples = _generate_mcmc(subkey, current_ts, force_finite=True)
@@ -244,9 +356,9 @@ def train_velocity_field(
                 v_theta=v_theta,
                 score_fn=path_distribution.score_fn,
                 use_control_variate=config.mcmc.use_control_variate,
+                use_shortcut=config.training.use_shortcut,
             )
             log_Z_t = jax.lax.stop_gradient(log_Z_t)
-
             if not config.offline:
                 log_Z_t = jnp.nan_to_num(log_Z_t, nan=0.0, posinf=1.0, neginf=-1.0)
                 wandb.log({"log_Z_t": log_Z_t})
@@ -260,17 +372,6 @@ def train_velocity_field(
 
             key, subkey = jax.random.split(key)
             v_theta_samples = _generate(subkey, current_ts, force_finite=True)
-
-            # resampling_keys = jax.random.split(subkey, current_ts.shape[0])
-            # good_samples_indices = systematic_resampling(
-            #     resampling_keys,
-            #     mcmc_samples["weights"],
-            #     config.sampling.num_particles // 2,
-            # )
-            # good_samples = jax.vmap(lambda x, i: x[i])(
-            #     mcmc_samples["positions"], good_samples_indices
-            # )
-
             samples = jnp.concatenate(
                 [mcmc_samples["positions"], v_theta_samples["positions"]], axis=1
             )
@@ -282,35 +383,40 @@ def train_velocity_field(
             log_Z_t = None
 
         epoch_loss = 0.0
+        key, subkey = jax.random.split(key)
+        num_particles = (
+            config.sampling.num_particles * 2
+            if config.training.use_decoupled_loss
+            else config.sampling.num_particles
+        )
+        particles = Particle(
+            x=samples.reshape(num_particles * current_ts.shape[0], -1),
+            t=jnp.repeat(current_ts, num_particles),
+            log_Z_t=jnp.repeat(log_Z_t, num_particles),
+            d=jax.random.choice(
+                subkey,
+                shortcut_size_d,
+                (num_particles * current_ts.shape[0],),
+                replace=True,
+            )
+            if config.training.use_shortcut
+            else None,
+        )
 
         for s in range(config.training.steps_per_epoch):
-            # Subsample particles
             key, subkey = jax.random.split(key)
-            samps = jax.random.choice(
-                subkey, samples, (config.sampling.batch_size,), replace=False, axis=1
-            )
-
-            # Subsample time points
-            key, subkey = jax.random.split(key)
-            time_indices = jax.random.choice(
+            indices = jax.random.choice(
                 subkey,
-                jnp.arange(current_ts.shape[0]),
-                (config.training.time_batch_size,),
-                replace=False,
+                particles.x.shape[0],
+                (config.training.time_batch_size * config.sampling.batch_size,),
             )
-            time_indices = jnp.sort(time_indices)  # Keep time points ordered
-            batch_ts = current_ts[time_indices]
-            batch_samples = samps[time_indices]
-
-            if log_Z_t is not None:
-                batch_log_Z_t = log_Z_t[time_indices]
-            else:
-                batch_log_Z_t = None
-
-            v_theta, opt_state, loss = step(
-                v_theta, opt_state, batch_samples, batch_ts, batch_log_Z_t
+            training_particles = Particle(
+                x=particles.x[indices],
+                t=particles.t[indices],
+                log_Z_t=particles.log_Z_t[indices],
+                d=particles.d[indices] if particles.d is not None else None,
             )
-
+            v_theta, opt_state, loss = step(v_theta, opt_state, training_particles)
             epoch_loss += loss
             if s % 20 == 0:
                 if not config.offline:
@@ -320,107 +426,35 @@ def train_velocity_field(
 
         avg_loss = epoch_loss / config.training.steps_per_epoch
         if not config.offline:
-            wandb.log(
-                {"epoch": epoch, "average_loss": avg_loss, "end_time": current_end_time}
-            )
+            wandb.log({"epoch": epoch, "average_loss": avg_loss})
         else:
-            print(
-                f"Epoch {epoch}, Average Loss: {avg_loss} Current End Time: {current_end_time}"
-            )
+            print(f"Epoch {epoch}, Average Loss: {avg_loss}")
 
         if epoch % config.training.eval_frequency == 0:
-            eval_ts = jnp.linspace(
-                0,
-                current_end_time * 1.0 / config.sampling.num_timesteps,
-                current_end_time,
-            )
-            key, subkey = jax.random.split(key)
-            val_samples = generate_samples(
-                subkey,
-                v_theta,
-                config.sampling.num_particles,
-                eval_ts,
-                path_distribution.sample_initial,
-                integrator,
-                config.density.shift_fn,
-                use_shortcut=False,
-            )
-
-            # Evaluate samples using target density
-            key, subkey = jax.random.split(key)
-            eval_samples = jax.random.choice(
-                subkey,
-                val_samples["positions"][-1],
-                (config.sampling.num_particles,),
-                replace=False,
-            )
-
-            key, subkey = jax.random.split(key)
-            if target_density.TIME_DEPENDENT:
-                eval_metrics = target_density.evaluate(
-                    subkey, eval_samples, float(eval_ts[-1])
+            # Run multiple evaluations
+            all_eval_results = []
+            for _ in range(3):
+                key, subkey = jax.random.split(key)
+                eval_metrics = evaluate_model(
+                    subkey,
+                    v_theta,
+                    config,
+                    path_distribution,
+                    euler_integrate,
+                    target_density,
+                    current_end_time,
                 )
-            else:
-                eval_metrics = target_density.evaluate(subkey, eval_samples)
+                all_eval_results.append(eval_metrics)
 
-            figure = eval_metrics.pop("figure")
-            # Log metrics to wandb
+            # Process and log metrics
+            aggregated_metrics = aggregate_eval_metrics(all_eval_results)
+            log_metrics(aggregated_metrics, config)
+
+            # Handle model saving
             if not config.offline:
-                eval_metrics["figure"] = wandb.Image(figure)
-                wandb.log(eval_metrics)
-
-                # Only save model if W2 distance improves and is among top 3
-                if "w2_distance" in eval_metrics:
-                    current_w2 = eval_metrics["w2_distance"]
-
-                    # Check if this model is better than any existing ones
-                    should_save = False
-                    if len(best_w2_distances) < 3:
-                        should_save = True
-                    elif current_w2 < max(w2 for w2, _ in best_w2_distances):
-                        should_save = True
-
-                    if should_save:
-                        model_version += 1
-                        model_name = f"velocity_field_model_{wandb.run.id}"
-                        model_path = (
-                            f"{model_name}_v{model_version}_w2_{current_w2:.4f}.eqx"
-                        )
-
-                        eqx.tree_serialise_leaves(model_path, v_theta)
-                        artifact = wandb.Artifact(
-                            name=model_name,
-                            type="model",
-                            metadata={
-                                "w2_distance": current_w2,
-                                "version": model_version,
-                            },
-                        )
-                        artifact.add_file(local_path=model_path, name="model.eqx")
-
-                        # Update best_w2_distances
-                        best_w2_distances.append((current_w2, model_version))
-                        best_w2_distances.sort()  # Sort by W2 distance (ascending)
-                        if len(best_w2_distances) > 3:
-                            best_w2_distances.pop()  # Remove worst model from tracking
-
-                        # Create aliases for the top 3 models
-                        rank = len(
-                            [w2 for w2, _ in best_w2_distances if w2 <= current_w2]
-                        )
-                        if rank <= 3:  # If it's in top 3
-                            aliases = [f"top{rank}"]
-                            if rank == 1:  # If it's the best model
-                                aliases.append("best")
-                            wandb.log_artifact(artifact, aliases=aliases)
-                        else:
-                            wandb.log_artifact(
-                                artifact
-                            )  # Log without alias, will be cleaned up
-            else:
-                plt.show()
-
-            plt.close(figure)
+                best_w2_distances, model_version = save_model_if_best(
+                    v_theta, aggregated_metrics, best_w2_distances, model_version
+                )
 
     # Save final model state
     if not config.offline and len(best_w2_distances) > 0:

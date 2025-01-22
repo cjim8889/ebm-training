@@ -66,7 +66,9 @@ class TimeVelocityField(eqx.Module):
         if self.shortcut:
             assert len(input) == 3
             xs, t, d = input
-            x_concat = jnp.concatenate([xs, jnp.array([t, d])], axis=-1)
+            x_concat = jnp.concatenate(
+                [xs, jnp.array([t]), jnp.expand_dims(d, -1)], axis=-1
+            )
         else:
             assert len(input) == 2
             xs, t = input
