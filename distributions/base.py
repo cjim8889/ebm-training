@@ -56,7 +56,10 @@ class Target:
         raise NotImplementedError
 
     def evaluate(
-        self, key: chex.PRNGKey, samples: chex.Array, time: Optional[float] = None
+        self,
+        key: chex.PRNGKey,
+        samples: chex.Array,
+        **kwargs,
     ) -> dict:
         """Evaluate samples and return metrics and figures.
 
@@ -67,14 +70,14 @@ class Target:
         Returns:
             Dictionary containing evaluation metrics and figures
         """
-        if self.TIME_DEPENDENT and time is None:
+        if self.TIME_DEPENDENT and "time" not in kwargs:
             raise ValueError("Time must be provided for time-dependent distributions")
 
         metrics = {}
 
         # Generate visualization
         if self.TIME_DEPENDENT:
-            fig = self.visualise_with_time(samples, time)
+            fig = self.visualise_with_time(samples, kwargs["time"])
         else:
             fig = self.visualise(samples)
 
