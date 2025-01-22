@@ -99,23 +99,49 @@ def evaluate_model(
 def aggregate_eval_metrics(
     all_eval_results: List[Dict[str, Any]],
 ) -> Dict[str, Dict[str, Any]]:
-    """Aggregate metrics across multiple evaluation runs."""
+    """Aggregate metrics across multiple evaluation runs with proper figure cleanup."""
     aggregated_metrics = {}
 
     for step_key in all_eval_results[0].keys():
         step_metrics = [result[step_key] for result in all_eval_results]
         agg_metrics = {}
+        figures = []
 
-        for metric_name in step_metrics[0].keys():
-            if metric_name == "figure":
-                continue  # Handle figures separately
+        # Collect metrics and figures from all runs
+        for run_idx, metrics in enumerate(step_metrics):
+            # Collect figures for later cleanup
+            if "figure" in metrics:
+                figures.append(metrics["figure"])
 
-            values = [m[metric_name] for m in step_metrics]
-            agg_metrics[f"{metric_name}_mean"] = jnp.mean(jnp.array(values))
-            agg_metrics[f"{metric_name}_var"] = jnp.var(jnp.array(values))
+            # Process numerical metrics
+            for metric_name in metrics.keys():
+                if metric_name == "figure":
+                    continue
 
-        # Use figure from last evaluation run
-        agg_metrics["figure"] = step_metrics[-1].get("figure")
+                # Initialize storage if first run
+                if run_idx == 0:
+                    agg_metrics[f"{metric_name}_mean"] = []
+                    agg_metrics[f"{metric_name}_var"] = []
+
+                # Collect values
+                agg_metrics[f"{metric_name}_mean"].append(metrics[metric_name])
+
+        # Close all but last figure
+        for fig in figures[:-1]:
+            plt.close(fig)
+
+        # Add last figure to metrics if exists
+        if figures:
+            agg_metrics["figure"] = figures[-1]
+
+        # Calculate final mean/var for numerical metrics
+        for metric_name in list(agg_metrics.keys()):
+            if "_mean" in metric_name:
+                base_name = metric_name.replace("_mean", "")
+                values = jnp.array(agg_metrics.pop(metric_name))
+                agg_metrics[f"{base_name}_mean"] = jnp.mean(values)
+                agg_metrics[f"{base_name}_var"] = jnp.var(values)
+
         aggregated_metrics[step_key] = agg_metrics
 
     return aggregated_metrics
