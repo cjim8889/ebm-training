@@ -67,6 +67,15 @@ def main():
         help="Whether to use control variate",
     )
     parser.add_argument(
+        "--use-shortcut", action="store_true", help="Whether to use shortcut"
+    )
+    parser.add_argument(
+        "--shortcut-size",
+        type=int,
+        nargs="+",
+        default=[16, 32, 64, 128],
+    )
+    parser.add_argument(
         "--time-batch-size",
         type=int,
         default=32,
@@ -242,6 +251,8 @@ def main():
         nesterov=args.nesterov,
         noise_scale=args.noise_scale,
         time_batch_size=args.time_batch_size,
+        use_shortcut=args.use_shortcut,
+        shortcut_size=args.shortcut_size,
     )
 
     mcmc_config = MCMCConfig(
@@ -554,6 +565,7 @@ def main():
             input_dim=config.density.input_dim,
             hidden_dim=config.model.hidden_dim,
             depth=config.model.num_layers,
+            shortcut=config.training.use_shortcut,
         )
     elif config.model.architecture == "pdn":
         v_theta = TimeVelocityFieldWithPairwiseFeature(
