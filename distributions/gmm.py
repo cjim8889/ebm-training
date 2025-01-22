@@ -156,18 +156,19 @@ class GMM(Target):
             log_prob_true_samples,
         )
 
-        total_variation = compute_total_variation_distance(
-            samples,
-            true_samples,
-            num_bins=200,
-            lower_bound=-self._plot_bound,
-            upper_bound=self._plot_bound,
-        )
+        if self.dim == 2:
+            total_variation = compute_total_variation_distance(
+                samples,
+                true_samples,
+                num_bins=200,
+                lower_bound=-self._plot_bound,
+                upper_bound=self._plot_bound,
+            )
+            metrics["total_variation"] = total_variation
 
         metrics["w2_distance"] = x_w2_distance
         metrics["w1_distance"] = x_w1_distance
         metrics["e_w2_distance"] = e_w2_distance
         metrics["e_w1_distance"] = e_w1_distance
-        metrics["total_variation"] = total_variation
 
         return metrics
