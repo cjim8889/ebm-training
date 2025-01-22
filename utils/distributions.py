@@ -263,7 +263,7 @@ def reverse_time_flow(
             )(x_next)
         else:
             div_v_t = jax.vmap(lambda x: divergence_velocity(v_theta, x, t))(x_next)
-        log_prob_prev = log_prob_next + dt * div_v_t  # Accumulate log_prob
+        log_prob_prev = log_prob_next - dt * div_v_t  # Accumulate log_prob
 
         return (x_prev, log_prob_prev, t), None
 
