@@ -100,45 +100,42 @@ def generate_samples_with_different_ts(
 
 
 @eqx.filter_jit
-def reverse_time_flow(
+def generate_samples_with_log_prob(
     v_theta: Callable,
-    final_samples: jnp.ndarray,
-    final_time: float,
+    initial_samples: jnp.ndarray,
+    initial_log_probs: jnp.ndarray,
     ts: jnp.ndarray,
     use_shortcut: bool = False,
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-    # Reverse ts to integrate backward
-    ts_rev = ts[::-1]
+    if use_shortcut:
+        batched_v_theta = jax.vmap(v_theta, in_axes=(0, None, None))
+    else:
+        batched_v_theta = jax.vmap(v_theta, in_axes=(0, None))
 
     def step(carry, t):
-        x_next, log_prob_next, t_next = carry
+        x_prev, log_prob_prev, t_prev = carry
 
-        dt = t - t_next  # dt is negative for backward integration
-
+        dt = t - t_prev
         if use_shortcut:
-            v_t = jax.vmap(lambda x: v_theta(x, t, jnp.abs(dt)))(x_next)
+            v_t = batched_v_theta(x_prev, t, dt)
         else:
-            v_t = jax.vmap(lambda x: v_theta(x, t))(x_next)
+            v_t = batched_v_theta(x_prev, t)
 
-        x_prev = x_next + dt * v_t  # Since dt < 0, this moves backward
+        x_next = x_prev + dt * v_t
 
         # Compute divergence
         if use_shortcut:
             div_v_t = jax.vmap(
                 lambda x: divergence_velocity_with_shortcut(v_theta, x, t, jnp.abs(dt))
-            )(x_next)
+            )(x_prev)
         else:
-            div_v_t = jax.vmap(lambda x: divergence_velocity(v_theta, x, t))(x_next)
+            div_v_t = jax.vmap(lambda x: divergence_velocity(v_theta, x, t))(x_prev)
+        log_prob_next = log_prob_prev - dt * div_v_t
 
-        log_prob_prev = log_prob_next + dt * div_v_t  # Accumulate log_prob
+        return (x_next, log_prob_next, t), None
 
-        return (x_prev, log_prob_prev, t), None
+    # Initialize carry with initial samples and their log-probabilities
+    carry = (initial_samples, initial_log_probs, 0.0)
+    (samples, log_probs, _), _ = jax.lax.scan(step, carry, ts)
 
-    # Initialize carry with final samples and zero log-probabilities
-    num_samples = final_samples.shape[0]
-    initial_log_probs = jnp.zeros(num_samples)
-    carry = (final_samples, initial_log_probs, final_time)
-
-    (xs, log_probs, _), _ = jax.lax.scan(step, carry, ts_rev)
-
-    return xs, log_probs
+    return samples, log_probs

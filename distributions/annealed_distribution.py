@@ -28,11 +28,14 @@ class AnnealedDistribution(Target):
     def log_prob(self, xs: chex.Array) -> chex.Array:
         return self.time_dependent_log_prob(xs, 1.0)
 
+    def base_log_prob(self, xs: chex.Array) -> chex.Array:
+        return self.initial_density.log_prob(xs)
+
     def time_dependent_log_prob(self, xs: chex.Array, t: chex.Array) -> chex.Array:
         if self.method == "linear":
             beta = t
         else:
-            beta = get_inverse_temperature(t, 250., 1.0)
+            beta = get_inverse_temperature(t, 250.0, 1.0)
 
         initial_prob = (1 - beta) * self.initial_density.log_prob(xs)
 
