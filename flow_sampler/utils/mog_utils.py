@@ -13,6 +13,7 @@ class GMM(torch.nn.Module):
         self.n_mixes = n_mixes
         self.dim = dim
         self.n_test_set_samples = n_test_set_samples
+        self.dimensionality = 2
 
         mean = (torch.rand((n_mixes, dim), ) - 0.5)*2 * loc_scaling
         log_var = torch.ones((n_mixes, dim)) * log_var_scaling

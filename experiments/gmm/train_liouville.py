@@ -15,7 +15,7 @@ from flow_sampler.models.mlp_models import TimeVelocityField
 from flow_sampler.utils.sampling_utils import time_schedule, generate_samples, generate_samples_with_hmc, generate_samples_with_langevin_dynamics
 from flow_sampler.utils.loss_utils import loss_fn, get_dt_logZt
 from flow_sampler.utils.gradient_varest import GradientVarianceEstimator
-from flow_sampler.utils.evaluate import eval_data_w2, eval_energy_w2, eval_total_variation
+from flow_sampler.utils.evaluate import eval_data_w2, eval_energy_w2, eval_data_total_variation
 
 def train_velocity_field(
     initial_density,
@@ -97,7 +97,7 @@ def train_velocity_field(
         },
         name=run_name,
         reinit=True,
-        mode="disabled",    # online disabled
+        mode="online",    # online disabled
     )
 
     # Set up various functions
@@ -195,6 +195,20 @@ def train_velocity_field(
         grad_summary = variance_estimator.get_summary()
         wandb.log({"var_grad/mean_var": grad_summary['mean_variance']})
 
+        # evaluate metrics
+        linear_ts = torch.linspace(0, 1, 128)
+        test_samples = generate_samples(
+                v_theta, 1000, linear_ts, sample_initial
+            )[:, -1, :].detach()
+        data_w2_dist = eval_data_w2(target_density, test_samples)
+        energy_w2_dist = eval_energy_w2(target_density, test_samples)
+        tv = eval_data_total_variation(target_density, test_samples)
+        wandb.log({
+            "metrics/data_w2": data_w2_dist,
+            "metrics/energy_w2": energy_w2_dist,
+            "metrics/total_variation": tv,
+        })
+
         if epoch % 50 == 0:
             # visualise generated samples
             for sample_steps in [4, 8, 16, T]:
@@ -208,13 +222,6 @@ def train_velocity_field(
                     samples=val_samples, 
                 )
                 wandb.log({f"samples_T={sample_steps}": wandb.Image(fig)})
-
-            # evaluate metrics
-            test_samples = generate_samples(
-                    v_theta, 1000, linear_ts, sample_initial
-                )[:, -1, :].detach()
-            # data_w2_dist = eval_data_w2(target_density, test_samples)
-            energy_w2_dist = eval_energy_w2(target_density, test_samples)
 
             # save checkpoint
             torch.save(v_theta.state_dict(), f"velocity_field_{epoch}.pt")
