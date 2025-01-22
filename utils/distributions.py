@@ -316,9 +316,7 @@ def compute_log_effective_sample_size(
     Compute the log Effective Sample Size (log ESS Fraction) given samples from `q` and log-probability functions.
 
     **Parameters:**
-        samples (Array): Samples from proposal distribution `q`. Shape: (N, ...)
-        log_prob_p_fn (Callable[[Array], Array]): Function to compute log probabilities under `p`.
-        log_prob_q_fn (Callable[[Array], Array]): Function to compute log probabilities under `q`.
+
 
     **Returns:**
         Array: Scalar representing log(ESS / N).

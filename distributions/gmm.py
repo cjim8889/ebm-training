@@ -191,7 +191,7 @@ class GMM(Target):
 
         key, log_ess_key = jax.random.split(key)
         initial_samples = self.sample(log_ess_key, (samples.shape[0],))
-        initial_log_probs = self.log_prob(initial_samples)
+        initial_log_probs = kwargs["base_log_prob_fn"](initial_samples)
         samples_q, log_q_samples_q = generate_samples_with_log_prob(
             v_theta=kwargs["v_theta"],
             initial_samples=initial_samples,
