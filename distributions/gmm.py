@@ -127,7 +127,10 @@ class GMM(Target):
         return fig
 
     def evaluate(self, key, samples, time=None):
-        metrics = super().evaluate(key, samples, time)
+        if self.dim == 2:
+            metrics = super().evaluate(key, samples, time)
+        else:
+            metrics = {}
 
         if samples.shape[0] > self.n_model_samples_eval:
             samples = samples[: self.n_model_samples_eval]

@@ -170,6 +170,7 @@ def main():
         default="gmm",
         choices=[
             "gmm",
+            "gmm10",
             "mw32",
             "dw4",
             "lj13",
@@ -291,6 +292,10 @@ def main():
         input_dim = 2
         n_particles = None
         n_spatial_dim = None
+    elif args.target == "gmm10":
+        input_dim = 10
+        n_particles = None
+        n_spatial_dim = None
     elif args.target == "mw32":
         input_dim = 32
         n_particles = None
@@ -352,6 +357,13 @@ def main():
             sigma=config.density.initial_sigma,
         )
         target_density = GMM(subkey, dim=config.density.input_dim)
+    elif config.density.target_type == "gmm10":
+        target_density = GMM(subkey, dim=config.density.input_dim, fixed_mean=False)
+        initial_density = MultivariateGaussian(
+            mean=jnp.zeros(config.density.input_dim),
+            dim=config.density.input_dim,
+            sigma=config.density.initial_sigma,
+        )
     elif config.density.target_type == "mw32":
         initial_density = MultivariateGaussian(
             mean=jnp.zeros(config.density.input_dim),

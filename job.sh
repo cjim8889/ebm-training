@@ -35,5 +35,6 @@ CUDA_VISIBLE_DEVICES=0 uv run main.py  --num-samples 5120 \
   --optimizer adamw \
   --weight-decay 1e-04 \
   --time-batch-size 64
+  
 # Deactivate the virtual environment
 deactivate
