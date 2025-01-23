@@ -9,7 +9,8 @@ from utils.distributions import (
     compute_w2_distance_1d_pot,
     compute_w1_distance_1d_pot,
     compute_wasserstein_distance_pot,
-    estimate_kl_divergence_and_ess,
+    estimate_kl_divergence,
+    compute_log_effective_sample_size,
 )
 
 from utils.integration import generate_samples_with_log_prob
@@ -176,7 +177,7 @@ class GMM(Target):
 
         # KL divergence and log ESS
         key, kl_key = jax.random.split(key)
-        kl_divergence, ess = estimate_kl_divergence_and_ess(
+        kl_divergence = estimate_kl_divergence(
             v_theta=kwargs["v_theta"],
             num_samples=samples.shape[0],
             key=kl_key,
@@ -189,27 +190,22 @@ class GMM(Target):
         )
 
         metrics["kl_divergence"] = kl_divergence
+
+        key, sample_key = jax.random.split(key)
+        initial_samples = kwargs["base_sample_fn"](
+            sample_key, (samples.shape[0],)
+        )  # Sample from base distribution q_0
+        initial_log_probs = kwargs["base_log_prob_fn"](initial_samples)
+
+        samples_q, samples_log_q = generate_samples_with_log_prob(
+            v_theta=kwargs["v_theta"],
+            initial_samples=initial_samples,
+            initial_log_probs=initial_log_probs,
+            ts=kwargs["ts"],
+            use_shortcut=kwargs["use_shortcut"],
+        )
+
+        ess = compute_log_effective_sample_size(self.log_prob(samples_q), samples_log_q)
         metrics["ess"] = ess
-
-        # key, log_ess_key = jax.random.split(key)
-        # initial_samples = self.sample(log_ess_key, (samples.shape[0],))
-        # initial_log_probs = kwargs["base_log_prob_fn"](initial_samples)
-        # samples_q, log_q_samples_q = generate_samples_with_log_prob(
-        #     v_theta=kwargs["v_theta"],
-        #     initial_samples=initial_samples,
-        #     initial_log_probs=initial_log_probs,
-        #     ts=kwargs["ts"],
-        #     use_shortcut=kwargs["use_shortcut"],
-        # )
-
-        # ess = jnp.exp(
-        #     compute_log_effective_sample_size(
-        #         log_p=self.log_prob(samples_q),
-        #         log_q=log_q_samples_q,
-        #     )
-        # )
-
-        # metrics["kl_divergence"] = kl_divergence
-        # metrics["ess"] = ess
 
         return metrics
