@@ -26,6 +26,7 @@ class EGNNLayer(eqx.Module):
     seg_count_senders: jnp.ndarray
     n_node: int
     shortcut: bool  # New: Conditionally include step size 'd'
+    pos_clip: float
 
     def __init__(
         self,
@@ -37,12 +38,14 @@ class EGNNLayer(eqx.Module):
         dt: float = 0.001,
         eps: float = 1e-8,
         shortcut: bool = False,  # New parameter
+        pos_clip: float = 2.0,
     ):
         self.dt = dt
         self.n_node = n_node
         self.normalize = normalize
         self.eps = eps
         self.shortcut = shortcut  # Store shortcut flag
+        self.pos_clip = pos_clip
 
         # Precompute graph structure
         self.senders, self.receivers = get_fully_connected_senders_receivers(n_node)
@@ -87,6 +90,8 @@ class EGNNLayer(eqx.Module):
 
         # Process all edges in single batch
         edge_scalars = jax.vmap(self.pos_mlp)(edge_features).squeeze(-1)
+        edge_scalars = jnp.clip(edge_scalars, -self.pos_clip, self.pos_clip)
+
         trans = coord_diff * edge_scalars[:, None]
         seg_sum = jax.ops.segment_sum(trans, self.senders, self.n_node)
         return seg_sum / self.seg_count_senders[:, None]
