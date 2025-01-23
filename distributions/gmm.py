@@ -9,7 +9,6 @@ from utils.distributions import (
     compute_w2_distance_1d_pot,
     compute_w1_distance_1d_pot,
     compute_wasserstein_distance_pot,
-    compute_log_effective_sampe_size,
     estimate_kl_divergence_and_ess,
 )
 
