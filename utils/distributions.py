@@ -295,9 +295,8 @@ def estimate_kl_divergence(
     log_w = log_probs_p - log_q_x
     # Compute KL divergence: KL(p || q) = E_p[log p(x) - log q(x)]
     kl_divergence = jnp.mean(log_w)
-    ess = 1 / jnp.mean(jnp.exp(log_w))
 
-    return kl_divergence, ess
+    return kl_divergence
 
 
 @jax.jit

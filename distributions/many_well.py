@@ -5,6 +5,12 @@ import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
+from utils.distributions import (
+    compute_w1_distance_1d_pot,
+    compute_w2_distance_1d_pot,
+    compute_wasserstein_distance_pot,
+    estimate_kl_divergence,
+)
 from utils.plotting import plot_contours_2D, plot_marginal_pair
 
 from .base import Target
@@ -14,7 +20,7 @@ from .double_well import DoubleWellEnergy
 class ManyWellEnergy(Target):
     TIME_DEPENDENT = False
 
-    def __init__(self, dim: int = 32):
+    def __init__(self, dim: int = 32, n_samples_eval: int = 1024):
         assert dim % 2 == 0
         self.n_wells = dim // 2
         self.double_well_energy = DoubleWellEnergy()
@@ -25,8 +31,8 @@ class ManyWellEnergy(Target):
             log_Z=log_Z,
             can_sample=False,
             n_plots=1,
-            n_model_samples_eval=2000,
-            n_target_samples_eval=10000,
+            n_model_samples_eval=n_samples_eval,
+            n_target_samples_eval=n_samples_eval,
         )
 
         self.centre = 1.7
@@ -109,6 +115,61 @@ class ManyWellEnergy(Target):
 
         plt.tight_layout()
         return fig
+
+    def evaluate(
+        self,
+        key: jax.Array,
+        samples: jax.Array,
+        time: jax.Array | None = None,
+        **kwargs,
+    ) -> dict:
+        metrics = super().evaluate(key, samples, time=time, **kwargs)
+        if samples.shape[0] > self.n_model_samples_eval:
+            samples = samples[: self.n_model_samples_eval]
+
+        true_samples = self.sample(
+            key, (min(self.n_model_samples_eval, samples.shape[0]),)
+        )
+
+        x_w1_distance, x_w2_distance = compute_wasserstein_distance_pot(
+            samples, true_samples
+        )
+
+        log_prob_samples = self.log_prob(samples)
+        log_prob_true_samples = self.log_prob(true_samples)
+
+        e_w2_distance = compute_w2_distance_1d_pot(
+            log_prob_samples,
+            log_prob_true_samples,
+        )
+
+        e_w1_distance = compute_w1_distance_1d_pot(
+            log_prob_samples,
+            log_prob_true_samples,
+        )
+
+        metrics["w2_distance"] = x_w2_distance
+        metrics["w1_distance"] = x_w1_distance
+        metrics["e_w2_distance"] = e_w2_distance
+        metrics["e_w1_distance"] = e_w1_distance
+
+        # KL divergence and log ESS
+        key, kl_key = jax.random.split(key)
+        kl_divergence = estimate_kl_divergence(
+            v_theta=kwargs["v_theta"],
+            num_samples=samples.shape[0],
+            key=kl_key,
+            ts=kwargs["ts"],
+            log_prob_p_fn=self.log_prob,
+            sample_p_fn=self.sample,
+            base_log_prob_fn=kwargs["base_log_prob_fn"],
+            final_time=1.0,
+            use_shortcut=kwargs["use_shortcut"],
+        )
+
+        metrics["kl_divergence"] = kl_divergence
+
+        return metrics
 
     def sample(self, key: chex.PRNGKey, sample_shape: chex.Shape) -> chex.Array:
         key1, key2 = jax.random.split(key)
