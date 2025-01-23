@@ -107,16 +107,6 @@ def compute_total_variation_distance(
     Returns:
     TV distance: Scalar value representing the Total Variation distance
     """
-    # # Compute bounds from data if not provided
-    # if lower_bound is None or upper_bound is None:
-    #     all_samples = jnp.concatenate([samples_p, samples_q], axis=0)
-    #     min_vals = jnp.min(all_samples, axis=0)
-    #     max_vals = jnp.max(all_samples, axis=0)
-    #     # Add some padding to the bounds
-    #     padding = (max_vals - min_vals) * 0.1
-    #     lower_bound = min_vals - padding
-    #     upper_bound = max_vals + padding
-
     # Create bin edges for each dimension
     bin_edges = [
         jnp.linspace(lower_bound, upper_bound, num_bins + 1)

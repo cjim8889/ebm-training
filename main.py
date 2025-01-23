@@ -401,7 +401,6 @@ def main():
             dim=config.density.input_dim,
             n_particles=config.density.n_particles,
             data_path_test=config.density.data_path_test,
-            data_path_val=config.density.data_path_val,
             key=subkey,
             log_prob_clip=config.density.log_prob_clip,
             log_prob_clip_min=config.density.log_prob_clip_min,
@@ -589,6 +588,7 @@ def main():
             n_spatial_dim=config.density.n_spatial_dim,
             hidden_dim=config.model.hidden_dim,
             depth=config.model.num_layers,
+            shortcut=config.training.use_shortcut,
         )
     elif config.model.architecture == "transformer":
         v_theta = TimeVelocityFieldTransformer(
