@@ -278,7 +278,7 @@ def reverse_time_flow(
 
 
 @eqx.filter_jit
-def estimate_kl_divergence(
+def estimate_kl_divergence_and_ess(
     v_theta: Callable[[chex.Array, float, float], chex.Array],
     num_samples: int,
     key: jax.random.PRNGKey,
@@ -300,12 +300,14 @@ def estimate_kl_divergence(
 
     # Compute log q(x(T)) = log q(x(0)) + accumulated log_probs
     base_log_probs = base_log_prob_fn(samples_rev)  # Compute log q(x(0))
-    log_q_x = base_log_probs + log_probs_q
+    log_q_x = base_log_probs - log_probs_q
 
+    log_w = log_probs_p - log_q_x
     # Compute KL divergence: KL(p || q) = E_p[log p(x) - log q(x)]
-    kl_divergence = jnp.mean(log_probs_p - log_q_x)
+    kl_divergence = jnp.mean(log_w)
+    ess = 1 / jnp.mean(jnp.exp(log_w))
 
-    return kl_divergence
+    return kl_divergence, ess
 
 
 @jax.jit
