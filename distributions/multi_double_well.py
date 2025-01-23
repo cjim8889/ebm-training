@@ -30,7 +30,7 @@ class MultiDoubleWellEnergy(Target):
         log_prob_clip: Optional[float] = None,
         log_prob_clip_min: Optional[float] = None,
         log_prob_clip_max: Optional[float] = None,
-        n_samples_eval: int = 1024,
+        n_samples_eval: int = 2048,
     ):
         super().__init__(
             dim=dim,
