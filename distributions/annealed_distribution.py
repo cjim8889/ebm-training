@@ -34,6 +34,8 @@ class AnnealedDistribution(Target):
     def time_dependent_log_prob(self, xs: chex.Array, t: chex.Array) -> chex.Array:
         if self.method == "linear":
             beta = t
+        elif self.method == "inverse_power":
+            beta = 1 - (1 - t) ** 0.5
         else:
             beta = get_inverse_temperature(t, 250.0, 1.0)
 
