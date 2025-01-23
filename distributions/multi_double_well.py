@@ -126,6 +126,8 @@ class MultiDoubleWellEnergy(Target):
         return jax.vmap(self.log_prob)(xs)
 
     def visualise(self, samples: chex.Array) -> plt.Figure:
+        samples = jnp.nan_to_num(samples, nan=0.0, posinf=0.0, neginf=0.0)
+
         self.key, subkey = jax.random.split(self.key)
         test_data_smaller = jax.random.choice(
             subkey, self._test_set, shape=(1000,), replace=False

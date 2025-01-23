@@ -63,11 +63,10 @@ def compute_w2_distance(x, y):
 def compute_w2_distance_pot(x, y):
     a = jnp.ones(x.shape[0]) / x.shape[0]
     b = jnp.ones(y.shape[0]) / y.shape[0]
-    M = pot.dist(x, y, metric="euclidean")
-
+    # Compute squared Euclidean distance
+    M = jnp.sum((x[:, None] - y[None, :]) ** 2, axis=-1)
     G = pot.emd(a, b, M)
-    w2_dist = jnp.sum(G * M) / G.sum()
-
+    w2_dist = jnp.sqrt(jnp.sum(G * M))  # W2 is sqrt of OT cost for squared distance
     return w2_dist
 
 
@@ -303,24 +302,8 @@ def estimate_kl_divergence(
 def compute_log_effective_sample_size(
     log_p: chex.Array, log_q: chex.Array
 ) -> chex.Array:
-    """
-    Compute the log Effective Sample Size (log ESS Fraction) given samples from `q` and log-probability functions.
-
-    **Parameters:**
-
-
-    **Returns:**
-        Array: Scalar representing log(ESS / N).
-    """
-    # Ensure shapes match
-    if log_p.shape != log_q.shape:
-        raise ValueError(
-            f"Shape mismatch: log_p has shape {log_p.shape}, log_q has shape {log_q.shape}."
-        )
-
-    log_w = log_p - log_q  # Log importance weights (unnormalized)
-    log_sum_w = jax.scipy.special.logsumexp(log_w)  # log(Σ exp(log_w))
-    log_sum_w_sq = jax.scipy.special.logsumexp(2.0 * log_w)  # log(Σ exp(2*log_w))
-    log_ess_frac = 2.0 * log_sum_w - log_sum_w_sq
-
+    log_w = log_p - log_q
+    log_sum_w = jax.scipy.special.logsumexp(log_w)
+    log_sum_w_sq = jax.scipy.special.logsumexp(2.0 * log_w)
+    log_ess_frac = (2.0 * log_sum_w - log_sum_w_sq) - jnp.log(log_p.shape[0])
     return log_ess_frac
