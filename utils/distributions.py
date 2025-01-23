@@ -327,11 +327,9 @@ def compute_log_effective_sample_size(
             f"Shape mismatch: log_p has shape {log_p.shape}, log_q has shape {log_q.shape}."
         )
 
-    n_samples = log_p.shape[0]
-    log_w = log_p - log_q  # Log importance weights
-
-    log_sum_w = jax.scipy.special.logsumexp(log_w)
-    log_sum_w_sq = jax.scipy.special.logsumexp(2.0 * log_w)
-    log_ess_frac = 2.0 * log_sum_w - log_sum_w_sq - jnp.log(n_samples)
+    log_w = log_p - log_q  # Log importance weights (unnormalized)
+    log_sum_w = jax.scipy.special.logsumexp(log_w)  # log(Σ exp(log_w))
+    log_sum_w_sq = jax.scipy.special.logsumexp(2.0 * log_w)  # log(Σ exp(2*log_w))
+    log_ess_frac = 2.0 * log_sum_w - log_sum_w_sq  # log( (Σw)^2 / Σw² ) = log(ESS / N)
 
     return log_ess_frac
