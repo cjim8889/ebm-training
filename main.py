@@ -19,7 +19,7 @@ from distributions import (
 from models import (
     TimeVelocityField,
     TimeVelocityFieldWithPairwiseFeature,
-    TimeVelocityFieldTransformer,
+    ParticleTransformer,
     EquivariantTimeVelocityField,
     EGNN,
 )
@@ -591,16 +591,16 @@ def main():
             shortcut=config.training.use_shortcut,
         )
     elif config.model.architecture == "transformer":
-        v_theta = TimeVelocityFieldTransformer(
+        v_theta = ParticleTransformer(
             n_particles=config.density.n_particles,
             n_spatial_dim=config.density.n_spatial_dim,
             hidden_size=config.model.hidden_dim,
-            intermediate_size=2 * config.model.hidden_dim,
             num_layers=config.model.num_layers,
             num_heads=4,
             dropout_rate=0.1,
-            attention_dropout_rate=0.1,
+            attn_dropout_rate=0.1,
             key=model_key,
+            shortcut=config.training.use_shortcut,
         )
     elif config.model.architecture == "emlp":
         v_theta = EquivariantTimeVelocityField(
