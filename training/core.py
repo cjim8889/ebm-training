@@ -65,6 +65,7 @@ def evaluate_model(
                 ts=eval_ts[i],
                 v_theta=v_theta,
                 base_log_prob_fn=path_distribution.base_log_prob,
+                base_sample_fn=path_distribution.sample_initial,
             )
             total_eval_metrics[f"validation_{es}_step"] = eval_metrics
     else:
@@ -94,6 +95,7 @@ def evaluate_model(
             ts=eval_ts,
             v_theta=v_theta,
             base_log_prob_fn=path_distribution.base_log_prob,
+            base_sample_fn=path_distribution.sample_initial,
         )
         total_eval_metrics[f"validation_{config.sampling.num_timesteps}_step"] = (
             eval_metrics
