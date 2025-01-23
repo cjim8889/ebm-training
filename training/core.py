@@ -11,9 +11,7 @@ import wandb
 from distributions import AnnealedDistribution, Target
 from utils.distributions import sample_monotonic_uniform_ordered
 from utils.hmc import generate_samples_with_hmc_correction
-from utils.smc import (
-    generate_samples_with_smc,
-)
+from utils.smc import generate_samples_with_smc
 from utils.integration import (
     euler_integrate,
     generate_samples,
@@ -344,6 +342,22 @@ def train_velocity_field(
                 estimate_covariance=False,
                 blackjax_hmc=True,
                 use_shortcut=config.training.use_shortcut,
+            )
+        elif config.mcmc.method == "vsmc":
+            samples = generate_samples_with_smc(
+                key=key,
+                time_dependent_log_density=path_distribution.time_dependent_log_prob,
+                num_samples=config.sampling.num_particles,
+                ts=ts,
+                sample_fn=path_distribution.sample_initial,
+                num_steps=config.mcmc.num_steps,
+                integration_steps=config.mcmc.num_integration_steps,
+                eta=config.mcmc.step_size,
+                use_shortcut=config.training.use_shortcut,
+                shift_fn=config.density.shift_fn,
+                estimate_covariance=False,
+                blackjax_hmc=True,
+                v_theta=v_theta,
             )
         else:
             samples = _generate(key, ts, force_finite)
