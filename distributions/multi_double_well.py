@@ -6,6 +6,13 @@ from .base import Target
 from typing import Optional
 import chex
 
+from utils.distributions import (
+    compute_wasserstein_distance_pot,
+    compute_w1_distance_1d_pot,
+    compute_w2_distance_1d_pot,
+    compute_total_variation_distance,
+)
+
 
 class MultiDoubleWellEnergy(Target):
     TIME_DEPENDENT = False
@@ -14,7 +21,6 @@ class MultiDoubleWellEnergy(Target):
         self,
         dim: int,
         n_particles: int,
-        data_path_val: Optional[str] = None,
         data_path_test: Optional[str] = None,
         key: jax.random.PRNGKey = jax.random.PRNGKey(0),
         a: float = 0.9,
@@ -24,23 +30,21 @@ class MultiDoubleWellEnergy(Target):
         log_prob_clip: Optional[float] = None,
         log_prob_clip_min: Optional[float] = None,
         log_prob_clip_max: Optional[float] = None,
+        n_samples_eval: int = 1024,
     ):
         super().__init__(
             dim=dim,
             log_Z=None,
             can_sample=False,
             n_plots=10,
-            n_model_samples_eval=1000,
-            n_target_samples_eval=None,
+            n_model_samples_eval=n_samples_eval,
+            n_target_samples_eval=n_samples_eval,
         )
         self.n_particles = n_particles
         self.n_spatial_dim = dim // n_particles
         self.key = key
 
-        self.data_path_val = data_path_val
         self.data_path_test = data_path_test
-
-        self.val_set_size = 1000
 
         self.a = a
         self.b = b
@@ -51,7 +55,6 @@ class MultiDoubleWellEnergy(Target):
         self.log_prob_clip_min = log_prob_clip_min
         self.log_prob_clip_max = log_prob_clip_max
 
-        self._val_set = self.setup_val_set()
         self._test_set = self.setup_test_set()
 
         self._mask = jnp.triu(jnp.ones((n_particles, n_particles), dtype=bool), k=1)
@@ -110,11 +113,6 @@ class MultiDoubleWellEnergy(Target):
 
     def setup_test_set(self):
         data = np.load(self.data_path_test, allow_pickle=True)
-        data = self.batched_remove_mean(data)
-        return data
-
-    def setup_val_set(self):
-        data = np.load(self.data_path_val, allow_pickle=True)
         data = self.batched_remove_mean(data)
         return data
 
@@ -190,3 +188,48 @@ class MultiDoubleWellEnergy(Target):
 
         fig.canvas.draw()
         return fig
+
+    def evaluate(self, key, samples, time=None, **kwargs):
+        metrics = super().evaluate(key, samples, time=time, **kwargs)
+        if samples.shape[0] > self.n_model_samples_eval:
+            samples = samples[: self.n_model_samples_eval]
+
+        true_samples = self._test_set[: self.n_target_samples_eval]
+
+        x_w1_distance, x_w2_distance = compute_wasserstein_distance_pot(
+            samples, true_samples
+        )
+
+        metrics["w1_distance"] = x_w1_distance
+        metrics["w2_distance"] = x_w2_distance
+
+        log_prob_samples = self.batched_log_prob(samples)
+        log_prob_true_samples = self.batched_log_prob(true_samples)
+
+        e_w2_distance = compute_w2_distance_1d_pot(
+            log_prob_samples,
+            log_prob_true_samples,
+        )
+
+        e_w1_distance = compute_w1_distance_1d_pot(
+            log_prob_samples,
+            log_prob_true_samples,
+        )
+
+        metrics["e_w2_distance"] = e_w2_distance
+        metrics["e_w1_distance"] = e_w1_distance
+
+        true_interatomic_dist = self.interatomic_dist(true_samples).reshape(-1, 1)
+        samples_interatomic_dist = self.interatomic_dist(samples).reshape(-1, 1)
+
+        dist_total_variation = compute_total_variation_distance(
+            samples_interatomic_dist,
+            true_interatomic_dist,
+            num_bins=200,
+            lower_bound=-10,
+            upper_bound=10,
+        )
+
+        metrics["dist_total_variation"] = dist_total_variation
+
+        return metrics
