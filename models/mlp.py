@@ -3,6 +3,7 @@ import jax
 import jax.numpy as jnp
 
 from utils.distributions import compute_distances
+from utils.models import xavier_init, init_linear_weights
 
 
 class MLPWithLayerNorm(eqx.Module):
@@ -42,9 +43,17 @@ class TimeVelocityField(eqx.Module):
     mlp: MLPWithLayerNorm
     shortcut: bool
 
-    def __init__(self, key, input_dim, hidden_dim, depth=3, shortcut=False):
+    def __init__(
+        self,
+        key,
+        input_dim,
+        hidden_dim,
+        depth=3,
+        shortcut=False,
+        dt: float = 0.01,
+    ):
         self.shortcut = shortcut
-
+        self.dt = dt
         if shortcut:
             self.mlp = MLPWithLayerNorm(
                 in_size=input_dim + 2,  # x, t, and d
@@ -61,6 +70,8 @@ class TimeVelocityField(eqx.Module):
                 depth=depth,
                 key=key,
             )
+
+        self.mlp = init_linear_weights(self.mlp, xavier_init, key, scale=dt)
 
     def __call__(self, *input):
         if self.shortcut:
