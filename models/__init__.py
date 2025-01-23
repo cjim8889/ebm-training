@@ -3,5 +3,5 @@ from .mlp import (
     TimeVelocityFieldWithPairwiseFeature,
     EquivariantTimeVelocityField,
 )
-from .transformer import TimeVelocityFieldTransformer
+from .transformer import ParticleTransformer
 from .egnn import EGNN
