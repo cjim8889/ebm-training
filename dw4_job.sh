@@ -37,5 +37,6 @@ python main.py \
   --time-batch-size 32 \
   --n-samples-eval 1024 \
   --use-cv \
+  --data-path-test data/test_split_DW4.npy \
   --use-shortcut
 
