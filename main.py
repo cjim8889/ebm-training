@@ -618,6 +618,7 @@ def main():
             hidden_size=config.model.hidden_dim,
             num_layers=config.model.num_layers,
             normalize=True,
+            shortcut=config.training.use_shortcut,
         )
 
     if not config.offline:
