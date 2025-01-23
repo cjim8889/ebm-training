@@ -15,7 +15,7 @@ from flow_sampler.models.mlp_models import TimeVelocityField
 from flow_sampler.utils.sampling_utils import time_schedule, generate_samples, generate_samples_with_hmc, generate_samples_with_langevin_dynamics
 from flow_sampler.utils.loss_utils import loss_fn, get_dt_logZt
 from flow_sampler.utils.gradient_varest import GradientVarianceEstimator
-from flow_sampler.utils.evaluate import eval_data_w2, eval_energy_w2, eval_data_total_variation
+from flow_sampler.utils.evaluate import eval_data_w2, eval_energy_w2, eval_data_total_variation, eval_data_w2_idem
 
 def train_velocity_field(
     initial_density,
@@ -201,10 +201,12 @@ def train_velocity_field(
                 v_theta, 1000, linear_ts, sample_initial
             )[:, -1, :].detach()
         data_w2_dist = eval_data_w2(target_density, test_samples)
+        data_w2_dist_idem = eval_data_w2_idem(target_density, test_samples)
         energy_w2_dist = eval_energy_w2(target_density, test_samples)
         tv = eval_data_total_variation(target_density, test_samples)
         wandb.log({
             "metrics/data_w2": data_w2_dist,
+            "metrics/data_w2_idem": data_w2_dist_idem,
             "metrics/energy_w2": energy_w2_dist,
             "metrics/total_variation": tv,
         })
@@ -224,7 +226,7 @@ def train_velocity_field(
                 wandb.log({f"samples_T={sample_steps}": wandb.Image(fig)})
 
             # save checkpoint
-            torch.save(v_theta.state_dict(), f"velocity_field_{epoch}.pt")
+            torch.save(v_theta.state_dict(), f"{ckpt_log_path}_last.pt")
 
 def run(cfg: DictConfig) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

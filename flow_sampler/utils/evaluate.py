@@ -1,6 +1,7 @@
 import ot as pot
 import numpy as np
 import torch
+import math
 
 def eval_data_w2(target_density, generated_samples):
     data_set = target_density.test_set
@@ -10,6 +11,18 @@ def eval_data_w2(target_density, generated_samples):
     src, dist = np.ones(len(data_set)) / len(data_set), np.ones(len(generated_samples)) / len(generated_samples)
     w2_dist = np.sqrt(pot.emd2(src, dist, distance_matrix))
     return w2_dist
+
+def eval_data_w2_idem(target_density, generated_samples):
+    x0 = generated_samples
+    x1 = target_density.test_set
+    ot_fn = pot.emd2
+
+    a, b = pot.unif(x0.shape[0]), pot.unif(x1.shape[0])
+    M = torch.cdist(x0, x1) ** 2
+    ret = ot_fn(a, b, M.detach().cpu().numpy(), numItermax=1e7)
+    ret = math.sqrt(ret)
+    
+    return ret
 
 def eval_energy_w2(target_density, generated_samples):
     data_set = target_density.test_set
