@@ -278,7 +278,7 @@ def reverse_time_flow(
 
 
 @eqx.filter_jit
-def estimate_kl_divergence_and_ess(
+def estimate_kl_divergence(
     v_theta: Callable[[chex.Array, float, float], chex.Array],
     num_samples: int,
     key: jax.random.PRNGKey,
@@ -332,6 +332,6 @@ def compute_log_effective_sample_size(
     log_w = log_p - log_q  # Log importance weights (unnormalized)
     log_sum_w = jax.scipy.special.logsumexp(log_w)  # log(Σ exp(log_w))
     log_sum_w_sq = jax.scipy.special.logsumexp(2.0 * log_w)  # log(Σ exp(2*log_w))
-    log_ess_frac = 2.0 * log_sum_w - log_sum_w_sq  # log( (Σw)^2 / Σw² ) = log(ESS / N)
+    log_ess_frac = 2.0 * log_sum_w - log_sum_w_sq
 
     return log_ess_frac
