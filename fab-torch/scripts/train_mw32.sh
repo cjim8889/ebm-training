@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=3 python experiments/many_well/run.py training.use_buffer=True training.prioritised_buffer=True
