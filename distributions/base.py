@@ -1,6 +1,7 @@
+from typing import Callable, Optional, Union
+
 import chex
 import matplotlib.pyplot as plt
-from typing import Optional, Union
 
 
 class Target:
@@ -58,28 +59,9 @@ class Target:
     def evaluate(
         self,
         key: chex.PRNGKey,
-        samples: chex.Array,
+        v_theta: Callable,
+        ts: chex.Array,
+        use_shortcut: bool = False,
         **kwargs,
     ) -> dict:
-        """Evaluate samples and return metrics and figures.
-
-        Args:
-            samples: Array of samples to evaluate
-            time: Optional time value for time-dependent distributions
-
-        Returns:
-            Dictionary containing evaluation metrics and figures
-        """
-        if self.TIME_DEPENDENT and "time" not in kwargs:
-            raise ValueError("Time must be provided for time-dependent distributions")
-
-        metrics = {}
-
-        # Generate visualization
-        if self.TIME_DEPENDENT:
-            fig = self.visualise_with_time(samples, kwargs["time"])
-        else:
-            fig = self.visualise(samples)
-
-        metrics["figure"] = fig
-        return metrics
+        raise NotImplementedError
