@@ -5,7 +5,11 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 
-from utils.distributions import divergence_velocity, divergence_velocity_with_shortcut
+from utils.distributions import (
+    divergence_velocity,
+    divergence_velocity_with_shortcut,
+    hutchinson_divergence_velocity2,
+)
 
 
 class Particle(eqx.Module):
@@ -44,6 +48,38 @@ def epsilon(
 batched_epsilon = jax.vmap(epsilon, in_axes=(None, 0, None, None))
 
 
+@eqx.filter_jit
+def epsilon_with_hutchinson(
+    key: jax.random.PRNGKey,
+    v_theta: Callable[[chex.Array, float, float], chex.Array],
+    particle: Particle,
+    score_fn: Callable[[chex.Array, float], chex.Array],
+    time_derivative_log_density: Callable[[chex.Array, float], float],
+    n_probes: int,
+):
+    x, t, log_Z_t, d = particle.x, particle.t, particle.log_Z_t, particle.d
+    dt_log_unormalised = time_derivative_log_density(x, t)
+    dt_log_density = dt_log_unormalised - log_Z_t
+
+    score = score_fn(x, t)
+    div_v = hutchinson_divergence_velocity2(key, v_theta, x, t, d=d, n_probes=n_probes)
+    if d is not None:
+        v = v_theta(x, t, d)
+    else:
+        v = v_theta(x, t)
+
+    return jnp.nan_to_num(
+        div_v + jnp.dot(v, score) + dt_log_density,
+        posinf=1.0,
+        neginf=-1.0,
+    )
+
+
+batched_epsilon_with_hutchinson = jax.vmap(
+    epsilon_with_hutchinson, in_axes=(0, None, 0, None, None, None)
+)
+
+
 def shortcut(
     v_theta: Callable[[chex.Array, float, float], chex.Array],
     x: chex.Array,
@@ -73,6 +109,9 @@ def loss_fn(
     time_derivative_log_density: Callable[[chex.Array, float], float],
     score_fn: Callable[[chex.Array, float], chex.Array],
     shift_fn: Callable[[chex.Array], chex.Array] = lambda x: x,
+    use_hutchinson: bool = False,
+    key: Optional[jax.random.PRNGKey] = None,
+    n_probes: int = 5,
 ) -> float:
     """Computes the loss for training the velocity field.
 
@@ -87,9 +126,20 @@ def loss_fn(
         float: Mean squared error in satisfying the Liouville equation
     """
 
-    epsilons = batched_epsilon(
-        v_theta, particles, score_fn, time_derivative_log_density
-    )
+    if use_hutchinson:
+        keys = jax.random.split(key, particles.x.shape[0])
+        epsilons = batched_epsilon_with_hutchinson(
+            keys,
+            v_theta,
+            particles,
+            score_fn,
+            time_derivative_log_density,
+            n_probes,
+        )
+    else:
+        epsilons = batched_epsilon(
+            v_theta, particles, score_fn, time_derivative_log_density
+        )
 
     # Compute L1 and L2 loss for epsilons
     l1_loss = jnp.mean(jnp.abs(epsilons))  # L1 (MAE)

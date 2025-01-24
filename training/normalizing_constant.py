@@ -5,7 +5,11 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 
-from utils.distributions import divergence_velocity, divergence_velocity_with_shortcut
+from utils.distributions import (
+    divergence_velocity,
+    divergence_velocity_with_shortcut,
+    hutchinson_divergence_velocity2,
+)
 
 
 def control_variate_epsilon(
@@ -14,6 +18,9 @@ def control_variate_epsilon(
     t: float,
     score_fn: Callable[[chex.Array, float], chex.Array],
     d: Optional[chex.Array] = None,
+    use_hutchinson: bool = False,
+    key: Optional[jax.random.PRNGKey] = None,
+    n_probes: int = 5,
 ) -> float:
     """Use control variate to reduce variance of the normalizing constant estimate.
 
@@ -23,16 +30,28 @@ def control_variate_epsilon(
         t: Current time
         score_fn: Score function taking (x, t) and returning gradient of log density
         d: Shortcut distance
+        use_hutchinson: Whether to use Hutchinson's trick
+        key: PRNG key for Hutchinson's trick
 
     Returns:
         float: Local error in satisfying the Liouville equation
     """
 
     if d is not None:
-        div_v = divergence_velocity_with_shortcut(v_theta, x, t, d)
+        if use_hutchinson:
+            div_v = hutchinson_divergence_velocity2(
+                key, v_theta, x, t, d=d, n_probes=n_probes
+            )
+        else:
+            div_v = divergence_velocity_with_shortcut(v_theta, x, t, d=d)
         v = v_theta(x, t, d)
     else:
-        div_v = divergence_velocity(v_theta, x, t)
+        if use_hutchinson:
+            div_v = hutchinson_divergence_velocity2(
+                key, v_theta, x, t, n_probes=n_probes
+            )
+        else:
+            div_v = divergence_velocity(v_theta, x, t)
         v = v_theta(x, t)
 
     return jnp.nan_to_num(

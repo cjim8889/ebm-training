@@ -1,4 +1,4 @@
-from typing import Callable, Tuple
+from typing import Callable, Tuple, Optional
 
 import chex
 import equinox as eqx
@@ -181,10 +181,72 @@ def divergence_velocity(
 
 
 @eqx.filter_jit
-def hutchinson_divergence_velocity(v_theta, x, t):
-    eps = jax.random.normal(jax.random.PRNGKey(0), x.shape)  # Random probe vector
-    _, f_vjp = jax.vjp(lambda x: v_theta(x, t), x)
-    return jnp.sum(eps * f_vjp(eps)[0])  # ⟨ε, Jε⟩ ≈ Tr(J)
+def hutchinson_divergence_velocity(
+    key: jax.random.PRNGKey,
+    v_theta: Callable,
+    x: chex.Array,
+    t: float,
+    d: Optional[float] = None,
+    n_probes: int = 1,
+) -> chex.Array:
+    """
+    Hutchinson estimator for divergence with:
+    - Rademacher probe vectors for reduced variance
+    - Support for multiple probes via vmap
+    - Optional shortcut parameter 'd'
+    """
+    # Generate multiple keys for probe vectors
+    keys = jax.random.split(key, n_probes)
+
+    def compute_probe(subkey):
+        eps = jax.random.rademacher(subkey, shape=x.shape, dtype=jnp.float32)
+        eps = jax.lax.stop_gradient(eps)
+        # Handle both standard and shortcut cases
+        if d is not None:
+            v_fn = lambda x: v_theta(x, t, d)
+        else:
+            v_fn = lambda x: v_theta(x, t)
+
+        # Efficient vector-Jacobian product
+        _, f_vjp = jax.vjp(v_fn, x)
+        jvp_eps = f_vjp(eps)[0]
+        return jnp.sum(eps * jvp_eps)
+
+    # Vectorize over probes and average results
+    estimates = jax.vmap(compute_probe)(keys)
+    return jnp.mean(estimates)
+
+
+@eqx.filter_jit
+def hutchinson_divergence_velocity2(
+    key: jax.random.PRNGKey,
+    v_theta: Callable,
+    x: chex.Array,
+    t: float,
+    d: Optional[float] = None,
+    n_probes: int = 1,
+) -> chex.Array:
+    # Generate all probes in one batch (better memory/performance)
+    key, subkey = jax.random.split(key)
+    # eps = jax.random.rademacher(subkey, (n_probes,) + x.shape, dtype=jnp.float32)
+    # eps = jax.lax.stop_gradient(eps)
+
+    eps = jax.random.bernoulli(subkey, p=0.5, shape=(n_probes,) + x.shape)
+    eps = eps.astype(x.dtype)  # Match input precision
+    eps = eps * 2 - 1  # Convert {0,1} → {-1,+1}
+    eps = jax.lax.stop_gradient(eps)
+
+    # Compute VJP once and reuse for all probes
+    v_fn = lambda x: v_theta(x, t, d) if d is not None else v_theta(x, t)
+    _, f_vjp = jax.vjp(v_fn, x)
+
+    # Batched computation using vmap
+    jvp_eps = jax.vmap(f_vjp)(eps)[0]  # [n_probes, ...]
+
+    # Efficient trace estimation using Einstein summation
+    estimates = jnp.einsum("i...,i...->i", eps, jvp_eps)
+
+    return jnp.mean(estimates)
 
 
 @eqx.filter_jit

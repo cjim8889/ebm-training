@@ -340,13 +340,16 @@ def train_velocity_field(
         return samples
 
     @eqx.filter_jit
-    def step(v_theta, opt_state, particles):
+    def step(key, v_theta, opt_state, particles):
         loss, grads = eqx.filter_value_and_grad(loss_fn)(
             v_theta,
             particles,
             path_distribution.time_derivative,
             path_distribution.score_fn,
             config.density.shift_fn,
+            config.training.use_hutchinson,
+            key=key,
+            n_probes=5,
         )
         updates, opt_state = optimizer.update(grads, opt_state, v_theta)
         v_theta = eqx.apply_updates(v_theta, updates)
@@ -434,7 +437,11 @@ def train_velocity_field(
                 log_Z_t=particles.log_Z_t[indices],
                 d=particles.d[indices] if particles.d is not None else None,
             )
-            v_theta, opt_state, loss = step(v_theta, opt_state, training_particles)
+
+            key, subkey = jax.random.split(key)
+            v_theta, opt_state, loss = step(
+                subkey, v_theta, opt_state, training_particles
+            )
             epoch_loss += loss
             if s % 20 == 0:
                 if not config.offline:

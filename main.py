@@ -71,6 +71,11 @@ def main():
         "--use-shortcut", action="store_true", help="Whether to use shortcut"
     )
     parser.add_argument(
+        "--use-hutchinson",
+        action="store_true",
+        help="Whether to use Hutchinson's trick",
+    )
+    parser.add_argument(
         "--shortcut-size",
         type=int,
         nargs="+",
@@ -258,6 +263,7 @@ def main():
         time_batch_size=args.time_batch_size,
         use_shortcut=args.use_shortcut,
         shortcut_size=args.shortcut_size,
+        use_hutchinson=args.use_hutchinson,
     )
 
     mcmc_config = MCMCConfig(
