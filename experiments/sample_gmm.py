@@ -6,7 +6,7 @@ from distributions import AnnealedDistribution
 from distributions.multivariate_gaussian import MultivariateGaussian
 from distributions import GMM
 
-from utils.smc import generate_samples_with_smc, SampleBuffer
+from utils.smc import generate_samples_with_smc
 
 key = jax.random.PRNGKey(1234)
 
