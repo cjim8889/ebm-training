@@ -181,6 +181,13 @@ def divergence_velocity(
 
 
 @eqx.filter_jit
+def hutchinson_divergence_velocity(v_theta, x, t):
+    eps = jax.random.normal(jax.random.PRNGKey(0), x.shape)  # Random probe vector
+    _, f_vjp = jax.vjp(lambda x: v_theta(x, t), x)
+    return jnp.sum(eps * f_vjp(eps)[0])  # ⟨ε, Jε⟩ ≈ Tr(J)
+
+
+@eqx.filter_jit
 def sample_monotonic_uniform_ordered(
     key: jax.random.PRNGKey, bounds: chex.Array, include_endpoints: bool = True
 ) -> chex.Array:
