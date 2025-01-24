@@ -304,6 +304,6 @@ def compute_log_effective_sample_size(
 ) -> chex.Array:
     log_w = log_p - log_q
     log_sum_w = jax.scipy.special.logsumexp(log_w)
-    log_sum_w_sq = jax.scipy.special.logsumexp(2.0 * log_w)
-    log_ess_frac = (2.0 * log_sum_w - log_sum_w_sq) - jnp.log(log_p.shape[0])
+    log_w_normalized = log_w - log_sum_w
+    log_ess_frac = jnp.log(1.0) - jax.scipy.special.logsumexp(2.0 * log_w_normalized)
     return log_ess_frac
