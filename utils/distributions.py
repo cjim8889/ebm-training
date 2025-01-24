@@ -94,6 +94,18 @@ def compute_w2_sinkhorn_distance(x, y, reg=1.0, num_itermax=1e5):
     return w2_dist
 
 
+def compute_w2_sinkhorn_distance_ot(x, y, reg=None, num_itermax=1e5):
+    div, _ = ott.tools.sinkhorn_divergence.sinkdiv(
+        x=x, y=y, epsilon=reg, cost_fn=ott.geometry.costs.SqEuclidean()
+    )
+    return jnp.sqrt(div)
+
+
+compute_w2_sinkhorn_distance_ot = jax.jit(
+    compute_w2_sinkhorn_distance_ot, static_argnums=(2, 3)
+)
+
+
 def compute_w2_distance_1d_pot(x, y):
     return pot.wasserstein_1d(x, y, p=2.0)
 
