@@ -58,7 +58,7 @@ def evaluate_metrics(target, gen_samples):
 
 # use base config of GMM but overwrite for specific model.
 @hydra.main(config_path="../config", config_name="gmm.yaml")
-def eval_workshop(cfg: DictConfig, debug=False):
+def main(cfg: DictConfig, debug=False):
     n_samples = 1000
     target = setup_target(cfg, n_samples)
     path_to_model = f"{PATH}/ckpts/gmm_model.pt"
@@ -88,13 +88,5 @@ def eval_workshop(cfg: DictConfig, debug=False):
                         grid_width_n_points=200)
         plt.savefig(f"{PATH}/gen_samples.png")
 
-    exit()
-
-
-FILENAME_EVAL_INFO = PATH + "/gmm_results.csv"
-FILENAME_EVA_ALPHA_INFO = PATH + "/gmm_alpha_results.csv"
-
 if __name__ == '__main__':
-    # main()
-
-    eval_workshop()
+    main()
