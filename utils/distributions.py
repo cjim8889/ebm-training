@@ -70,16 +70,24 @@ def compute_w2_distance_pot(x, y):
     return w2_dist
 
 
-def compute_wasserstein_distance_pot(x, y):
+def compute_wasserstein_distance_pot(x, y, num_itermax=1e7):
     a = jnp.ones(x.shape[0]) / x.shape[0]
     b = jnp.ones(y.shape[0]) / y.shape[0]
     M = pot.dist(x, y, metric="euclidean")
     M_sq = M**2
 
-    w2_dist = jnp.sqrt(pot.emd2(a, b, M_sq))
-    w1_dist = pot.emd2(a, b, M)
+    w2_dist = jnp.sqrt(pot.emd2(a, b, M_sq, numItermax=num_itermax))
+    w1_dist = pot.emd2(a, b, M, numItermax=num_itermax)
 
     return w1_dist, w2_dist
+
+
+def compute_w2_sinkhorn_distance(x, y, reg=1.0, num_itermax=1e5):
+    a = jnp.ones(x.shape[0]) / x.shape[0]
+    b = jnp.ones(y.shape[0]) / y.shape[0]
+    M = pot.dist(x, y)
+    w2_dist = jnp.sqrt(pot.sinkhorn2(a, b, M, reg=reg, numItermax=int(num_itermax)))
+    return w2_dist
 
 
 def compute_w2_distance_1d_pot(x, y):
