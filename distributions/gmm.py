@@ -12,6 +12,7 @@ from utils.distributions import (
     compute_w1_distance_1d_pot,
     compute_w2_distance_1d_pot,
     compute_w2_sinkhorn_distance,
+    compute_w2_sinkhorn_distance_ot,
     compute_wasserstein_distance_pot,
     estimate_kl_divergence,
 )
@@ -168,8 +169,8 @@ class GMM(Target):
             samples_q, true_samples, num_itermax=1e7
         )
 
-        x_w2_sinkhorn_distance = compute_w2_sinkhorn_distance(
-            samples_q, true_samples, reg=10.0, num_itermax=1e5
+        x_w2_sinkhorn_distance = compute_w2_sinkhorn_distance_ot(
+            samples_q, true_samples, reg=None, num_itermax=1e5
         )
 
         log_prob_samples = self.log_prob(samples_q)
