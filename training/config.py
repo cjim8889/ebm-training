@@ -42,6 +42,7 @@ class TrainingConfig:
     time_batch_size: int = 32  # Number of time points to use in each batch
     shortcut_size: List[int] = field(default_factory=lambda: [16, 32, 64, 128])
     use_shortcut: bool = False
+    use_hutchinson: bool = False
 
 
 @dataclass
