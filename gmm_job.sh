@@ -37,6 +37,6 @@ python main.py \
   --time-batch-size 32 \
   --n-samples-eval 1024 \
   --use-cv \
-  --eval-frequency 100 \
+  --eval-frequency 60 \
   --use-shortcut
 

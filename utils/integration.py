@@ -139,3 +139,108 @@ def generate_samples_with_log_prob(
     (samples, log_probs, _), _ = jax.lax.scan(step, carry, ts)
 
     return samples, log_probs
+
+
+@eqx.filter_jit
+def generate_samples_with_log_prob_rk4(
+    v_theta: Callable,
+    initial_samples: jnp.ndarray,
+    initial_log_probs: jnp.ndarray,
+    ts: jnp.ndarray,
+    use_shortcut: bool = False,
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    """RK4 integration for dX/dt = v(X,t), d(log p)/dt = -∇·v(X,t)."""
+
+    # Batch velocity evaluations across samples
+    if use_shortcut:
+        batched_v = jax.vmap(v_theta, in_axes=(0, None, None))  # (x, t, dt)
+    else:
+        batched_v = jax.vmap(v_theta, in_axes=(0, None))  # (x, t)
+
+    def rk4_step(carry, t_next):
+        x_prev, logp_prev, t_prev = carry
+        dt = t_next - t_prev
+
+        # ----------------------------------------------------
+        # RK4 Stage Calculations
+        # ----------------------------------------------------
+        if use_shortcut:
+            # Stage 1
+            k1 = batched_v(x_prev, t_prev, dt)
+            l1 = jax.vmap(
+                lambda x: divergence_velocity_with_shortcut(
+                    v_theta, x, t_prev, jnp.abs(dt)
+                )
+            )(x_prev)
+
+            # Stage 2
+            x_k2 = x_prev + 0.5 * dt * k1
+            t_k2 = t_prev + 0.5 * dt
+            k2 = batched_v(x_k2, t_k2, dt)
+            l2 = jax.vmap(
+                lambda x: divergence_velocity_with_shortcut(
+                    v_theta, x, t_k2, jnp.abs(dt)
+                )
+            )(x_k2)
+
+            # Stage 3
+            x_k3 = x_prev + 0.5 * dt * k2
+            t_k3 = t_prev + 0.5 * dt
+            k3 = batched_v(x_k3, t_k3, dt)
+            l3 = jax.vmap(
+                lambda x: divergence_velocity_with_shortcut(
+                    v_theta, x, t_k3, jnp.abs(dt)
+                )
+            )(x_k3)
+
+            # Stage 4
+            x_k4 = x_prev + dt * k3
+            t_k4 = t_prev + dt
+            k4 = batched_v(x_k4, t_k4, dt)
+            l4 = jax.vmap(
+                lambda x: divergence_velocity_with_shortcut(
+                    v_theta, x, t_k4, jnp.abs(dt)
+                )
+            )(x_k4)
+        else:
+            # Stage 1
+            k1 = batched_v(x_prev, t_prev)
+            l1 = jax.vmap(lambda x: divergence_velocity(v_theta, x, t_prev))(x_prev)
+
+            # Stage 2
+            x_k2 = x_prev + 0.5 * dt * k1
+            t_k2 = t_prev + 0.5 * dt
+            k2 = batched_v(x_k2, t_k2)
+            l2 = jax.vmap(lambda x: divergence_velocity(v_theta, x, t_k2))(x_k2)
+
+            # Stage 3
+            x_k3 = x_prev + 0.5 * dt * k2
+            t_k3 = t_prev + 0.5 * dt
+            k3 = batched_v(x_k3, t_k3)
+            l3 = jax.vmap(lambda x: divergence_velocity(v_theta, x, t_k3))(x_k3)
+
+            # Stage 4
+            x_k4 = x_prev + dt * k3
+            t_k4 = t_prev + dt
+            k4 = batched_v(x_k4, t_k4)
+            l4 = jax.vmap(lambda x: divergence_velocity(v_theta, x, t_k4))(x_k4)
+
+        # ----------------------------------------------------
+        # RK4 Update Rules
+        # ----------------------------------------------------
+        x_next = x_prev + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
+        logp_next = logp_prev - (dt / 6.0) * (l1 + 2 * l2 + 2 * l3 + l4)
+
+        return (x_next, logp_next, t_next), None
+
+    # Initial carry: (x0, logp0, t0=0)
+    carry_init = (initial_samples, initial_log_probs, 0.0)
+
+    # Integrate over time steps using scan
+    (final_samples, final_log_probs, _), _ = jax.lax.scan(
+        rk4_step,
+        carry_init,
+        ts[1:],  # ts[0] is t=0 (initial condition)
+    )
+
+    return final_samples, final_log_probs

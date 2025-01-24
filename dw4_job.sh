@@ -38,6 +38,6 @@ python main.py \
   --n-samples-eval 1024 \
   --use-cv \
   --data-path-test data/test_split_DW4.npy \
-  --eval-frequency 100 \
+  --eval-frequency 60 \
   --use-shortcut
 
