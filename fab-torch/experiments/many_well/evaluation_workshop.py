@@ -33,9 +33,24 @@ def evaluate_metrics(model, target, gen_samples):
     log_q = model.flow._nf_model.log_prob(data_set.to('cuda')).cpu()
     f_kl = torch.mean(lop_p - log_q).item()
 
+
     energies = target.log_prob(data_set)
     generated_energies = target.log_prob(gen_samples)
     e_w2_dist = np.sqrt(pot.emd2_1d(energies.numpy(), generated_energies.numpy()))
+
+
+
+    energies = energies.numpy().reshape(-1)
+    generated_energies= generated_energies.numpy().reshape(-1)
+    H_data_set, x_data_set = np.histogram(energies, bins=200)
+    H_generated_samples, _ = np.histogram(generated_energies, bins=(x_data_set))
+    total_var = (
+        0.5
+        * np.abs(
+            H_data_set / H_data_set.sum() - H_generated_samples / H_generated_samples.sum()
+        ).sum()
+    )
+
 
     # distance_matrix = pot.dist(data_set.numpy(), gen_samples.numpy(), metric='euclidean')
     # distance_matrix = distance_matrix**2
@@ -46,9 +61,11 @@ def evaluate_metrics(model, target, gen_samples):
     ret = pot.emd2(a, b, M.detach().cpu().numpy(), numItermax=1e7)
     x_w2_dist = np.sqrt(ret)
 
+
     return {
         'e_w2_dist': e_w2_dist,
         'x_w2_dist': x_w2_dist,
+        'e_tv': total_var,
         'f_kl': f_kl
     }
 
@@ -60,7 +77,7 @@ def main(cfg: DictConfig):
     model = load_model(cfg, target, path_to_model)
 
     results = defaultdict(list)
-    for _ in range(5):
+    for _ in range(10):
         samples = model.flow.sample((n_samples,)).detach()
         metrics = evaluate_metrics(model, target, samples)
         for k, v in metrics.items():
