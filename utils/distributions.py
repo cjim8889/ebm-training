@@ -86,7 +86,11 @@ def compute_w2_sinkhorn_distance(x, y, reg=1.0, num_itermax=1e5):
     a = jnp.ones(x.shape[0]) / x.shape[0]
     b = jnp.ones(y.shape[0]) / y.shape[0]
     M = pot.dist(x, y)
-    w2_dist = jnp.sqrt(pot.sinkhorn2(a, b, M, reg=reg, numItermax=int(num_itermax)))
+    w2_dist = jnp.sqrt(
+        pot.sinkhorn2(
+            a, b, M, reg=reg, numItermax=int(num_itermax), method="sinkhorn_log"
+        )
+    )
     return w2_dist
 
 
