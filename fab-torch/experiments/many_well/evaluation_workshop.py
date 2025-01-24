@@ -25,9 +25,13 @@ def evaluate_many_well(cfg: DictConfig, path_to_model: str, target, num_samples=
     eval = model.get_eval_info(num_samples, 500)
     return eval
 
-def evaluate_metrics(target, gen_samples):
+def evaluate_metrics(model, target, gen_samples):
     data_set = target.sample((gen_samples.shape[0], ))
     gen_samples = gen_samples.cpu()
+
+    lop_p = target.log_prob(data_set)
+    log_q = model.flow._nf_model.log_prob(data_set.to('cuda')).cpu()
+    f_kl = torch.mean(lop_p - log_q).item()
 
     energies = target.log_prob(data_set)
     generated_energies = target.log_prob(gen_samples)
@@ -44,7 +48,8 @@ def evaluate_metrics(target, gen_samples):
 
     return {
         'e_w2_dist': e_w2_dist,
-        'x_w2_dist': x_w2_dist
+        'x_w2_dist': x_w2_dist,
+        'f_kl': f_kl
     }
 
 @hydra.main(config_path="../config", config_name="many_well.yaml")
@@ -57,7 +62,7 @@ def main(cfg: DictConfig):
     results = defaultdict(list)
     for _ in range(5):
         samples = model.flow.sample((n_samples,)).detach()
-        metrics = evaluate_metrics(target, samples)
+        metrics = evaluate_metrics(model, target, samples)
         for k, v in metrics.items():
             results[k].append(v)
 
