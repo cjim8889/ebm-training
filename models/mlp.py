@@ -42,6 +42,7 @@ class MLPWithLayerNorm(eqx.Module):
 class TimeVelocityField(eqx.Module):
     mlp: MLPWithLayerNorm
     shortcut: bool
+    dt: float
 
     def __init__(
         self,

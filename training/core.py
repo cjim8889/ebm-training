@@ -40,30 +40,15 @@ def evaluate_model(
             jnp.linspace(0, 1.0, eval_step)
             for eval_step in config.training.shortcut_size
         ]
-        key, subkey = jax.random.split(key)
-        val_samples = generate_samples_with_different_ts(
-            subkey,
-            v_theta,
-            config.sampling.num_particles,
-            eval_ts,
-            path_distribution.sample_initial,
-            integrator,
-            config.density.shift_fn,
-            use_shortcut=config.training.use_shortcut,
-        )
 
         for i, es in enumerate(config.training.shortcut_size):
-            eval_samples = val_samples[i][-1]
-            key, subkey = jax.random.split(key)
+            key, eval_key = jax.random.split(key)
             eval_metrics = target_density.evaluate(
-                subkey,
-                eval_samples,
-                time=float(eval_ts[i][-1]),
+                eval_key,
                 use_shortcut=config.training.use_shortcut,
                 ts=eval_ts[i],
                 v_theta=v_theta,
-                base_log_prob_fn=path_distribution.base_log_prob,
-                base_sample_fn=path_distribution.sample_initial,
+                base_density=path_distribution.initial_density,
             )
             total_eval_metrics[f"validation_{es}_step"] = eval_metrics
     else:
@@ -72,28 +57,14 @@ def evaluate_model(
             current_end_time * 1.0 / config.sampling.num_timesteps,
             current_end_time,
         )
-        key, subkey = jax.random.split(key)
-        val_samples = generate_samples(
-            subkey,
-            v_theta,
-            config.sampling.num_particles,
-            eval_ts,
-            path_distribution.sample_initial,
-            integrator,
-            config.density.shift_fn,
-            use_shortcut=config.training.use_shortcut,
-        )
-        eval_samples = val_samples["positions"][-1]
-        key, subkey = jax.random.split(key)
+
+        key, eval_key = jax.random.split(key)
         eval_metrics = target_density.evaluate(
-            subkey,
-            eval_samples,
-            time=float(eval_ts[-1]),
+            eval_key,
             use_shortcut=config.training.use_shortcut,
             ts=eval_ts,
             v_theta=v_theta,
-            base_log_prob_fn=path_distribution.base_log_prob,
-            base_sample_fn=path_distribution.sample_initial,
+            base_density=path_distribution.initial_density,
         )
         total_eval_metrics[f"validation_{config.sampling.num_timesteps}_step"] = (
             eval_metrics
@@ -414,7 +385,6 @@ def train_velocity_field(
                     wandb.log({"ess": mcmc_samples["ess"]})
             else:
                 print("Log Z: ", log_Z_t)
-                print("Current TS: ", current_ts)
                 if "ess" in mcmc_samples:
                     print("MCMC Samples ESS: ", mcmc_samples["ess"])
 
