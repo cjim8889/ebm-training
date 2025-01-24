@@ -22,6 +22,7 @@ from models import (
     ParticleTransformer,
     EquivariantTimeVelocityField,
     EGNN,
+    VelocityFieldTwo,
 )
 from training import train_velocity_field
 from training.config import (
@@ -46,7 +47,7 @@ def main():
         "--network",
         type=str,
         default="mlp",
-        choices=["mlp", "pdn", "transformer", "emlp", "egnn"],
+        choices=["mlp", "pdn", "transformer", "emlp", "egnn", "mlp2"],
     )
 
     # Sampling configuration
@@ -577,6 +578,14 @@ def main():
         v_theta = TimeVelocityField(
             model_key,
             input_dim=config.density.input_dim,
+            hidden_dim=config.model.hidden_dim,
+            depth=config.model.num_layers,
+            shortcut=config.training.use_shortcut,
+        )
+    elif config.model.architecture == "mlp2":
+        v_theta = VelocityFieldTwo(
+            model_key,
+            dim=config.density.input_dim,
             hidden_dim=config.model.hidden_dim,
             depth=config.model.num_layers,
             shortcut=config.training.use_shortcut,
