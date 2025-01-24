@@ -631,7 +631,7 @@ def main():
                 config.density.target_type,
                 config.model.architecture,
                 "decoupled" if config.training.use_decoupled_loss else "standard",
-                "no_shortcut",
+                "shortcut" if config.training.use_shortcut else "noshortcut",
                 "cv" if config.mcmc.use_control_variate else "no_cv",
             ],
         )
