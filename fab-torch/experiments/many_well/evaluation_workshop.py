@@ -29,7 +29,7 @@ def evaluate_metrics(model, target, gen_samples):
     data_set = target.sample((gen_samples.shape[0], ))
     gen_samples = gen_samples.cpu()
 
-    lop_p = target.log_prob(data_set)
+    lop_p = target.log_prob(data_set) if target.normalised else target.log_prob(data_set) - target.log_Z  
     log_q = model.flow._nf_model.log_prob(data_set.to('cuda')).cpu()
     f_kl = torch.mean(lop_p - log_q).item()
 
