@@ -41,5 +41,6 @@ python main.py \
   --use-shortcut \
   --shortcut-size 32 64 128 \
   --use-hutchinson \
+  --continuous-time \
   --n-probes 1
 

@@ -8,6 +8,8 @@ import optax
 import ott
 import ot as pot
 
+from .ode import solve_neural_ode_diffrax
+
 
 def batched_remove_mean(x, n_particles, n_spatial_dim):
     x = x.reshape(-1, n_particles, n_spatial_dim)
@@ -359,7 +361,7 @@ def reverse_time_flow(
             )(x_next)
         else:
             div_v_t = jax.vmap(lambda x: divergence_velocity(v_theta, x, t))(x_next)
-        log_prob_prev = log_prob_next - dt * div_v_t  # Accumulate log_prob
+        log_prob_prev = log_prob_next + dt * div_v_t  # Accumulate log_prob
 
         return (x_prev, log_prob_prev, t), None
 
@@ -390,8 +392,16 @@ def estimate_kl_divergence(
     log_probs_p = log_prob_p_fn(samples_p)  # Compute log p(x) for these samples
 
     # Perform reverse-time integration to compute samples and log probabilities under q(x)
-    samples_rev, log_probs_q = reverse_time_flow(
-        v_theta, samples_p, final_time, ts, use_shortcut
+    samples_rev, log_probs_q = solve_neural_ode_diffrax(
+        v_theta=v_theta,
+        y0=samples_p,
+        t0=final_time,
+        t1=0.0,
+        dt=ts[0] - ts[1],
+        log_p0=None,
+        use_shortcut=use_shortcut,
+        exact_logp=True,
+        forward=False,
     )
 
     # Compute log q(x(T)) = log q(x(0)) + accumulated log_probs
