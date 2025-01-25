@@ -11,8 +11,9 @@ from utils.distributions import (
     compute_w1_distance_1d_pot,
     compute_w2_distance_1d_pot,
     compute_wasserstein_distance_pot,
+    compute_log_effective_sample_size,
 )
-from utils.integration import generate_samples_with_log_prob_rk4
+from utils.integration import generate_samples_with_log_prob_Tsit5
 
 from .base import Target
 
@@ -212,7 +213,7 @@ class MultiDoubleWellEnergy(Target):
         )  # Sample from base distribution q_0
         initial_log_probs = base_density.log_prob(initial_samples)
 
-        samples_q, samples_log_q = generate_samples_with_log_prob_rk4(
+        samples_q, samples_log_q = generate_samples_with_log_prob_Tsit5(
             v_theta=v_theta,
             initial_samples=initial_samples,
             initial_log_probs=initial_log_probs,
@@ -269,5 +270,11 @@ class MultiDoubleWellEnergy(Target):
         )
 
         metrics["energy_total_variation"] = energy_total_variation
+
+        ess = compute_log_effective_sample_size(
+            log_p=log_prob_samples,
+            log_q=samples_log_q,
+        )
+        metrics["ess"] = jnp.exp(ess)
 
         return metrics
