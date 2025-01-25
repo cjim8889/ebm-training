@@ -245,9 +245,16 @@ def train_velocity_field(
     else:
         gradient_clipping = optax.identity()
 
+    lr_schedule = optax.warmup_cosine_decay_schedule(
+        init_value=0.0,
+        peak_value=config.training.learning_rate,
+        warmup_steps=500,
+        decay_steps=config.training.num_epochs * config.training.steps_per_epoch,
+    )
+
     base_optimizer = get_optimizer(
         config.training.optimizer,
-        config.training.learning_rate,
+        lr_schedule,
         weight_decay=config.training.weight_decay,
         b1=config.training.beta1,
         b2=config.training.beta2,
@@ -256,6 +263,7 @@ def train_velocity_field(
         nesterov=config.training.nesterov,
         noise_scale=config.training.noise_scale,
     )
+
     optimizer = optax.chain(optax.zero_nans(), gradient_clipping, base_optimizer)
     optimizer: optax.GradientTransformation = optax.apply_if_finite(optimizer, 5)
 
@@ -349,7 +357,7 @@ def train_velocity_field(
             config.density.shift_fn,
             config.training.use_hutchinson,
             key=key,
-            n_probes=5,
+            n_probes=config.training.n_probes,
         )
         updates, opt_state = optimizer.update(grads, opt_state, v_theta)
         v_theta = eqx.apply_updates(v_theta, updates)
