@@ -16,21 +16,21 @@ source activate py12
 python main.py \
   --num-samples 2560 \
   --depth 4 \
-  --hidden-dim 256 \
-  --network mlp \
-  --num-epochs 20000 \
+  --hidden-dim 128 \
+  --network mlp2 \
+  --num-epochs 10000 \
   --steps-per-epoch 500 \
   --mcmc-method vsmc \
   --mcmc-step-size 0.1 \
-  --mcmc-steps 10 \
+  --mcmc-steps 6 \
   --mcmc-integration-steps 10 \
   --initial-sigma 2. \
   --with-rejection \
   --target mw32 \
-  --seed 888 \
+  --seed 1234 \
   --use-decoupled-loss \
   --batch-size 128 \
-  --learning-rate 4e-04 \
+  --learning-rate 1e-03 \
   --gradient-norm 1. \
   --optimizer adamw \
   --weight-decay 1e-04 \
@@ -38,5 +38,8 @@ python main.py \
   --n-samples-eval 1024 \
   --use-cv \
   --eval-frequency 60 \
-  --use-shortcut
+  --use-shortcut \
+  --shortcut-size 32 64 128 \
+  --use-hutchinson \
+  --n-probes 1
 
