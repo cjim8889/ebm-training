@@ -219,21 +219,12 @@ def hutchinson_divergence_velocity(
 
 @eqx.filter_jit
 def hutchinson_divergence_velocity2(
-    key: jax.random.PRNGKey,
     v_theta: Callable,
     x: chex.Array,
     t: float,
+    eps: chex.Array,
     d: Optional[float] = None,
-    n_probes: int = 1,
 ) -> chex.Array:
-    # Generate all probes in one batch (better memory/performance)
-    key, subkey = jax.random.split(key)
-
-    eps = jax.random.bernoulli(subkey, p=0.5, shape=(n_probes,) + x.shape)
-    eps = eps.astype(x.dtype)  # Match input precision
-    eps = eps * 2 - 1  # Convert {0,1} → {-1,+1}
-    eps = jax.lax.stop_gradient(eps)
-
     # Compute VJP once and reuse for all probes
     v_fn = lambda x: v_theta(x, t, d) if d is not None else v_theta(x, t)
     _, f_vjp = jax.vjp(v_fn, x)
@@ -245,6 +236,31 @@ def hutchinson_divergence_velocity2(
     estimates = jnp.einsum("i...,i...->i", eps, jvp_eps)
 
     return jnp.mean(estimates)
+
+
+@eqx.filter_jit
+def hutchinson_divergence_velocity_single_probe(
+    v_theta: Callable,
+    x: chex.Array,
+    t: chex.Array,
+    eps: chex.Array,  # Probe vector now passed as argument
+    d: Optional[float] = None,
+) -> chex.Array:
+    """Compute divergence using single pre-defined probe vector."""
+    # Validate probe vector shape
+    chex.assert_shape(eps, x.shape)
+
+    # Compute VJP once for the given probe
+    v_fn = lambda x: v_theta(x, t, d) if d is not None else v_theta(x, t)
+    _, f_vjp = jax.vjp(v_fn, x)
+
+    # Direct computation without vmap (single probe)
+    jvp_eps = f_vjp(eps)[0]
+
+    # Simplified trace estimation for single probe
+    trace_estimate = jnp.sum(eps * jvp_eps)
+
+    return trace_estimate
 
 
 @eqx.filter_jit
