@@ -13,11 +13,11 @@ cd $PBS_O_WORKDIR
 eval "$(~/anaconda3/bin/conda shell.bash hook)"
 source activate py12
 
-python main.py \
+CUDA_VISIBLE_DEVICES=1 uv run main.py \
   --num-samples 2560 \
   --depth 4 \
   --hidden-dim 128 \
-  --network egnn \
+  --network transformer \
   --num-epochs 20000 \
   --steps-per-epoch 500 \
   --mcmc-method vsmc \

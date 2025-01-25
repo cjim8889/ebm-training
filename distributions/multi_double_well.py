@@ -1,17 +1,20 @@
+from typing import Callable, Optional
+
+import chex
 import jax
 import jax.numpy as jnp
-import numpy as np
 import matplotlib.pyplot as plt
-from .base import Target
-from typing import Optional
-import chex
+import numpy as np
 
 from utils.distributions import (
-    compute_wasserstein_distance_pot,
+    compute_total_variation_distance,
     compute_w1_distance_1d_pot,
     compute_w2_distance_1d_pot,
-    compute_total_variation_distance,
+    compute_wasserstein_distance_pot,
 )
+from utils.integration import generate_samples_with_log_prob_rk4
+
+from .base import Target
 
 
 class MultiDoubleWellEnergy(Target):
@@ -191,21 +194,44 @@ class MultiDoubleWellEnergy(Target):
         fig.canvas.draw()
         return fig
 
-    def evaluate(self, key, samples, time=None, **kwargs):
-        metrics = super().evaluate(key, samples, time=time, **kwargs)
-        if samples.shape[0] > self.n_model_samples_eval:
-            samples = samples[: self.n_model_samples_eval]
+    def evaluate(
+        self,
+        key: chex.PRNGKey,
+        *,
+        v_theta: Callable,
+        ts: chex.Array,
+        base_density: Target,
+        use_shortcut: bool = False,
+        **kwargs,
+    ):
+        metrics = {}
+
+        key, sample_key = jax.random.split(key)
+        initial_samples = base_density.sample(
+            sample_key, (self.n_model_samples_eval,)
+        )  # Sample from base distribution q_0
+        initial_log_probs = base_density.log_prob(initial_samples)
+
+        samples_q, samples_log_q = generate_samples_with_log_prob_rk4(
+            v_theta=v_theta,
+            initial_samples=initial_samples,
+            initial_log_probs=initial_log_probs,
+            ts=ts,
+            use_shortcut=use_shortcut,
+        )
+
+        metrics["figure"] = self.visualise(samples_q)
 
         true_samples = self._test_set[: self.n_target_samples_eval]
 
         x_w1_distance, x_w2_distance = compute_wasserstein_distance_pot(
-            samples, true_samples
+            samples_q, true_samples
         )
 
         metrics["w1_distance"] = x_w1_distance
         metrics["w2_distance"] = x_w2_distance
 
-        log_prob_samples = self.batched_log_prob(samples)
+        log_prob_samples = self.batched_log_prob(samples_q)
         log_prob_true_samples = self.batched_log_prob(true_samples)
 
         e_w2_distance = compute_w2_distance_1d_pot(
@@ -222,7 +248,7 @@ class MultiDoubleWellEnergy(Target):
         metrics["e_w1_distance"] = e_w1_distance
 
         true_interatomic_dist = self.interatomic_dist(true_samples).reshape(-1, 1)
-        samples_interatomic_dist = self.interatomic_dist(samples).reshape(-1, 1)
+        samples_interatomic_dist = self.interatomic_dist(samples_q).reshape(-1, 1)
 
         dist_total_variation = compute_total_variation_distance(
             samples_interatomic_dist,
@@ -233,5 +259,15 @@ class MultiDoubleWellEnergy(Target):
         )
 
         metrics["dist_total_variation"] = dist_total_variation
+
+        energy_total_variation = compute_total_variation_distance(
+            log_prob_samples.reshape(-1, 1),
+            log_prob_true_samples.reshape(-1, 1),
+            num_bins=200,
+            lower_bound=-35,
+            upper_bound=5,
+        )
+
+        metrics["energy_total_variation"] = energy_total_variation
 
         return metrics
