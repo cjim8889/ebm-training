@@ -16,13 +16,13 @@ source activate py12
 python main.py \
   --num-samples 5120 \
   --depth 4 \
-  --hidden-dim 256 \
+  --hidden-dim 128 \
   --network mlp2 \
   --num-epochs 20000 \
   --steps-per-epoch 500 \
   --mcmc-method vsmc \
   --mcmc-step-size 0.1 \
-  --mcmc-steps 6 \
+  --mcmc-steps 5 \
   --mcmc-integration-steps 5 \
   --initial-sigma 25. \
   --with-rejection \
