@@ -228,8 +228,6 @@ def hutchinson_divergence_velocity2(
 ) -> chex.Array:
     # Generate all probes in one batch (better memory/performance)
     key, subkey = jax.random.split(key)
-    # eps = jax.random.rademacher(subkey, (n_probes,) + x.shape, dtype=jnp.float32)
-    # eps = jax.lax.stop_gradient(eps)
 
     eps = jax.random.bernoulli(subkey, p=0.5, shape=(n_probes,) + x.shape)
     eps = eps.astype(x.dtype)  # Match input precision

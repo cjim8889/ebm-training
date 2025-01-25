@@ -20,7 +20,7 @@ def soft_clip(x, min_val, max_val, alpha=10.0):
 
 def get_optimizer(
     name: str,
-    learning_rate: float,
+    learning_rate: float | optax.Schedule,
     weight_decay: float = 0.0,
     b1: float = 0.9,
     b2: float = 0.999,

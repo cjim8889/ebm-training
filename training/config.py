@@ -43,6 +43,7 @@ class TrainingConfig:
     shortcut_size: List[int] = field(default_factory=lambda: [16, 32, 64, 128])
     use_shortcut: bool = False
     use_hutchinson: bool = False
+    n_probes: int = 5
 
 
 @dataclass
