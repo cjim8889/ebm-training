@@ -169,3 +169,5 @@ wandb
 
 *.png
 *.eqx
+
+profile/

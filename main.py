@@ -76,6 +76,12 @@ def main():
         help="Whether to use Hutchinson's trick",
     )
     parser.add_argument(
+        "--n-probes",
+        type=int,
+        default=2,
+        help="Number of probes to use in Hutchinson's trick",
+    )
+    parser.add_argument(
         "--shortcut-size",
         type=int,
         nargs="+",
@@ -231,9 +237,9 @@ def main():
 
     args = parser.parse_args()
 
-    if args.debug:
-        jax.config.update("jax_debug_nans", True)
-        jax.config.update("jax_debug_infs", True)
+    # if args.debug:
+    # jax.config.update("jax_debug_nans", True)
+    # jax.config.update("jax_debug_infs", True)
 
     # Set random seed
     key = jax.random.PRNGKey(args.seed)
@@ -264,6 +270,7 @@ def main():
         use_shortcut=args.use_shortcut,
         shortcut_size=args.shortcut_size,
         use_hutchinson=args.use_hutchinson,
+        n_probes=args.n_probes,
     )
 
     mcmc_config = MCMCConfig(
@@ -651,14 +658,28 @@ def main():
             ],
         )
 
-    # Train model
-    v_theta = train_velocity_field(
-        key=key,
-        initial_density=initial_density,
-        target_density=target_density,
-        v_theta=v_theta,
-        config=config,
-    )
+    if config.debug:
+        config.training.num_epochs = 2
+        import jax.profiler as profiler
+
+        with profiler.trace("profile"):
+            # Train model
+            v_theta = train_velocity_field(
+                key=key,
+                initial_density=initial_density,
+                target_density=target_density,
+                v_theta=v_theta,
+                config=config,
+            )
+    else:
+        # Train model
+        v_theta = train_velocity_field(
+            key=key,
+            initial_density=initial_density,
+            target_density=target_density,
+            v_theta=v_theta,
+            config=config,
+        )
 
 
 if __name__ == "__main__":
