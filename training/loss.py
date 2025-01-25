@@ -9,6 +9,7 @@ from utils.distributions import (
     divergence_velocity,
     divergence_velocity_with_shortcut,
     hutchinson_divergence_velocity2,
+    hutchinson_divergence_velocity_single_probe,
 )
 
 
@@ -50,19 +51,34 @@ batched_epsilon = jax.vmap(epsilon, in_axes=(None, 0, None, None))
 
 @eqx.filter_jit
 def epsilon_with_hutchinson(
-    key: jax.random.PRNGKey,
     v_theta: Callable[[chex.Array, float, float], chex.Array],
     particle: Particle,
     score_fn: Callable[[chex.Array, float], chex.Array],
     time_derivative_log_density: Callable[[chex.Array, float], float],
-    n_probes: int,
+    eps: chex.Array,
+    single_probe: bool,
 ):
     x, t, log_Z_t, d = particle.x, particle.t, particle.log_Z_t, particle.d
     dt_log_unormalised = time_derivative_log_density(x, t)
     dt_log_density = dt_log_unormalised - log_Z_t
 
     score = score_fn(x, t)
-    div_v = hutchinson_divergence_velocity2(key, v_theta, x, t, d=d, n_probes=n_probes)
+    if single_probe:
+        div_v = hutchinson_divergence_velocity_single_probe(
+            v_theta,
+            x,
+            t,
+            eps,
+            d=d,
+        )
+    else:
+        div_v = hutchinson_divergence_velocity2(
+            v_theta,
+            x,
+            t,
+            eps,
+            d=d,
+        )
     if d is not None:
         v = v_theta(x, t, d)
     else:
@@ -76,7 +92,7 @@ def epsilon_with_hutchinson(
 
 
 batched_epsilon_with_hutchinson = jax.vmap(
-    epsilon_with_hutchinson, in_axes=(0, None, 0, None, None, None)
+    epsilon_with_hutchinson, in_axes=(None, 0, None, None, 0, None)
 )
 
 
@@ -125,17 +141,35 @@ def loss_fn(
     Returns:
         float: Mean squared error in satisfying the Liouville equation
     """
-
     if use_hutchinson:
-        keys = jax.random.split(key, particles.x.shape[0])
-        epsilons = batched_epsilon_with_hutchinson(
-            keys,
-            v_theta,
-            particles,
-            score_fn,
-            time_derivative_log_density,
-            n_probes,
-        )
+        if n_probes > 1:
+            eps = jax.random.rademacher(
+                key,
+                shape=(particles.x.shape[0], n_probes, particles.x.shape[1]),
+                dtype=particles.x.dtype,
+            )
+            epsilons = batched_epsilon_with_hutchinson(
+                v_theta,
+                particles,
+                score_fn,
+                time_derivative_log_density,
+                eps,
+                False,
+            )
+        else:
+            eps = jax.random.rademacher(
+                key,
+                shape=(particles.x.shape[0], particles.x.shape[1]),
+                dtype=particles.x.dtype,
+            )
+            epsilons = batched_epsilon_with_hutchinson(
+                v_theta,
+                particles,
+                score_fn,
+                time_derivative_log_density,
+                eps,
+                True,
+            )
     else:
         epsilons = batched_epsilon(
             v_theta, particles, score_fn, time_derivative_log_density
