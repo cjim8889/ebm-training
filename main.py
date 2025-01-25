@@ -619,8 +619,8 @@ def main():
             hidden_size=config.model.hidden_dim,
             num_layers=config.model.num_layers,
             num_heads=4,
-            dropout_rate=0.1,
-            attn_dropout_rate=0.1,
+            dropout_rate=0.0,
+            attn_dropout_rate=0.0,
             key=model_key,
             shortcut=config.training.use_shortcut,
         )
@@ -640,6 +640,7 @@ def main():
             hidden_size=config.model.hidden_dim,
             num_layers=config.model.num_layers,
             normalize=True,
+            tanh=True,
             shortcut=config.training.use_shortcut,
         )
 
