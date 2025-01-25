@@ -18,7 +18,7 @@ from utils.distributions import (
 )
 from utils.integration import (
     generate_samples_with_log_prob,
-    generate_samples_with_log_prob_rk4,
+    generate_samples_with_log_prob_Tsit5,
 )
 from utils.plotting import plot_contours_2D, plot_marginal_pair
 
@@ -154,7 +154,7 @@ class GMM(Target):
         )  # Sample from base distribution q_0
         initial_log_probs = base_density.log_prob(initial_samples)
 
-        samples_q, samples_log_q = generate_samples_with_log_prob_rk4(
+        samples_q, samples_log_q = generate_samples_with_log_prob_Tsit5(
             v_theta=v_theta,
             initial_samples=initial_samples,
             initial_log_probs=initial_log_probs,
@@ -170,10 +170,6 @@ class GMM(Target):
 
         x_w1_distance, x_w2_distance = compute_wasserstein_distance_pot(
             samples_q, true_samples, num_itermax=1e7
-        )
-
-        x_w2_sinkhorn_distance = compute_w2_sinkhorn_distance_ot(
-            samples_q, true_samples, reg=None, num_itermax=1e5
         )
 
         log_prob_samples = self.log_prob(samples_q)
@@ -210,7 +206,6 @@ class GMM(Target):
 
         metrics["w2_distance"] = x_w2_distance
         metrics["w1_distance"] = x_w1_distance
-        metrics["w2_sinkhorn_distance"] = x_w2_sinkhorn_distance
         metrics["e_w2_distance"] = e_w2_distance
         metrics["e_w1_distance"] = e_w1_distance
 
@@ -231,6 +226,6 @@ class GMM(Target):
         metrics["kl_divergence"] = kl_divergence
 
         ess = compute_log_effective_sample_size(self.log_prob(samples_q), samples_log_q)
-        metrics["ess"] = ess
+        metrics["ess"] = jnp.exp(ess)
 
         return metrics
