@@ -17,26 +17,28 @@ python main.py \
   --num-samples 5120 \
   --depth 4 \
   --hidden-dim 256 \
-  --network mlp \
+  --network mlp2 \
   --num-epochs 20000 \
   --steps-per-epoch 500 \
   --mcmc-method vsmc \
   --mcmc-step-size 0.1 \
-  --mcmc-steps 5 \
+  --mcmc-steps 6 \
   --mcmc-integration-steps 5 \
   --initial-sigma 25. \
   --with-rejection \
   --target gmm \
-  --seed 123 \
+  --seed 1234 \
   --use-decoupled-loss \
   --batch-size 128 \
-  --learning-rate 6e-04 \
+  --learning-rate 1e-03 \
   --gradient-norm 1. \
   --optimizer adamw \
   --weight-decay 1e-04 \
-  --time-batch-size 32 \
+  --time-batch-size 64 \
   --n-samples-eval 1024 \
   --use-cv \
   --eval-frequency 60 \
-  --use-shortcut
+  --use-shortcut \
+  --use-hutchinson \
+  --n-probes 1
 
