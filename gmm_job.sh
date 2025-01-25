@@ -38,7 +38,6 @@ python main.py \
   --n-samples-eval 1024 \
   --use-cv \
   --eval-frequency 60 \
-  --use-shortcut \
-  --use-hutchinson \
-  --n-probes 1
+  --continuous-time \
+  --use-shortcut
 

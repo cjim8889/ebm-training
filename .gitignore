@@ -171,3 +171,5 @@ wandb
 *.eqx
 
 profile/
+
+artifacts/

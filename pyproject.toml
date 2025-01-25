@@ -23,4 +23,8 @@ dependencies = [
     "setuptools>=75.2.0",
     "ott-jax==0.5.0",
     "pot>=0.9.5",
+    "diffrax>=0.6.1",
 ]
+
+[tool.ruff.lint]
+ignore = ["F722", "F821"]

@@ -5,6 +5,7 @@ import jax
 import jax.numpy as jnp
 
 from .distributions import divergence_velocity, divergence_velocity_with_shortcut
+from .ode import solve_neural_ode_diffrax
 
 
 @eqx.filter_jit
@@ -139,6 +140,28 @@ def generate_samples_with_log_prob(
     (samples, log_probs, _), _ = jax.lax.scan(step, carry, ts)
 
     return samples, log_probs
+
+
+@eqx.filter_jit
+def generate_samples_with_log_prob_Tsit5(
+    v_theta: Callable,
+    initial_samples: jnp.ndarray,
+    initial_log_probs: jnp.ndarray,
+    ts: jnp.ndarray,
+    use_shortcut: bool = False,
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    final_samples, final_log_probs = solve_neural_ode_diffrax(
+        v_theta=v_theta,
+        y0=initial_samples,
+        t0=ts[0],
+        t1=ts[-1],
+        dt=ts[1] - ts[0],
+        log_p0=initial_log_probs,
+        use_shortcut=use_shortcut,
+        exact_logp=True,
+        forward=True,
+    )
+    return final_samples, final_log_probs
 
 
 @eqx.filter_jit
