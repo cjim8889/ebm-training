@@ -11,9 +11,10 @@ from utils.distributions import (
     compute_wasserstein_distance_pot,
     compute_total_variation_distance,
     estimate_kl_divergence,
+    compute_log_effective_sample_size,
 )
 from utils.integration import (
-    generate_samples_with_log_prob_rk4,
+    generate_samples_with_log_prob_Tsit5,
 )
 from utils.plotting import plot_contours_2D, plot_marginal_pair
 
@@ -138,7 +139,7 @@ class ManyWellEnergy(Target):
         )  # Sample from base distribution q_0
         initial_log_probs = base_density.log_prob(initial_samples)
 
-        samples_q, samples_log_q = generate_samples_with_log_prob_rk4(
+        samples_q, samples_log_q = generate_samples_with_log_prob_Tsit5(
             v_theta=v_theta,
             initial_samples=initial_samples,
             initial_log_probs=initial_log_probs,
@@ -197,6 +198,13 @@ class ManyWellEnergy(Target):
         )
 
         metrics["kl_divergence"] = kl_divergence
+
+        ess = compute_log_effective_sample_size(
+            log_p=log_prob_samples,
+            log_q=samples_log_q,
+        )
+
+        metrics["ess"] = jnp.exp(ess)
 
         return metrics
 
