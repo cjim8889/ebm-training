@@ -395,9 +395,7 @@ def estimate_kl_divergence(
     samples_rev, log_probs_q = solve_neural_ode_diffrax(
         v_theta=v_theta,
         y0=samples_p,
-        t0=final_time,
-        t1=0.0,
-        dt=ts[0] - ts[1],
+        ts=ts[::-1],
         log_p0=None,
         use_shortcut=use_shortcut,
         exact_logp=True,

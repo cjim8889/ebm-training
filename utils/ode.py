@@ -11,9 +11,7 @@ from functools import partial
 def solve_neural_ode_diffrax(
     v_theta: Callable,
     y0: Float[Array, "batch dim"],
-    t0: float,
-    t1: float,
-    dt: float,
+    ts: Float[Array, "steps"],
     log_p0: Float[Array, "batch"] = None,
     use_shortcut: bool = False,
     exact_logp: bool = True,
@@ -37,6 +35,9 @@ def solve_neural_ode_diffrax(
     Returns:
         (base_samples, log_probs)
     """
+    t0 = ts[0]
+    t1 = ts[-1]
+    dt = ts[1] - ts[0]
 
     # Prepare augmented state (samples + log_probs)
     if log_p0 is None:
@@ -47,8 +48,7 @@ def solve_neural_ode_diffrax(
     augmented_state = (y0, initial_log_probs)
 
     # Configure solver and step controller
-    solver = diffrax.ReversibleHeun()
-    dt0 = dt  # Initial negative step for backward integration
+    solver = diffrax.Tsit5()
 
     # Prepare arguments based on computation mode
     if exact_logp:
@@ -81,12 +81,11 @@ def solve_neural_ode_diffrax(
             solver,
             t0=t0,
             t1=t1,
-            dt0=dt0,
+            dt0=None,
             y0=x,
             args=args,
-            saveat=diffrax.SaveAt(steps=True) if save_trajectory else None,
-            stepsize_controller=diffrax.ConstantStepSize(),
-            max_steps=max_steps,
+            saveat=diffrax.SaveAt(ts=ts) if save_trajectory else None,
+            stepsize_controller=diffrax.StepTo(ts=ts),
         )
     )(augmented_state)
 

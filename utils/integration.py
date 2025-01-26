@@ -73,9 +73,7 @@ def generate_samples_with_Tsit5(
     final_samples, _ = solve_neural_ode_diffrax(
         v_theta=v_theta,
         y0=initial_samples,
-        t0=ts[0],
-        t1=ts[-1],
-        dt=ts[1] - ts[0],
+        ts=ts,
         use_shortcut=use_shortcut,
         exact_logp=True,
         forward=True,
@@ -181,9 +179,7 @@ def generate_samples_with_log_prob_Tsit5(
     final_samples, final_log_probs = solve_neural_ode_diffrax(
         v_theta=v_theta,
         y0=initial_samples,
-        t0=ts[0],
-        t1=ts[-1],
-        dt=ts[1] - ts[0],
+        ts=ts,
         log_p0=initial_log_probs,
         use_shortcut=use_shortcut,
         exact_logp=True,
