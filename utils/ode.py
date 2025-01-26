@@ -84,7 +84,9 @@ def solve_neural_ode_diffrax(
             dt0=None,
             y0=x,
             args=args,
-            saveat=diffrax.SaveAt(ts=ts) if save_trajectory else None,
+            saveat=diffrax.SaveAt(ts=ts)
+            if save_trajectory
+            else diffrax.SaveAt(t1=True),
             stepsize_controller=diffrax.StepTo(ts=ts),
         )
     )(augmented_state)
