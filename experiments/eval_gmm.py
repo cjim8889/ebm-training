@@ -4,10 +4,10 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
 import wandb
-from distributions import GMM, MultivariateGaussian, AnnealedDistribution
+from distributions import GMM, AnnealedDistribution, MultivariateGaussian
 from models.mlp import VelocityFieldTwo
-from utils.eval import evaluate_model, log_metrics, aggregate_eval_metrics
-from training.config import TrainingExperimentConfig, TrainingConfig
+from training.config import TrainingConfig, TrainingExperimentConfig
+from utils.eval import aggregate_eval_metrics, evaluate_model, log_metrics
 
 config = TrainingExperimentConfig(
     offline=False,
@@ -51,7 +51,6 @@ for _ in range(5):
         v_theta,
         config,
         path_distribution,
-        None,
         target_density,
         1.0,
     )
