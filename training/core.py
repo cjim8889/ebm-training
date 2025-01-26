@@ -9,22 +9,23 @@ import optax
 import wandb
 from distributions import AnnealedDistribution, Target
 from utils.distributions import sample_monotonic_uniform_ordered
+from utils.eval import (
+    aggregate_eval_metrics,
+    evaluate_model,
+    log_metrics,
+    save_model_if_best,
+)
 from utils.hmc import generate_samples_with_hmc_correction
-from utils.smc import generate_samples_with_smc
 from utils.integration import (
     euler_integrate,
     generate_samples,
 )
 from utils.optimization import get_optimizer, inverse_power_schedule, power_schedule
+from utils.smc import generate_samples_with_smc
+
 from .config import TrainingExperimentConfig
-from .loss import loss_fn, Particle
+from .loss import Particle, loss_fn
 from .normalizing_constant import estimate_log_Z_t
-from utils.eval import (
-    evaluate_model,
-    aggregate_eval_metrics,
-    log_metrics,
-    save_model_if_best,
-)
 
 
 def train_velocity_field(
