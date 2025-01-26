@@ -19,6 +19,8 @@ def solve_neural_ode_diffrax(
     exact_logp: bool = True,
     key: jax.random.PRNGKey = None,
     forward: bool = True,
+    save_trajectory: bool = False,
+    max_steps: int = 128,
 ) -> Tuple[Float[Array, "batch dim"], Float[Array, "batch"]]:
     """
     Solve the neural ODE using Diffrax.
@@ -82,13 +84,19 @@ def solve_neural_ode_diffrax(
             dt0=dt0,
             y0=x,
             args=args,
+            saveat=diffrax.SaveAt(steps=True) if save_trajectory else None,
+            max_steps=max_steps,
         )
     )(augmented_state)
 
     # Extract final state and accumulated log probabilities
     samples, log_probs = sols.ys
-
-    return samples.reshape(y0.shape), log_probs.reshape(-1)
+    if save_trajectory:
+        return jnp.transpose(samples, axes=(1, 0, 2)), jnp.transpose(
+            log_probs, axes=(1, 0)
+        )
+    else:
+        return samples.reshape(y0.shape), log_probs.reshape(-1)
 
 
 @eqx.filter_jit

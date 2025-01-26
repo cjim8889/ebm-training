@@ -79,6 +79,8 @@ def generate_samples_with_Tsit5(
         use_shortcut=use_shortcut,
         exact_logp=True,
         forward=True,
+        max_steps=ts.shape[0],
+        save_trajectory=True,
     )
     return {
         "positions": final_samples,
@@ -186,6 +188,7 @@ def generate_samples_with_log_prob_Tsit5(
         use_shortcut=use_shortcut,
         exact_logp=True,
         forward=True,
+        max_steps=ts.shape[0],
     )
     return final_samples, final_log_probs
 
