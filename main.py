@@ -25,7 +25,7 @@ from models import (
     VelocityFieldTwo,
     VelocityFieldThree,
 )
-from training import train_velocity_field
+from training.core import train_velocity_field
 from training.config import (
     SamplingConfig,
     TrainingConfig,
