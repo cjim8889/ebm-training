@@ -3,16 +3,17 @@ import os
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+
 import matplotlib.pyplot as plt
 
 import wandb
-from distributions import ManyWellEnergy, MultivariateGaussian
+from distributions import GMM, MultivariateGaussian
 from models.mlp import VelocityFieldTwo
 from utils.integration import generate_samples_with_Tsit5
 
 run = wandb.init()
 artifact = run.use_artifact(
-    "iclac/liouville_workshop/velocity_field_model_tgsgkczf:v72", type="model"
+    "iclac/liouville_workshop/velocity_field_model_iwik1qe2:v17", type="model"
 )
 
 artifact_dir = artifact.download()
@@ -22,7 +23,7 @@ key = jax.random.PRNGKey(0)
 
 v_theta = VelocityFieldTwo(
     key=key,
-    dim=32,
+    dim=2,
     hidden_dim=128,
     depth=4,
     shortcut=True,
@@ -30,8 +31,8 @@ v_theta = VelocityFieldTwo(
 # Load the saved parameters into the model
 v_theta = eqx.tree_deserialise_leaves(f"{artifact_dir}/model.eqx", v_theta)
 
-initial_density = MultivariateGaussian(dim=32, sigma=2.0)
-target_density = ManyWellEnergy(dim=32)
+initial_density = MultivariateGaussian(dim=2, sigma=25.0)
+target_density = GMM(key, dim=2)
 
 key, sample_key = jax.random.split(key)
 
@@ -41,7 +42,7 @@ samples = generate_samples_with_Tsit5(
 )
 
 # Save the samples to a local file
-save_path = "data/mw32_samples.npz"
+save_path = "data/gmm_samples.npz"
 os.makedirs(os.path.dirname(save_path), exist_ok=True)
 jnp.savez(
     save_path,
@@ -50,4 +51,5 @@ jnp.savez(
 )
 print(f"Samples saved to {save_path}")
 
-target_density.visualise(samples["positions"][-1])
+fig = target_density.visualise(samples["positions"][-1])
+plt.show()
