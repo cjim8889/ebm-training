@@ -1,6 +1,7 @@
+from typing import Callable, Optional, Union
+
 import chex
 import matplotlib.pyplot as plt
-from typing import Optional, Union
 
 
 class Target:
@@ -53,4 +54,14 @@ class Target:
         raise NotImplementedError
 
     def visualise_with_time(self, samples: chex.Array, time: float) -> plt.Figure:
+        raise NotImplementedError
+
+    def evaluate(
+        self,
+        key: chex.PRNGKey,
+        v_theta: Callable,
+        ts: chex.Array,
+        use_shortcut: bool = False,
+        **kwargs,
+    ) -> dict:
         raise NotImplementedError

@@ -1,7 +1,3 @@
-import blackjax
-import blackjax.adaptation
-import blackjax.adaptation.mass_matrix
-import blackjax.smc.resampling as resampling
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
@@ -10,54 +6,69 @@ from distributions import AnnealedDistribution
 from distributions.multivariate_gaussian import MultivariateGaussian
 from distributions.time_dependent_lennard_jones_butler import (
     TimeDependentLennardJonesEnergyButler,
+    TimeDependentLennardJonesEnergyButlerWithTemperatureTempered,
 )
+
+from distributions import SoftCoreLennardJonesEnergy
 
 from utils.smc import generate_samples_with_smc
 
-# plt.rcParams["figure.dpi"] = 300
-# plt.rcParams["figure.figsize"] = [6.0, 4.0]
-
-jax.config.update("jax_platform_name", "cpu")
-
 key = jax.random.PRNGKey(1234)
 
-
-initial_density = MultivariateGaussian(dim=39, mean=0, sigma=3)
-target_density = TimeDependentLennardJonesEnergyButler(
+initial_density = MultivariateGaussian(dim=39, mean=0, sigma=1)
+# target_density = TimeDependentLennardJonesEnergyButler(
+#     dim=39,
+#     n_particles=13,
+#     alpha=0.2,
+#     sigma=1.0,
+#     epsilon_val=1.0,
+#     min_dr=1e-4,
+#     n=1,
+#     m=1,
+#     c=0.5,
+#     include_harmonic=True,
+# )
+target_density = SoftCoreLennardJonesEnergy(
     dim=39,
     n_particles=13,
     alpha=0.2,
     sigma=1.0,
     epsilon_val=1.0,
     min_dr=1e-4,
-    n=1,
-    m=1,
     c=0.5,
     include_harmonic=True,
-    cubic_spline=True,
-    # log_prob_clip=100.0,
+    log_prob_clip=100.,
 )
 
-initial_density = MultivariateGaussian(dim=39, mean=0.0, sigma=1.0)
 path_density = AnnealedDistribution(
-    initial_density=initial_density, target_density=target_density
+    initial_density=initial_density, target_density=target_density, method="linear"
 )
+ts = jnp.linspace(0, 1, 128)
+print("Warmup done")
+keys = jax.random.split(key, 3)
+key = keys[0]
+subkey = keys[1]
+covariance_key = keys[2]
 
-key, subkey = jax.random.split(key)
-ts = jnp.linspace(0, 1.0, num=128)
+def shift_fn(x):
+    return x - jnp.mean(x, axis=0, keepdims=True)
 
 samples = generate_samples_with_smc(
-    key=key,
+    key=subkey,
     time_dependent_log_density=path_density.time_dependent_log_prob,
-    num_samples=1000,
+    num_samples=2560,
     ts=ts,
     sample_fn=path_density.sample_initial,
-    num_steps=20,
+    num_steps=5,
     integration_steps=10,
-    eta=0.02,
+    eta=0.018,
     rejection_sampling=True,
     ess_threshold=0.5,
+    estimate_covariance=False,
+    blackjax_hmc=True,
+    shift_fn=shift_fn,
 )
-
-fig = target_density.visualise(samples[-1])
-plt.show()
+print("Sampling done")
+print("ESS", samples["ess"])
+fig = target_density.visualise(samples["positions"][-1])
+plt.savefig("lj13c-3.png")

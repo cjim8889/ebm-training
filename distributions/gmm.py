@@ -1,10 +1,28 @@
-import jax.numpy as jnp
-import distrax
+from typing import Callable, Dict
+
 import chex
+import distrax
 import jax
-from .base import Target
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
+
+from utils.distributions import (
+    compute_log_effective_sample_size,
+    compute_total_variation_distance,
+    compute_w1_distance_1d_pot,
+    compute_w2_distance_1d_pot,
+    compute_w2_sinkhorn_distance,
+    compute_w2_sinkhorn_distance_ot,
+    compute_wasserstein_distance_pot,
+    estimate_kl_divergence,
+)
+from utils.integration import (
+    generate_samples_with_log_prob,
+    generate_samples_with_log_prob_Tsit5,
+)
 from utils.plotting import plot_contours_2D, plot_marginal_pair
+
+from .base import Target
 
 
 class GMM(Target):
@@ -15,17 +33,18 @@ class GMM(Target):
         key: chex.PRNGKey,
         dim: int = 2,
         n_mixes: int = 40,
-        loc_scaling: float = 40,
+        loc_scaling: float = 40.0,
         scale_scaling: float = 1.0,
         fixed_mean: bool = True,
+        n_samples_eval: int = 1024,
     ) -> None:
         super().__init__(
             dim=dim,
             log_Z=0.0,
             can_sample=True,
             n_plots=1,
-            n_model_samples_eval=1000,
-            n_target_samples_eval=1000,
+            n_model_samples_eval=n_samples_eval,
+            n_target_samples_eval=n_samples_eval,
         )
 
         self.n_mixes = n_mixes
@@ -75,7 +94,7 @@ class GMM(Target):
                     [7.9606, -34.7833],
                     [3.6797, -25.0242],
                 ]
-            )
+            ) * (loc_scaling / 40.0)
         else:
             mean = jax.random.normal(key, shape=(n_mixes, dim)) * loc_scaling
 
@@ -109,4 +128,104 @@ class GMM(Target):
         if self.dim == 2:
             plot_contours_2D(self.log_prob, ax, bound=self._plot_bound, levels=50)
 
+        # Remove ticks, axis lines and numbers
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+
         return fig
+
+    def evaluate(
+        self,
+        key: chex.PRNGKey,
+        *,
+        v_theta: Callable,
+        ts: chex.Array,
+        base_density: Target,
+        use_shortcut: bool = False,
+        **kwargs,
+    ) -> Dict[str, float]:
+        metrics = {}
+
+        key, sample_key = jax.random.split(key)
+        initial_samples = base_density.sample(
+            sample_key, (self.n_model_samples_eval,)
+        )  # Sample from base distribution q_0
+        initial_log_probs = base_density.log_prob(initial_samples)
+
+        samples_q, samples_log_q = generate_samples_with_log_prob_Tsit5(
+            v_theta=v_theta,
+            initial_samples=initial_samples,
+            initial_log_probs=initial_log_probs,
+            ts=ts,
+            use_shortcut=use_shortcut,
+        )
+
+        if self.dim == 2:
+            metrics["figure"] = self.visualise(samples_q)
+
+        key, sample_key = jax.random.split(key)
+        true_samples = self.sample(sample_key, (self.n_model_samples_eval,))
+
+        x_w1_distance, x_w2_distance = compute_wasserstein_distance_pot(
+            samples_q, true_samples, num_itermax=1e7
+        )
+
+        log_prob_samples = self.log_prob(samples_q)
+        log_prob_true_samples = self.log_prob(true_samples)
+
+        e_w2_distance = compute_w2_distance_1d_pot(
+            log_prob_samples,
+            log_prob_true_samples,
+        )
+
+        e_w1_distance = compute_w1_distance_1d_pot(
+            log_prob_samples,
+            log_prob_true_samples,
+        )
+
+        if self.dim == 2:
+            total_variation = compute_total_variation_distance(
+                samples_q,
+                true_samples,
+                num_bins=200,
+                lower_bound=-self._plot_bound,
+                upper_bound=self._plot_bound,
+            )
+            metrics["total_variation"] = total_variation
+
+        energy_total_variation = compute_total_variation_distance(
+            log_prob_samples.reshape(-1, 1),
+            log_prob_true_samples.reshape(-1, 1),
+            num_bins=200,
+            lower_bound=-100,
+            upper_bound=100,
+        )
+        metrics["energy_total_variation"] = energy_total_variation
+
+        metrics["w2_distance"] = x_w2_distance
+        metrics["w1_distance"] = x_w1_distance
+        metrics["e_w2_distance"] = e_w2_distance
+        metrics["e_w1_distance"] = e_w1_distance
+
+        # KL divergence and log ESS
+        key, kl_key = jax.random.split(key)
+        kl_divergence = estimate_kl_divergence(
+            v_theta=v_theta,
+            num_samples=self.n_model_samples_eval,
+            key=kl_key,
+            ts=ts,
+            log_prob_p_fn=self.log_prob,
+            sample_p_fn=self.sample,
+            base_log_prob_fn=base_density.log_prob,
+            final_time=1.0,
+            use_shortcut=use_shortcut,
+        )
+
+        metrics["kl_divergence"] = kl_divergence
+
+        ess = compute_log_effective_sample_size(self.log_prob(samples_q), samples_log_q)
+        metrics["ess"] = jnp.exp(ess)
+
+        return metrics

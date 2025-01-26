@@ -1,9 +1,11 @@
-from typing import Callable, Tuple
+from typing import Callable, Optional, Tuple
 
+import blackjax
 import chex
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+from blackjax.mcmc.hmc import HMCState
 
 from .integration import (
     euler_integrate,
@@ -13,113 +15,199 @@ from .integration import (
 
 
 @eqx.filter_jit
+def sample_hamiltonian_monte_carlo_blackjax(
+    key: jax.random.PRNGKey,
+    time_dependent_log_density: Callable[[chex.Array, float], float],  # (dim,) -> float
+    x: chex.Array,  # (dim,)
+    t: float,
+    num_steps: int = 10,
+    integration_steps: int = 3,
+    eta: float = 0.1,
+    covariance: Optional[chex.Array] = None,
+    shift_fn: Callable[[chex.Array], chex.Array] = lambda x: x,
+    **kwargs,
+):
+    dim = x.shape[-1]
+    inverse_mass_matrix = jnp.eye(dim) if covariance is None else covariance
+
+    hmc = blackjax.hmc(
+        lambda x: time_dependent_log_density(x, t),
+        eta,
+        inverse_mass_matrix,
+        integration_steps,
+    )
+    hmc_kernel = jax.jit(hmc.step)
+    initial_state = hmc.init(x)
+
+    @jax.jit
+    def one_step(state, rng_key):
+        state, _ = hmc_kernel(rng_key, state)
+        state = HMCState(
+            position=shift_fn(state.position),
+            logdensity=state.logdensity,
+            logdensity_grad=state.logdensity_grad,
+        )
+        return state, state
+
+    keys = jax.random.split(key, num_steps)
+    final_state, _ = jax.lax.scan(one_step, initial_state, keys)
+
+    return final_state.position
+
+
+@eqx.filter_jit
 def sample_hamiltonian_monte_carlo(
     key: jax.random.PRNGKey,
-    time_dependent_log_density: Callable[[chex.Array, float], float],
-    x: chex.Array,
+    time_dependent_log_density: Callable[[chex.Array, float], float],  # (dim,) -> float
+    x: chex.Array,  # (dim,)
     t: float,
     num_steps: int = 10,
     integration_steps: int = 3,
     eta: float = 0.1,
     rejection_sampling: bool = False,
-    shift_fn: Callable[[chex.Array], chex.Array] = lambda x: x,
-) -> chex.Array:
+    shift_fn: Callable[[chex.Array], chex.Array] = lambda x: x,  # (dim,) -> (dim,)
+    covariance: Optional[chex.Array] = None,  # (dim,) or (dim, dim)
+) -> chex.Array:  # (dim,)
     dim = x.shape[-1]
-    covariance = jnp.eye(dim)
-    inv_covariance = covariance
+
+    # Handle covariance cases
+    if covariance is None:
+        # Identity covariance case
+        sqrt_cov = inv_sqrt_cov = jnp.ones((dim,))
+        is_diagonal = True
+    else:
+        is_diagonal = covariance.ndim == 1
+        if is_diagonal:
+            # Diagonal case - already in vector form
+            sqrt_cov = jnp.sqrt(covariance)
+            inv_sqrt_cov = 1.0 / sqrt_cov
+        else:
+            # Full matrix case
+            reg_cov = covariance + 1e-6 * jnp.eye(dim)
+            sqrt_cov = jnp.linalg.cholesky(reg_cov)
+            inv_sqrt_cov = jax.scipy.linalg.solve_triangular(
+                sqrt_cov, jnp.eye(dim), lower=True
+            )
+
+    # Pre-compute operation functions based on covariance type
+    if is_diagonal:
+
+        def momentum_op(v):
+            return inv_sqrt_cov * v
+
+        def sample_momentum(z):
+            return sqrt_cov * z
+    else:
+
+        def momentum_op(v):
+            return inv_sqrt_cov @ v
+
+        def sample_momentum(z):
+            return sqrt_cov @ z
+
     grad_log_prob = jax.grad(lambda x: time_dependent_log_density(x, t))
 
     def kinetic_energy(v):
-        return 0.5 * v.T @ inv_covariance @ v
+        scaled_v = momentum_op(v)
+        return 0.5 * jnp.sum(scaled_v**2)
 
     def hamiltonian(x, v):
         return -time_dependent_log_density(x, t) + kinetic_energy(v)
 
     def integration_step(carry, _):
         x, v = carry
-        x = x + eta * inv_covariance @ v
-        # Apply the modular wrapping to enforce PBC
+        # Apply momentum operation once and reuse result
+        scaled_v = momentum_op(momentum_op(v))
+        x = x + eta * scaled_v
         x = shift_fn(x)
-
         v = v + eta * grad_log_prob(x)
         return (x, v), _
 
-    def hmc_step(x_current, key):
+    def hmc_step(x_current, inputs):
         x = x_current
-        key, subkey = jax.random.split(key)
+        v, accept_key = inputs
 
-        # Sample momentum
-        v = jax.random.normal(subkey, (dim,))
         current_h = hamiltonian(x, v)
-
-        # Initial half step for momentum
         v = v + 0.5 * eta * grad_log_prob(x)
 
         # Leapfrog integration
         (x, v), _ = jax.lax.scan(
-            integration_step, (x, v), None, length=integration_steps
+            integration_step, (x, v), None, length=integration_steps, unroll=4
         )
 
-        # Final half step for momentum
         v = v + 0.5 * eta * grad_log_prob(x)
-
-        # Finalize the proposal
         x = shift_fn(x)
 
         if rejection_sampling:
-            # Compute acceptance probability
             proposed_h = hamiltonian(x, v)
             accept_ratio = jnp.minimum(1.0, jnp.exp(current_h - proposed_h))
-
-            # Accept or reject
-            key, subkey = jax.random.split(key)
-            uniform_sample = jax.random.uniform(subkey)
-            accept = uniform_sample < accept_ratio
-
-            new_x = jax.lax.cond(accept, lambda _: x, lambda _: x_current, operand=None)
-
-            return new_x, None
+            accept = jax.random.uniform(accept_key) < accept_ratio
+            return jax.lax.cond(
+                accept, lambda _: x, lambda _: x_current, operand=None
+            ), None
         else:
             return x, None
 
-    # Run the chain
-    keys = jax.random.split(key, num_steps)
+    # Generate all momentum samples at once
+    momentum_key, accept_keys = jax.random.split(key)
+    accept_keys = jax.random.split(accept_keys, num_steps)
+    z = jax.random.normal(momentum_key, (num_steps, dim))
+    vs = jax.vmap(sample_momentum)(z)
 
-    # return hmc_step(init_state, keys[0])
-    final_x, _ = jax.lax.scan(hmc_step, x, keys)
-
+    # Run the chain with pre-sampled momentum
+    final_x, _ = jax.lax.scan(hmc_step, x, (vs, accept_keys))
     return final_x
 
 
 @eqx.filter_jit
 def time_batched_sample_hamiltonian_monte_carlo(
     key: jax.random.PRNGKey,
-    time_dependent_log_density: Callable[[chex.Array, float], float],
-    xs: chex.Array,
-    ts: chex.Array,
+    time_dependent_log_density: Callable[[chex.Array, float], float],  # (dim,) -> float
+    xs: chex.Array,  # (time, batch, dim)
+    ts: chex.Array,  # (time,)
     num_steps: int = 10,
     integration_steps: int = 3,
     eta: float = 0.1,
     rejection_sampling: bool = False,
-    shift_fn: Callable[[chex.Array], chex.Array] = lambda x: x,
-) -> chex.Array:
-    keys = jax.random.split(key, xs.shape[0] * xs.shape[1])
+    shift_fn: Callable[[chex.Array], chex.Array] = lambda x: x,  # (dim,) -> (dim,)
+    covariance: Optional[chex.Array] = None,  # (time, dim) or (time, dim, dim)
+) -> chex.Array:  # (time, batch, dim)
+    batch_size, num_chains = xs.shape[1:3]
+    keys = jax.random.split(key, xs.shape[0] * num_chains).reshape(
+        xs.shape[0], num_chains, -1
+    )
 
-    final_xs = jax.vmap(
-        lambda xs, t, keys: jax.vmap(
-            lambda x, subkey: sample_hamiltonian_monte_carlo(
-                subkey,
-                time_dependent_log_density,
-                x,
-                t,
-                num_steps,
-                integration_steps,
-                eta,
-                rejection_sampling,
-                shift_fn,
-            )
-        )(xs, keys)
-    )(xs, ts, keys.reshape((xs.shape[0], xs.shape[1], -1)))
+    time_chain_sampler = jax.vmap(
+        jax.vmap(
+            sample_hamiltonian_monte_carlo,
+            in_axes=(0, None, 0, None, None, None, None, None, None, None),
+        ),
+        in_axes=(
+            0,
+            None,
+            0,
+            0,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0 if covariance is not None else None,
+        ),
+    )
+
+    final_xs = time_chain_sampler(
+        keys,
+        time_dependent_log_density,
+        xs,
+        ts,
+        num_steps,
+        integration_steps,
+        eta,
+        rejection_sampling,
+        shift_fn,
+        covariance,
+    )
 
     return final_xs
 
@@ -141,6 +229,7 @@ def generate_samples_with_hmc_correction_and_initial_values(
     rejection_sampling: bool = False,
     shift_fn: Callable[[jnp.ndarray], jnp.ndarray] = lambda x: x,
     use_shortcut: bool = False,
+    covariance: Optional[chex.Array] = None,
 ) -> jnp.ndarray:
     initial_samps = generate_samples_with_initial_values(
         v_theta=v_theta,
@@ -161,6 +250,7 @@ def generate_samples_with_hmc_correction_and_initial_values(
         eta,
         rejection_sampling,
         shift_fn,
+        covariance,
     )
 
     return final_samples
@@ -184,6 +274,7 @@ def generate_samples_with_hmc_correction(
     rejection_sampling: bool = False,
     shift_fn: Callable[[jnp.ndarray], jnp.ndarray] = lambda x: x,
     use_shortcut: bool = False,
+    covariance: Optional[chex.Array] = None,
 ) -> jnp.ndarray:
     key, subkey = jax.random.split(key)
     initial_samples = generate_samples(
@@ -208,6 +299,7 @@ def generate_samples_with_hmc_correction(
         eta,
         rejection_sampling,
         shift_fn,
+        covariance,
     )
 
     weights = (

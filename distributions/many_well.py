@@ -1,10 +1,21 @@
-from typing import Tuple
+from typing import Callable, Dict, Tuple
 
 import chex
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
+from utils.distributions import (
+    compute_w1_distance_1d_pot,
+    compute_w2_distance_1d_pot,
+    compute_wasserstein_distance_pot,
+    compute_total_variation_distance,
+    estimate_kl_divergence,
+    compute_log_effective_sample_size,
+)
+from utils.integration import (
+    generate_samples_with_log_prob_Tsit5,
+)
 from utils.plotting import plot_contours_2D, plot_marginal_pair
 
 from .base import Target
@@ -14,7 +25,7 @@ from .double_well import DoubleWellEnergy
 class ManyWellEnergy(Target):
     TIME_DEPENDENT = False
 
-    def __init__(self, dim: int = 32):
+    def __init__(self, dim: int = 32, n_samples_eval: int = 1024):
         assert dim % 2 == 0
         self.n_wells = dim // 2
         self.double_well_energy = DoubleWellEnergy()
@@ -25,8 +36,8 @@ class ManyWellEnergy(Target):
             log_Z=log_Z,
             can_sample=False,
             n_plots=1,
-            n_model_samples_eval=2000,
-            n_target_samples_eval=10000,
+            n_model_samples_eval=n_samples_eval,
+            n_target_samples_eval=n_samples_eval,
         )
 
         self.centre = 1.7
@@ -109,6 +120,93 @@ class ManyWellEnergy(Target):
 
         plt.tight_layout()
         return fig
+
+    def evaluate(
+        self,
+        key: chex.PRNGKey,
+        *,
+        v_theta: Callable,
+        ts: chex.Array,
+        base_density: Target,
+        use_shortcut: bool = False,
+        **kwargs,
+    ) -> Dict[str, float]:
+        metrics = {}
+
+        key, sample_key = jax.random.split(key)
+        initial_samples = base_density.sample(
+            sample_key, (self.n_model_samples_eval,)
+        )  # Sample from base distribution q_0
+        initial_log_probs = base_density.log_prob(initial_samples)
+
+        samples_q, samples_log_q = generate_samples_with_log_prob_Tsit5(
+            v_theta=v_theta,
+            initial_samples=initial_samples,
+            initial_log_probs=initial_log_probs,
+            ts=ts,
+            use_shortcut=use_shortcut,
+        )
+
+        metrics["figure"] = self.visualise(samples_q)
+
+        key, sample_key = jax.random.split(key)
+        true_samples = self.sample(sample_key, (self.n_model_samples_eval,))
+
+        x_w1_distance, x_w2_distance = compute_wasserstein_distance_pot(
+            samples_q, true_samples
+        )
+
+        log_prob_samples = self.log_prob(samples_q)
+        log_prob_true_samples = self.log_prob(true_samples)
+
+        e_w2_distance = compute_w2_distance_1d_pot(
+            log_prob_samples,
+            log_prob_true_samples,
+        )
+
+        e_w1_distance = compute_w1_distance_1d_pot(
+            log_prob_samples,
+            log_prob_true_samples,
+        )
+
+        metrics["w2_distance"] = x_w2_distance
+        metrics["w1_distance"] = x_w1_distance
+        metrics["e_w2_distance"] = e_w2_distance
+        metrics["e_w1_distance"] = e_w1_distance
+
+        energy_total_variation = compute_total_variation_distance(
+            log_prob_samples.reshape(-1, 1),
+            log_prob_true_samples.reshape(-1, 1),
+            num_bins=200,
+            lower_bound=-100,
+            upper_bound=100,
+        )
+        metrics["energy_total_variation"] = energy_total_variation
+
+        # KL divergence and log ESS
+        key, kl_key = jax.random.split(key)
+        kl_divergence = estimate_kl_divergence(
+            v_theta=v_theta,
+            num_samples=self.n_model_samples_eval * 2,
+            key=kl_key,
+            ts=ts,
+            log_prob_p_fn=self.log_prob,
+            sample_p_fn=self.sample,
+            base_log_prob_fn=base_density.log_prob,
+            final_time=1.0,
+            use_shortcut=use_shortcut,
+        )
+
+        metrics["kl_divergence"] = kl_divergence
+
+        ess = compute_log_effective_sample_size(
+            log_p=log_prob_samples,
+            log_q=samples_log_q,
+        )
+
+        metrics["ess"] = jnp.exp(ess)
+
+        return metrics
 
     def sample(self, key: chex.PRNGKey, sample_shape: chex.Shape) -> chex.Array:
         key1, key2 = jax.random.split(key)

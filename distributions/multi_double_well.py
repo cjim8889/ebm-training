@@ -1,10 +1,21 @@
+from typing import Callable, Optional
+
+import chex
 import jax
 import jax.numpy as jnp
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+
+from utils.distributions import (
+    compute_total_variation_distance,
+    compute_w1_distance_1d_pot,
+    compute_w2_distance_1d_pot,
+    compute_wasserstein_distance_pot,
+    compute_log_effective_sample_size,
+)
+from utils.integration import generate_samples_with_log_prob_Tsit5
+
 from .base import Target
-from typing import Optional
-import chex
 
 
 class MultiDoubleWellEnergy(Target):
@@ -14,37 +25,40 @@ class MultiDoubleWellEnergy(Target):
         self,
         dim: int,
         n_particles: int,
-        data_path_val: Optional[str] = None,
         data_path_test: Optional[str] = None,
         key: jax.random.PRNGKey = jax.random.PRNGKey(0),
         a: float = 0.9,
         b: float = -4.0,
         c: float = 0.0,
         offset: float = 4.0,
+        log_prob_clip: Optional[float] = None,
+        log_prob_clip_min: Optional[float] = None,
+        log_prob_clip_max: Optional[float] = None,
+        n_samples_eval: int = 2048,
     ):
         super().__init__(
             dim=dim,
             log_Z=None,
             can_sample=False,
             n_plots=10,
-            n_model_samples_eval=1000,
-            n_target_samples_eval=None,
+            n_model_samples_eval=n_samples_eval,
+            n_target_samples_eval=n_samples_eval,
         )
         self.n_particles = n_particles
         self.n_spatial_dim = dim // n_particles
         self.key = key
 
-        self.data_path_val = data_path_val
         self.data_path_test = data_path_test
-
-        self.val_set_size = 1000
 
         self.a = a
         self.b = b
         self.c = c
         self.offset = offset
 
-        self._val_set = self.setup_val_set()
+        self.log_prob_clip = log_prob_clip
+        self.log_prob_clip_min = log_prob_clip_min
+        self.log_prob_clip_max = log_prob_clip_max
+
         self._test_set = self.setup_test_set()
 
         self._mask = jnp.triu(jnp.ones((n_particles, n_particles), dtype=bool), k=1)
@@ -76,7 +90,20 @@ class MultiDoubleWellEnergy(Target):
         return total_energy
 
     def log_prob(self, x: chex.Array) -> chex.Array:
-        return -self.multi_double_well_energy(x)
+        p_t = -self.multi_double_well_energy(x)
+
+        # Handle legacy log_prob_clip parameter for backward compatibility
+        if self.log_prob_clip is not None:
+            clip_min = -self.log_prob_clip
+            clip_max = self.log_prob_clip
+        else:
+            clip_min = self.log_prob_clip_min
+            clip_max = self.log_prob_clip_max
+
+        if clip_min is not None or clip_max is not None:
+            p_t = jnp.clip(p_t, a_min=clip_min, a_max=clip_max)
+
+        return p_t
 
     def score(self, x: chex.Array) -> chex.Array:
         return jax.grad(self.log_prob)(x)
@@ -93,11 +120,6 @@ class MultiDoubleWellEnergy(Target):
         data = self.batched_remove_mean(data)
         return data
 
-    def setup_val_set(self):
-        data = np.load(self.data_path_val, allow_pickle=True)
-        data = self.batched_remove_mean(data)
-        return data
-
     def interatomic_dist(self, x):
         x = x.reshape(-1, self.n_particles, self.n_spatial_dim)
         distances = jax.vmap(lambda x: self.compute_distances(x))(x)
@@ -108,6 +130,8 @@ class MultiDoubleWellEnergy(Target):
         return jax.vmap(self.log_prob)(xs)
 
     def visualise(self, samples: chex.Array) -> plt.Figure:
+        samples = jnp.nan_to_num(samples, nan=0.0, posinf=0.0, neginf=0.0)
+
         self.key, subkey = jax.random.split(self.key)
         test_data_smaller = jax.random.choice(
             subkey, self._test_set, shape=(1000,), replace=False
@@ -170,3 +194,87 @@ class MultiDoubleWellEnergy(Target):
 
         fig.canvas.draw()
         return fig
+
+    def evaluate(
+        self,
+        key: chex.PRNGKey,
+        *,
+        v_theta: Callable,
+        ts: chex.Array,
+        base_density: Target,
+        use_shortcut: bool = False,
+        **kwargs,
+    ):
+        metrics = {}
+
+        key, sample_key = jax.random.split(key)
+        initial_samples = base_density.sample(
+            sample_key, (self.n_model_samples_eval,)
+        )  # Sample from base distribution q_0
+        initial_log_probs = base_density.log_prob(initial_samples)
+
+        samples_q, samples_log_q = generate_samples_with_log_prob_Tsit5(
+            v_theta=v_theta,
+            initial_samples=initial_samples,
+            initial_log_probs=initial_log_probs,
+            ts=ts,
+            use_shortcut=use_shortcut,
+        )
+
+        metrics["figure"] = self.visualise(samples_q)
+
+        true_samples = self._test_set[: self.n_target_samples_eval]
+
+        x_w1_distance, x_w2_distance = compute_wasserstein_distance_pot(
+            samples_q, true_samples
+        )
+
+        metrics["w1_distance"] = x_w1_distance
+        metrics["w2_distance"] = x_w2_distance
+
+        log_prob_samples = self.batched_log_prob(samples_q)
+        log_prob_true_samples = self.batched_log_prob(true_samples)
+
+        e_w2_distance = compute_w2_distance_1d_pot(
+            log_prob_samples,
+            log_prob_true_samples,
+        )
+
+        e_w1_distance = compute_w1_distance_1d_pot(
+            log_prob_samples,
+            log_prob_true_samples,
+        )
+
+        metrics["e_w2_distance"] = e_w2_distance
+        metrics["e_w1_distance"] = e_w1_distance
+
+        true_interatomic_dist = self.interatomic_dist(true_samples).reshape(-1, 1)
+        samples_interatomic_dist = self.interatomic_dist(samples_q).reshape(-1, 1)
+
+        dist_total_variation = compute_total_variation_distance(
+            samples_interatomic_dist,
+            true_interatomic_dist,
+            num_bins=200,
+            lower_bound=-10,
+            upper_bound=10,
+        )
+
+        metrics["dist_total_variation"] = dist_total_variation
+
+        energy_total_variation = compute_total_variation_distance(
+            log_prob_samples.reshape(-1, 1),
+            log_prob_true_samples.reshape(-1, 1),
+            num_bins=200,
+            lower_bound=-35,
+            upper_bound=5,
+        )
+
+        metrics["energy_total_variation"] = energy_total_variation
+
+        ess = compute_log_effective_sample_size(
+            log_p=log_prob_samples,
+            log_q=samples_log_q,
+        )
+        metrics["ess"] = jnp.exp(ess)
+
+        return metrics

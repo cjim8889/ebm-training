@@ -6,36 +6,15 @@ import blackjax.smc.resampling as resampling
 import matplotlib.pyplot as plt
 
 from distributions.multivariate_gaussian import MultivariateGaussian
-from distributions.time_dependent_lennard_jones_butler import (
-    TimeDependentLennardJonesEnergyButler,
-)
+from distributions import GMM
 
-# plt.rcParams["figure.dpi"] = 300
-# plt.rcParams["figure.figsize"] = [6.0, 4.0]
-
-jax.config.update("jax_platform_name", "cpu")
 
 key = jax.random.PRNGKey(1234)
 
 
-initial_density = MultivariateGaussian(dim=39, mean=0, sigma=1.)
-target_density = TimeDependentLennardJonesEnergyButler(
-    dim=39,
-    n_particles=13,
-    alpha=0.2,
-    sigma=1.0,
-    epsilon_val=1.0,
-    min_dr=1e-4,
-    n=1,
-    m=1,
-    c=0.5,
-    include_harmonic=True,
-    cubic_spline=True,
-    # log_prob_clip=100.0,
-)
-
-initial_density = MultivariateGaussian(dim=39, mean=0.0, sigma=1.0)
-
+initial_density = MultivariateGaussian(dim=2, mean=0, sigma=20)
+key, subkey = jax.random.split(key)
+target_density = GMM(subkey, dim=2)
 
 def smc_inference_loop(rng_key, smc_kernel, initial_state):
     """Run the temepered SMC algorithm.
@@ -62,24 +41,23 @@ def smc_inference_loop(rng_key, smc_kernel, initial_state):
     return n_iter, final_state
 
 
-key, subkey = jax.random.split(key)
-initial_position = target_density.initialize_position(subkey)
 warmup = blackjax.window_adaptation(
     blackjax.hmc,
     target_density.log_prob,
     num_integration_steps=10,
     initial_step_size=1.0,
-    target_acceptance_rate=0.6,
+    target_acceptance_rate=0.8,
     progress_bar=True,
 )
 
-
+key, subkey = jax.random.split(key)
+initial_position = initial_density.sample(subkey, (1,)).reshape(-1)
+print("Initial position:", initial_position.shape)
 key, warmup_key, sample_key = jax.random.split(key, 3)
-
 (state, parameters), _ = warmup.run(
     warmup_key,
     initial_position,
-    num_steps=10000,
+    num_steps=2000,
 )
 print("HMC Warmup done")
 print("Step size:", parameters["step_size"])
@@ -104,8 +82,8 @@ tempered = blackjax.adaptive_tempered_smc(
 tempered_kernel = jax.jit(tempered.step)
 
 num_particles = 10240
-sample_keys = jax.random.split(key, num_particles)
-initial_positions = jax.vmap(target_density.initialize_position)(sample_keys)
+key, sample_key = jax.random.split(key)
+initial_positions = initial_density.sample(sample_key, (num_particles,)).reshape(num_particles, -1)
 initial_state = tempered.init(initial_positions)
 
 
@@ -120,5 +98,5 @@ samples = final_state.particles
 print("Samples shape:", samples.shape)
 fig = target_density.visualise(samples)
 
-plt.savefig("lj13c.png")
+plt.savefig("gmm_smc.png")
 # plt.show()
