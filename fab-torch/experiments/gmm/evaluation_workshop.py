@@ -1,5 +1,6 @@
 import hydra
 import matplotlib.pyplot as plt
+from typing import Optional, Tuple
 
 import ot as pot
 import numpy as np
@@ -61,6 +62,34 @@ def evaluate_metrics(model, target, gen_samples):
         'f_kl': f_kl
     }
 
+def _plot_marginal_pair(samples: torch.Tensor,
+                  ax: Optional[plt.Axes] = None,
+                  marginal_dims: Tuple[int, int] = (0, 1),
+                  bounds: Tuple[float, float] = (-5.0, 5.0),
+                  alpha: float = 0.5,
+                  markersize: int = 3):
+    """Plot samples from marginal of distribution for a given pair of dimensions."""
+    if not ax:
+        fig, ax = plt.subplots(1)
+    samples = torch.clamp(samples, bounds[0], bounds[1])
+    samples = samples.cpu().detach()
+    ax.plot(samples[:, marginal_dims[0]], samples[:, marginal_dims[1]], "o", alpha=alpha, markersize=markersize)
+
+def visualise_samples(samples, target, name="", plotting_bounds=(-1.4 * 40, 1.4 * 40)):
+    fig, axs = plt.subplots(1, 1, figsize=(4, 3.6))
+    plot_contours(
+        target.log_prob,
+        bounds=plotting_bounds,
+        ax=axs,
+        n_contour_levels=50,
+        grid_width_n_points=200,
+    )
+    _plot_marginal_pair(samples, ax=axs, bounds=plotting_bounds, markersize=1.5)
+
+    plt.axis("off")
+    plt.savefig(f"{name}.png", dpi=300, bbox_inches="tight", pad_inches=0.)
+    plt.close()
+
 # use base config of GMM but overwrite for specific model.
 @hydra.main(config_path="../config", config_name="gmm.yaml")
 def main(cfg: DictConfig, debug=False):
@@ -69,6 +98,13 @@ def main(cfg: DictConfig, debug=False):
     path_to_model = f"{PATH}/ckpts/gmm_model.pt"
     model = load_model(cfg, target, path_to_model)
     model.set_ais_target(min_is_target=False)
+
+    # nsf_samples = np.load(f"{PATH}/ckpts/nsf_gmm_samples.npz")['positions']
+    # visualise_samples(torch.tensor(nsf_samples), target, f"{PATH}/nsf_samples")
+
+    visualise_samples(model.flow.sample((5000,)).detach(), target, f"{PATH}/fab_samples")
+
+
 
     results = defaultdict(list)
     for _ in range(5):
