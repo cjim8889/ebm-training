@@ -47,7 +47,7 @@ def solve_neural_ode_diffrax(
     augmented_state = (y0, initial_log_probs)
 
     # Configure solver and step controller
-    solver = diffrax.Tsit5()
+    solver = diffrax.ReversibleHeun()
     dt0 = dt  # Initial negative step for backward integration
 
     # Prepare arguments based on computation mode
@@ -85,6 +85,7 @@ def solve_neural_ode_diffrax(
             y0=x,
             args=args,
             saveat=diffrax.SaveAt(steps=True) if save_trajectory else None,
+            stepsize_controller=diffrax.ConstantStepSize(),
             max_steps=max_steps,
         )
     )(augmented_state)
