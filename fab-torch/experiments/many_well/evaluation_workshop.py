@@ -1,8 +1,11 @@
 import hydra
+from typing import Optional, Tuple
+import itertools
 
 import ot as pot
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 import os
 from omegaconf import DictConfig
 import torch
@@ -69,12 +72,145 @@ def evaluate_metrics(model, target, gen_samples):
         'f_kl': f_kl
     }
 
+def get_target_log_prob_marginal_pair(log_prob, i: int, j: int, total_dim: int):
+    def log_prob_marginal_pair(x_2d):
+        x = torch.zeros((x_2d.shape[0], total_dim))
+        x[:, i] = x_2d[:, 0]
+        x[:, j] = x_2d[:, 1]
+        return log_prob(x)
+    return log_prob_marginal_pair
+
+
+def plot_contours(log_prob_func,
+                  ax: Optional[plt.Axes] = None,
+                  bounds: Tuple[float, float] = (-5.0, 5.0),
+                  grid_width_n_points: int = 20,
+                  n_contour_levels: Optional[int] = None,
+                  log_prob_min: float = -1000.0):
+    """Plot contours of a log_prob_func that is defined on 2D"""
+    if ax is None:
+        fig, ax = plt.subplots(1)
+    x_points_dim1 = torch.linspace(bounds[0], bounds[1], grid_width_n_points)
+    x_points_dim2 = x_points_dim1
+    x_points = torch.tensor(list(itertools.product(x_points_dim1, x_points_dim2)))
+    log_p_x = log_prob_func(x_points).detach()
+    log_p_x = torch.clamp_min(log_p_x, log_prob_min)
+    log_p_x = log_p_x.reshape((grid_width_n_points, grid_width_n_points))
+    x_points_dim1 = x_points[:, 0].reshape((grid_width_n_points, grid_width_n_points)).numpy()
+    x_points_dim2 = x_points[:, 1].reshape((grid_width_n_points, grid_width_n_points)).numpy()
+    if n_contour_levels:
+        ax.contour(x_points_dim1, x_points_dim2, log_p_x, levels=n_contour_levels)
+    else:
+        ax.contour(x_points_dim1, x_points_dim2, log_p_x)
+
+def plot_marginal_pair(samples: torch.Tensor,
+                  ax: Optional[plt.Axes] = None,
+                  marginal_dims: Tuple[int, int] = (0, 1),
+                  bounds: Tuple[float, float] = (-5.0, 5.0),
+                  alpha: float = 0.5,
+                  markersize: int = 3):
+    """Plot samples from marginal of distribution for a given pair of dimensions."""
+    if not ax:
+        fig, ax = plt.subplots(1)
+    samples = torch.clamp(samples, bounds[0], bounds[1])
+    samples = samples.cpu().detach()
+    ax.plot(samples[:, marginal_dims[0]], samples[:, marginal_dims[1]], "o", alpha=alpha, markersize=markersize)
+
+def visualise_samples_1plot(samples, target, name="",):
+    alpha = 0.3
+    markersize = 2.0
+    dim = samples.shape[-1]
+    plotting_bounds = (-3, 3)
+
+    fig, axs = plt.subplots(1, 1, figsize=(4, 3.6))
+    target_log_prob = get_target_log_prob_marginal_pair(target.log_prob, 0, 2, dim)
+    plot_contours(target_log_prob, bounds=plotting_bounds, ax=axs,
+                        n_contour_levels=30, grid_width_n_points=100)
+    plot_marginal_pair(samples, marginal_dims=(0, 2),
+                            ax=axs, bounds=plotting_bounds, alpha=alpha, markersize=markersize)
+    plt.axis("off")
+    plt.savefig(f"{PATH}/{name}.png", dpi=300, bbox_inches="tight", pad_inches=0.)
+    plt.close()
+
+def visualise_samples_2plots(samples, target, name="",):
+    alpha = 0.3
+    markersize = 2.0
+    dim = samples.shape[-1]
+    plotting_bounds = (-3, 3)   
+
+    fig, axs = plt.subplots(2, 1, figsize=(4, 7.2))
+    fig.subplots_adjust(hspace=0.01)
+
+    for idx, (i,j) in enumerate([(0,3), (1,2)]):
+        target_log_prob = get_target_log_prob_marginal_pair(target.log_prob, i, j, dim)
+        plot_contours(target_log_prob, bounds=plotting_bounds, ax=axs[idx],
+                        n_contour_levels=30, grid_width_n_points=100)
+        plot_marginal_pair(samples, marginal_dims=(i, j),
+                            ax=axs[idx], bounds=plotting_bounds, alpha=alpha, markersize=markersize)
+        axs[idx].set_axis_off()
+
+    plt.savefig(f"{PATH}/{name}_2plots.png", dpi=300, bbox_inches="tight", pad_inches=0.)
+    plt.close()
+
+def visualise_samples(samples, target, name="",):
+    # visualise_samples_1plot(samples, target, name=name)
+    visualise_samples_2plots(samples, target, name=name)
+
+def plot_energy_hist(fab_samples, target):
+    data_set = target.sample((5000,))
+    fig, axs = plt.subplots(1, 1, figsize=(6, 4))
+
+    gt_energy = -(target.log_prob(data_set) - target.log_Z)
+    fab_energy = -(target.log_prob(fab_samples) - target.log_Z)
+
+    nfs_samples = np.load(f"{PATH}/ckpts/nfs_mw32_samples.npz")['positions']
+    nfs_samples = torch.tensor(nfs_samples)
+    nfs_energy = -(target.log_prob(nfs_samples) - target.log_Z)
+
+    idem_samples = np.load(f"{PATH}/ckpts/idem_mw32_samples.npz")['positions']
+    idem_samples = torch.tensor(idem_samples)
+    idem_energy = -(target.log_prob(idem_samples) - target.log_Z)
+
+    for energy, label in zip([gt_energy, fab_energy, idem_energy, nfs_energy], ['Ground Truth', 'FAB', 'IDEM', 'NFS']):
+    # for energy, label in zip([gt_energy], ['Ground Truth']):
+        energy = energy.cpu().detach()
+        axs.hist(
+            energy.view(-1),
+            bins=100,
+            alpha=0.5,
+            density=True,
+            range=(5, 75),
+            histtype="step",
+            linewidth=4,
+            label=label,
+        )
+
+    axs.set_xlabel("Energy", fontsize=13)
+    axs.legend()
+    plt.savefig(f"{PATH}/mw32_hist.png", dpi=300, bbox_inches="tight", pad_inches=0.)
+    exit()
+
+
+
 @hydra.main(config_path="../config", config_name="many_well.yaml")
 def main(cfg: DictConfig):
     n_samples = 1000
     target = ManyWellEnergy(cfg.target.dim, a=-0.5, b=-6, use_gpu=False)
     path_to_model = f"{PATH}/ckpts/mw_model.pt"
     model = load_model(cfg, target, path_to_model)
+
+    # data_set = target.sample((5000,))
+    # visualise_samples(data_set, target, name="data_samples")
+
+    # nfs_samples = np.load(f"{PATH}/ckpts/nfs_mw32_samples.npz")['positions']
+    # visualise_samples(torch.tensor(nfs_samples), target, name="nfs_samples")
+
+    # samples = model.flow.sample((5000,)).detach()
+    # visualise_samples(samples, target, name="fab_samples")
+
+    samples = model.flow.sample((5000,)).detach()
+    plot_energy_hist(samples, target)
+    exit()
 
     results = defaultdict(list)
     for _ in range(10):
