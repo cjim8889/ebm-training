@@ -187,7 +187,7 @@ class ManyWellEnergy(Target):
         key, kl_key = jax.random.split(key)
         kl_divergence = estimate_kl_divergence(
             v_theta=v_theta,
-            num_samples=self.n_model_samples_eval,
+            num_samples=self.n_model_samples_eval * 2,
             key=kl_key,
             ts=ts,
             log_prob_p_fn=self.log_prob,
