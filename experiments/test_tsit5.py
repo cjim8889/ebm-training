@@ -22,9 +22,7 @@ v_theta = VelocityFieldTwo(
 samples, log_probs = solve_neural_ode_diffrax(
     v_theta,
     y0=jnp.zeros((64, 32)),
-    t0=0,
-    t1=1,
-    dt=0.1,
+    ts=jnp.linspace(0, 1, 128),
     save_trajectory=True,
     use_shortcut=True,
     forward=True,
