@@ -23,6 +23,7 @@ from models import (
     EquivariantTimeVelocityField,
     EGNN,
     VelocityFieldTwo,
+    VelocityFieldThree,
 )
 from training import train_velocity_field
 from training.config import (
@@ -47,7 +48,7 @@ def main():
         "--network",
         type=str,
         default="mlp",
-        choices=["mlp", "pdn", "transformer", "emlp", "egnn", "mlp2"],
+        choices=["mlp", "pdn", "transformer", "emlp", "egnn", "mlp2", "mlp3"],
     )
 
     # Sampling configuration
@@ -641,6 +642,16 @@ def main():
             num_layers=config.model.num_layers,
             normalize=True,
             tanh=True,
+            shortcut=config.training.use_shortcut,
+        )
+    elif config.model.architecture == "mlp3":
+        v_theta = VelocityFieldThree(
+            key=model_key,
+            n_particles=config.density.n_particles,
+            n_spatial_dim=config.density.n_spatial_dim,
+            hidden_dim=config.model.hidden_dim,
+            depth=config.model.num_layers,
+            equivariant_dim=32,
             shortcut=config.training.use_shortcut,
         )
 

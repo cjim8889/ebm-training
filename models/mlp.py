@@ -275,3 +275,112 @@ class VelocityFieldTwo(eqx.Module):
 
         # Final projection
         return self.output_proj(self.norm(h))
+
+
+class VelocityFieldThree(eqx.Module):
+    interaction_mlp: MLPWithLayerNorm
+    main_mlp: MLPWithLayerNorm
+    n_particles: int
+    n_spatial_dim: int
+    equivariant_dim: int
+    dt: float
+    min_dr: float
+    shortcut: bool
+
+    def __init__(
+        self,
+        key,
+        n_particles,
+        n_spatial_dim,
+        hidden_dim,
+        equivariant_dim=64,
+        depth=3,
+        dt=0.01,
+        min_dr=1e-4,
+        shortcut=False,
+    ):
+        self.n_particles = n_particles
+        self.n_spatial_dim = n_spatial_dim
+        self.dt = dt
+        self.min_dr = min_dr
+        self.shortcut = shortcut
+        self.equivariant_dim = equivariant_dim
+
+        keys = jax.random.split(key, 4)
+        interaction_key, main_key, init_key, output_key = keys
+
+        # Interaction MLP processes pairwise features
+        interaction_in_size = 2 + (1 if shortcut else 0)  # distance, time, [d]
+        self.interaction_mlp = MLPWithLayerNorm(
+            in_size=interaction_in_size,
+            out_size=equivariant_dim,
+            width_size=hidden_dim,
+            depth=depth,
+            key=interaction_key,
+        )
+
+        # Main MLP processes combined features (original + equivariant)
+        self.main_mlp = MLPWithLayerNorm(
+            in_size=(
+                self.n_particles * self.n_spatial_dim
+                + equivariant_dim
+                + (2 if shortcut else 1)
+            ),
+            out_size=(self.n_particles * self.n_spatial_dim),
+            width_size=hidden_dim,
+            depth=depth,
+            key=main_key,
+        )
+
+        self.interaction_mlp = init_linear_weights(
+            self.interaction_mlp, xavier_init, init_key, scale=dt
+        )
+        self.main_mlp = init_linear_weights(
+            self.main_mlp, xavier_init, output_key, scale=dt
+        )
+
+    def __call__(self, *input):
+        # Handle inputs
+        if self.shortcut:
+            x, t, d = input
+            if isinstance(d, float):
+                d = jnp.array([d])
+
+            if isinstance(t, float):
+                t = jnp.array([t])
+
+            d = d.reshape(1)
+            t = t.reshape(1)
+        else:
+            x, t = input
+            if isinstance(t, float):
+                t = jnp.array([t])
+            d = None
+            t = t.reshape(1)
+        N, D = self.n_particles, self.n_spatial_dim
+        x_2d = jnp.reshape(x, (N, D))
+
+        # Compute pairwise geometry
+        displacement = compute_distances(
+            x_2d, self.n_particles, self.n_spatial_dim, repeat=False, min_dr=self.min_dr
+        )
+
+        # Build interaction MLP inputs
+        t_pairs = jnp.full_like(displacement, t)
+        if self.shortcut:
+            d_pairs = jnp.full_like(displacement, d)
+            interaction_inputs = jnp.stack([displacement, t_pairs, d_pairs], axis=-1)
+        else:
+            interaction_inputs = jnp.stack([displacement, t_pairs], axis=-1)
+
+        # Compute interaction weights
+        weights = jax.vmap(self.interaction_mlp)(interaction_inputs).squeeze()
+        sum_features = jnp.sum(weights, axis=0)
+
+        if self.shortcut:
+            combined_features = jnp.concatenate([x, sum_features, t, d], axis=-1)
+        else:
+            combined_features = jnp.concatenate([x, sum_features, t], axis=-1)
+
+        # Process through main MLP
+        return self.main_mlp(combined_features)
