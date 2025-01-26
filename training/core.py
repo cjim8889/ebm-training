@@ -363,7 +363,9 @@ def train_velocity_field(
         v_theta = eqx.apply_updates(v_theta, updates)
         return v_theta, opt_state, loss
 
-    shortcut_size_d = 1.0 / jnp.array(config.training.shortcut_size)
+    shortcut_size_d = 1.0 / jnp.array(
+        [2**e for e in range(int(jnp.floor(jnp.log2(128))) + 1)]
+    )
 
     for epoch in range(config.training.num_epochs):
         # Handle time steps for this epoch
