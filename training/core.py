@@ -18,7 +18,7 @@ from utils.eval import (
 from utils.hmc import generate_samples_with_hmc_correction
 from utils.integration import (
     euler_integrate,
-    generate_samples,
+    generate_samples_with_Tsit5,
 )
 from utils.optimization import get_optimizer, inverse_power_schedule, power_schedule
 from utils.smc import generate_samples_with_smc
@@ -99,14 +99,12 @@ def train_velocity_field(
     integrator = euler_integrate
 
     def _generate(key: jax.random.PRNGKey, ts: jnp.ndarray, force_finite: bool = False):
-        samples = generate_samples(
+        samples = generate_samples_with_Tsit5(
             key,
             v_theta,
             config.sampling.num_particles,
             ts,
             path_distribution.sample_initial,
-            integrator,
-            config.density.shift_fn,
             use_shortcut=config.training.use_shortcut,
         )
         if force_finite:
@@ -166,8 +164,6 @@ def train_velocity_field(
                 blackjax_hmc=True,
                 v_theta=v_theta,
             )
-        else:
-            samples = _generate(key, ts, force_finite)
 
         if force_finite:
             samples["positions"] = jnp.nan_to_num(
@@ -303,7 +299,6 @@ def train_velocity_field(
                     v_theta,
                     config,
                     path_distribution,
-                    euler_integrate,
                     target_density,
                     current_end_time,
                 )

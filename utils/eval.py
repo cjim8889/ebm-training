@@ -15,7 +15,6 @@ def evaluate_model(
     v_theta: Callable,
     config: TrainingExperimentConfig,
     path_distribution: AnnealedDistribution,
-    integrator: Callable,
     target_density: Target,
     current_end_time: int,
 ) -> Dict[str, Any]:

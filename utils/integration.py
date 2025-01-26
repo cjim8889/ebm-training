@@ -1,4 +1,4 @@
-from typing import Callable, List, Tuple
+from typing import Callable, List, Tuple, Dict
 
 import equinox as eqx
 import jax
@@ -48,7 +48,7 @@ def generate_samples(
     ] = euler_integrate,
     shift_fn: Callable[[jnp.ndarray], jnp.ndarray] = lambda x: x,
     use_shortcut: bool = False,
-) -> jnp.ndarray:
+) -> Dict[str, jnp.ndarray]:
     key, subkey = jax.random.split(key)
     initial_samples = sample_fn(subkey, (num_samples,))
     samples = integration_fn(v_theta, initial_samples, ts, shift_fn, use_shortcut)
@@ -57,6 +57,32 @@ def generate_samples(
     return {
         "positions": samples,
         "weights": weights,
+    }
+
+
+@eqx.filter_jit
+def generate_samples_with_Tsit5(
+    key: jax.random.PRNGKey,
+    v_theta: Callable[[jnp.ndarray, float], jnp.ndarray],
+    num_samples: int,
+    ts: jnp.ndarray,
+    sample_fn: Callable[[jax.random.PRNGKey, Tuple[int, ...]], jnp.ndarray],
+    use_shortcut: bool = False,
+) -> Dict[str, jnp.ndarray]:
+    initial_samples = sample_fn(key, (num_samples,))
+    final_samples, _ = solve_neural_ode_diffrax(
+        v_theta=v_theta,
+        y0=initial_samples,
+        t0=ts[0],
+        t1=ts[-1],
+        dt=ts[1] - ts[0],
+        use_shortcut=use_shortcut,
+        exact_logp=True,
+        forward=True,
+    )
+    return {
+        "positions": final_samples,
+        "weights": jnp.ones((ts.shape[0], num_samples)) / num_samples,
     }
 
 
