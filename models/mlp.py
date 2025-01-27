@@ -91,6 +91,7 @@ class TimeVelocityField(eqx.Module):
         depth=3,
         shortcut=False,
         dt: float = 0.01,
+        mixed_precision: bool = False,
     ):
         self.shortcut = shortcut
         self.dt = dt
@@ -101,6 +102,7 @@ class TimeVelocityField(eqx.Module):
                 width_size=hidden_dim,
                 depth=depth,
                 key=key,
+                mixed_precision=mixed_precision,
             )
         else:
             self.mlp = MLPWithLayerNorm(
@@ -109,6 +111,7 @@ class TimeVelocityField(eqx.Module):
                 width_size=hidden_dim,
                 depth=depth,
                 key=key,
+                mixed_precision=mixed_precision,
             )
 
         self.mlp = init_linear_weights(self.mlp, xavier_init, key, scale=dt)
@@ -142,6 +145,7 @@ class TimeVelocityFieldWithPairwiseFeature(eqx.Module):
         hidden_dim,
         depth=3,
         shortcut=False,
+        mixed_precision=False,
     ):
         self.shortcut = shortcut
         self.n_particles = n_particles
@@ -156,6 +160,7 @@ class TimeVelocityFieldWithPairwiseFeature(eqx.Module):
                 width_size=hidden_dim,
                 depth=depth,
                 key=key,
+                mixed_precision=mixed_precision,
             )
         else:
             self.mlp = MLPWithLayerNorm(
@@ -164,6 +169,7 @@ class TimeVelocityFieldWithPairwiseFeature(eqx.Module):
                 width_size=hidden_dim,
                 depth=depth,
                 key=key,
+                mixed_precision=mixed_precision,
             )
 
     def __call__(self, *input):

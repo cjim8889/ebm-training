@@ -211,7 +211,7 @@ class MultiDoubleWellEnergy(Target):
         initial_samples = base_density.sample(
             sample_key, (self.n_model_samples_eval,)
         )  # Sample from base distribution q_0
-        initial_log_probs = base_density.log_prob(initial_samples)
+        initial_log_probs = jax.vmap(base_density.log_prob)(initial_samples)
 
         samples_q, samples_log_q = generate_samples_with_log_prob_Tsit5(
             v_theta=v_theta,
