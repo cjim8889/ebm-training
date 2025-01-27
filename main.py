@@ -236,7 +236,7 @@ def main():
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
-
+    parser.add_argument("--every-k-schedule", type=int, default=1)
     args = parser.parse_args()
 
     # if args.debug:
@@ -273,6 +273,7 @@ def main():
         shortcut_size=args.shortcut_size,
         use_hutchinson=args.use_hutchinson,
         n_probes=args.n_probes,
+        every_k_schedule=args.every_k_schedule,
     )
 
     mcmc_config = MCMCConfig(

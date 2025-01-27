@@ -44,6 +44,7 @@ class TrainingConfig:
     use_shortcut: bool = False
     use_hutchinson: bool = False
     n_probes: int = 5
+    every_k_schedule: int = 1
 
 
 @dataclass
