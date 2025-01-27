@@ -50,7 +50,8 @@ class MLPWithLayerNorm(eqx.Module):
                         if layer.bias is not None
                         else None
                     )
-                    x = jnp.dot(x, weight) + bias
+                    # Transpose the weight matrix before multiplication
+                    x = jnp.dot(x, weight.T) + bias  # Corrected here
                     x = self.activation(x)
                 else:  # LayerNorm
                     x = x.astype(jnp.float32)  # LayerNorm in FP32 for stability
@@ -65,7 +66,8 @@ class MLPWithLayerNorm(eqx.Module):
                 if final_layer.bias is not None
                 else None
             )
-            x = jnp.dot(x, weight) + bias
+            # Transpose the final weight matrix
+            x = jnp.dot(x, weight.T) + bias  # Corrected here
             return x.astype(jnp.float32)
         else:
             for i, layer in enumerate(self.layers[:-1]):
