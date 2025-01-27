@@ -68,7 +68,7 @@ class MLPWithLayerNorm(eqx.Module):
             x = jnp.dot(x, weight) + bias
             return x.astype(jnp.float32)
         else:
-            for layer in self.layers:
+            for i, layer in enumerate(self.layers[:-1]):
                 if isinstance(layer, eqx.nn.Linear):
                     x = layer(x)
                     x = self.activation(x)
