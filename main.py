@@ -399,7 +399,6 @@ def main():
             dim=config.density.input_dim,
             n_particles=config.density.n_particles,
             data_path_test=config.density.data_path_test,
-            data_path_val=config.density.data_path_val,
             key=subkey,
             log_prob_clip=config.density.log_prob_clip,
             log_prob_clip_min=config.density.log_prob_clip_min,
