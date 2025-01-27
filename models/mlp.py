@@ -9,8 +9,8 @@ from utils.models import init_linear_weights, xavier_init
 
 class MLPWithLayerNorm(eqx.Module):
     layers: list
-    activation: callable
-    mixed_precision: bool
+    activation: callable = eqx.static_field()
+    mixed_precision: bool = eqx.static_field()
 
     def __init__(
         self,
