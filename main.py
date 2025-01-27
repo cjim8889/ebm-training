@@ -394,7 +394,6 @@ def main():
             N=config.density.n_particles,
             D=config.density.n_spatial_dim,
             sigma=config.density.initial_sigma,
-            wrap=False,
         )
         target_density = MultiDoubleWellEnergy(
             dim=config.density.input_dim,
