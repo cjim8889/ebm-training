@@ -77,6 +77,7 @@ def train_velocity_field(
         init_value=0.0,
         peak_value=config.training.learning_rate,
         warmup_steps=500,
+        end_value=5e-5,
         decay_steps=config.training.num_epochs * config.training.steps_per_epoch,
     )
 
