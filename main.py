@@ -232,6 +232,7 @@ def main():
         action="store_true",
         help="Whether to use decoupled loss function",
     )
+    parser.add_argument("--mixed-precision", action="store_true")
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
@@ -364,6 +365,7 @@ def main():
         density=density_config,
         offline=args.offline,
         debug=args.debug,
+        mixed_precision=args.mixed_precision,
     )
 
     # Initialize distributions based on density config
@@ -593,6 +595,7 @@ def main():
             hidden_dim=config.model.hidden_dim,
             depth=config.model.num_layers,
             shortcut=config.training.use_shortcut,
+            mixed_precision=config.mixed_precision,
         )
     elif config.model.architecture == "mlp2":
         v_theta = VelocityFieldTwo(
@@ -610,6 +613,7 @@ def main():
             hidden_dim=config.model.hidden_dim,
             depth=config.model.num_layers,
             shortcut=config.training.use_shortcut,
+            mixed_precision=config.mixed_precision,
         )
     elif config.model.architecture == "transformer":
         v_theta = ParticleTransformer(
