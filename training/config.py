@@ -133,3 +133,4 @@ class TrainingExperimentConfig:
     density: DensityConfig = field(default_factory=DensityConfig)
     offline: bool = False
     debug: bool = False
+    mixed_precision: bool = False
