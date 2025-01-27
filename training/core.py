@@ -94,6 +94,10 @@ def train_velocity_field(
 
     optimizer = optax.chain(optax.zero_nans(), gradient_clipping, base_optimizer)
     optimizer: optax.GradientTransformation = optax.apply_if_finite(optimizer, 5)
+    if config.training.every_k_schedule > 1:
+        optimizer = optax.MultiSteps(
+            optimizer, every_k_schedule=config.training.every_k_schedule
+        )
 
     opt_state = optimizer.init(eqx.filter(v_theta, eqx.is_inexact_array))
     integrator = euler_integrate
