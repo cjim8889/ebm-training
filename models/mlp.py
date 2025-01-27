@@ -10,9 +10,17 @@ from utils.models import init_linear_weights, xavier_init
 class MLPWithLayerNorm(eqx.Module):
     layers: list
     activation: callable
+    mixed_precision: bool
 
     def __init__(
-        self, in_size, out_size, width_size, depth, key, activation=jax.nn.silu
+        self,
+        in_size,
+        out_size,
+        width_size,
+        depth,
+        key,
+        activation=jax.nn.silu,
+        mixed_precision=False,
     ):
         keys = jax.random.split(key, depth + 1)
         layers = []
@@ -29,15 +37,45 @@ class MLPWithLayerNorm(eqx.Module):
 
         self.layers = layers
         self.activation = activation
+        self.mixed_precision = mixed_precision
 
     def __call__(self, x):
-        for i, layer in enumerate(self.layers[:-1]):
-            if isinstance(layer, eqx.nn.Linear):
-                x = layer(x)
-                x = self.activation(x)
-            else:  # LayerNorm
-                x = layer(x)
-        return self.layers[-1](x)  # Final layer without activation
+        if self.mixed_precision:
+            x = x.astype(jnp.bfloat16)  # Cast input to FP16
+            for i, layer in enumerate(self.layers[:-1]):
+                if isinstance(layer, eqx.nn.Linear):
+                    weight = layer.weight.astype(jnp.bfloat16)
+                    bias = (
+                        layer.bias.astype(jnp.bfloat16)
+                        if layer.bias is not None
+                        else None
+                    )
+                    x = jnp.dot(x, weight) + bias
+                    x = self.activation(x)
+                else:  # LayerNorm
+                    x = x.astype(jnp.float32)  # LayerNorm in FP32 for stability
+                    x = layer(x)
+                    x = x.astype(jnp.bfloat16)
+
+            # Final layer
+            final_layer = self.layers[-1]
+            weight = final_layer.weight.astype(jnp.bfloat16)
+            bias = (
+                final_layer.bias.astype(jnp.bfloat16)
+                if final_layer.bias is not None
+                else None
+            )
+            x = jnp.dot(x, weight) + bias
+            return x.astype(jnp.float32)
+        else:
+            for layer in self.layers:
+                if isinstance(layer, eqx.nn.Linear):
+                    x = layer(x)
+                    x = self.activation(x)
+                else:
+                    x = layer(x)
+
+            return self.layers[-1](x)
 
 
 class TimeVelocityField(eqx.Module):
