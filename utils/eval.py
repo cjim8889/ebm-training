@@ -136,51 +136,55 @@ def log_metrics(
 def save_model_if_best(
     v_theta: Any,
     aggregated_metrics: Dict[str, Dict[str, Any]],
-    best_w2_distances: List[Tuple[float, int]],
+    best_metrics: List[Tuple[float, int]],
     model_version: int,
+    target_density: Target,
 ) -> Tuple[List[Tuple[float, int]], int]:
     """Save model if it improves upon previous best metrics."""
     if not wandb.run:
-        return best_w2_distances, model_version
+        return best_metrics, model_version
 
     largest_step_key = max(aggregated_metrics.keys())
     largest_step_metrics = aggregated_metrics[largest_step_key]
-    current_w2 = largest_step_metrics.get("w2_distance_mean", None)
+    current_metric = largest_step_metrics.get(target_density.TARGET_METRIC, None)
 
-    if current_w2 is None:
-        return best_w2_distances, model_version
+    if current_metric is None:
+        return best_metrics, model_version
 
     should_save = False
-    if len(best_w2_distances) < 3:
+    if len(best_metrics) < 3:
         should_save = True
-    elif current_w2 < max(w2 for w2, _ in best_w2_distances):
+    elif current_metric < max(w2 for w2, _ in best_metrics):
         should_save = True
 
     if should_save:
         model_version += 1
         model_name = f"velocity_field_model_{wandb.run.id}"
-        model_path = f"{model_name}_v{model_version}_w2_{current_w2:.4f}.eqx"
+        metric_name = target_density.TARGET_METRIC.replace("_mean", "")
+        model_path = (
+            f"{model_name}_v{model_version}_{metric_name}_{current_metric:.4f}.eqx"
+        )
 
         eqx.tree_serialise_leaves(model_path, v_theta)
         artifact = wandb.Artifact(
             name=model_name,
             type="model",
             metadata={
-                "w2_distance": current_w2,
+                metric_name: current_metric,
                 "version": model_version,
             },
         )
         artifact.add_file(local_path=model_path, name="model.eqx")
 
-        best_w2_distances.append((current_w2, model_version))
-        best_w2_distances.sort()
-        if len(best_w2_distances) > 3:
-            best_w2_distances.pop()
+        best_metrics.append((current_metric, model_version))
+        best_metrics.sort()
+        if len(best_metrics) > 3:
+            best_metrics.pop()
 
-        rank = len([w2 for w2, _ in best_w2_distances if w2 <= current_w2])
+        rank = len([m for m, _ in best_metrics if m <= current_metric])
         aliases = [f"top{rank}"] if rank <= 3 else []
         if rank == 1:
             aliases.append("best")
         wandb.log_artifact(artifact, aliases=aliases)
 
-    return best_w2_distances, model_version
+    return best_metrics, model_version
