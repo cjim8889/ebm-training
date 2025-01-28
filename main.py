@@ -24,6 +24,7 @@ from models import (
     EGNN,
     VelocityFieldTwo,
     VelocityFieldThree,
+    TimeVelocityFieldWithPairwiseFeatureTwo,
 )
 from training.core import train_velocity_field
 from training.config import (
@@ -48,7 +49,7 @@ def main():
         "--network",
         type=str,
         default="mlp",
-        choices=["mlp", "pdn", "transformer", "emlp", "egnn", "mlp2", "mlp3"],
+        choices=["mlp", "pdn", "transformer", "emlp", "egnn", "mlp2", "mlp3", "pdn2"],
     )
 
     # Sampling configuration
@@ -609,6 +610,16 @@ def main():
     elif config.model.architecture == "pdn":
         v_theta = TimeVelocityFieldWithPairwiseFeature(
             model_key,
+            n_particles=config.density.n_particles,
+            n_spatial_dim=config.density.n_spatial_dim,
+            hidden_dim=config.model.hidden_dim,
+            depth=config.model.num_layers,
+            shortcut=config.training.use_shortcut,
+            mixed_precision=config.mixed_precision,
+        )
+    elif config.model.architecture == "pdn2":
+        v_theta = TimeVelocityFieldWithPairwiseFeatureTwo(
+            key=model_key,
             n_particles=config.density.n_particles,
             n_spatial_dim=config.density.n_spatial_dim,
             hidden_dim=config.model.hidden_dim,
