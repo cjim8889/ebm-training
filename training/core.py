@@ -36,7 +36,7 @@ def train_velocity_field(
     config: TrainingExperimentConfig,
 ) -> Any:
     """Train a velocity field using either standard or decoupled loss function."""
-    best_w2_distances = []
+    best_metrics = []
     model_version = 0
 
     path_distribution = AnnealedDistribution(
@@ -315,15 +315,19 @@ def train_velocity_field(
 
             # Handle model saving
             if not config.offline:
-                best_w2_distances, model_version = save_model_if_best(
-                    v_theta, aggregated_metrics, best_w2_distances, model_version
+                best_metrics, model_version = save_model_if_best(
+                    v_theta,
+                    aggregated_metrics,
+                    best_metrics,
+                    model_version,
+                    target_density,
                 )
 
     # Save final model state
-    if not config.offline and len(best_w2_distances) > 0:
+    if not config.offline and len(best_metrics) > 0:
         # Log summary of best models
-        wandb.run.summary["best_w2_distances"] = [w2 for w2, _ in best_w2_distances]
-        wandb.run.summary["best_model_versions"] = [ver for _, ver in best_w2_distances]
+        wandb.run.summary["best_metrics"] = [w2 for w2, _ in best_metrics]
+        wandb.run.summary["best_model_versions"] = [ver for _, ver in best_metrics]
         wandb.finish()
 
     return v_theta

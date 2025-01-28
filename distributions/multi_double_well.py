@@ -20,6 +20,7 @@ from .base import Target
 
 class MultiDoubleWellEnergy(Target):
     TIME_DEPENDENT = False
+    TARGET_METRIC = "e_w2_distance_mean"
 
     def __init__(
         self,
