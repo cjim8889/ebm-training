@@ -656,6 +656,7 @@ def main():
             depth=config.model.num_layers,
             equivariant_dim=32,
             shortcut=config.training.use_shortcut,
+            mixed_precision=config.mixed_precision,
         )
 
     if not config.offline:

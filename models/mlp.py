@@ -344,6 +344,7 @@ class VelocityFieldThree(eqx.Module):
         dt=0.01,
         min_dr=1e-4,
         shortcut=False,
+        mixed_precision=False,
     ):
         self.n_particles = n_particles
         self.n_spatial_dim = n_spatial_dim
@@ -363,6 +364,7 @@ class VelocityFieldThree(eqx.Module):
             width_size=hidden_dim,
             depth=depth,
             key=interaction_key,
+            mixed_precision=mixed_precision,
         )
 
         # Main MLP processes combined features (original + equivariant)
@@ -376,6 +378,7 @@ class VelocityFieldThree(eqx.Module):
             width_size=hidden_dim,
             depth=depth,
             key=main_key,
+            mixed_precision=mixed_precision,
         )
 
         self.interaction_mlp = init_linear_weights(
