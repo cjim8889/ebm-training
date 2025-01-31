@@ -23,6 +23,7 @@ class MLPWithLayerNorm(eqx.Module):
         activation=jax.nn.silu,
         final_activation=lambda x: x,
         mixed_precision=False,
+        rms_norm=False,
     ):
         keys = jax.random.split(key, depth + 1)
         layers = []
@@ -31,7 +32,10 @@ class MLPWithLayerNorm(eqx.Module):
         # Hidden layers
         for i in range(depth):
             layers.append(eqx.nn.Linear(current_size, width_size, key=keys[i]))
-            layers.append(eqx.nn.RMSNorm(width_size))
+            if rms_norm:
+                layers.append(eqx.nn.RMSNorm(width_size))
+            else:
+                layers.append(eqx.nn.LayerNorm(width_size))
             current_size = width_size
 
         # Output layer

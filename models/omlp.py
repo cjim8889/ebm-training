@@ -132,6 +132,7 @@ class OptimizedVelocityField(eqx.Module):
             m_key,
             activation=jax.nn.gelu,
             mixed_precision=mixed_precision,
+            rms_norm=True,
         )
 
         self.n_particles = n_particles
