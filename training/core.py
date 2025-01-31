@@ -70,6 +70,8 @@ def train_velocity_field(
         gradient_clipping = optax.clip_by_global_norm(
             config.training.gradient_clip_norm
         )
+    elif config.training.gradient_clip is not None:
+        gradient_clipping = optax.clip(config.training.gradient_clip)
     else:
         gradient_clipping = optax.identity()
 
@@ -200,6 +202,7 @@ def train_velocity_field(
             key=key,
             n_probes=config.training.n_probes,
             combined_loss=config.training.use_combined_loss,
+            shortcut_weight=config.training.shortcut_weight,
         )
         updates, opt_state = optimizer.update(grads, opt_state, v_theta)
         v_theta = eqx.apply_updates(v_theta, updates)
