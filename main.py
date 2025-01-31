@@ -664,7 +664,7 @@ def main():
             dim=config.density.input_dim,
             n_particles=config.density.n_particles,
             n_spatial_dims=config.density.n_spatial_dim,
-            hidden_dim=config.model.hidden_dim,
+            hidden_size=config.model.hidden_dim,
             depth=config.model.num_layers,
             shortcut=config.training.use_shortcut,
             mixed_precision=config.mixed_precision,
