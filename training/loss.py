@@ -129,6 +129,7 @@ def loss_fn(
     key: Optional[jax.random.PRNGKey] = None,
     combined_loss: bool = False,
     n_probes: int = 5,
+    shortcut_weight: float = 0.5,
 ) -> float:
     """Computes the loss for training the velocity field.
 
@@ -188,6 +189,6 @@ def loss_fn(
         short_cut_loss = batched_shortcut(
             v_theta, particles.x, particles.t, particles.d, shift_fn
         )
-        return _loss + 0.5 * jnp.mean(short_cut_loss)
+        return _loss + shortcut_weight * jnp.mean(short_cut_loss)
     else:
         return _loss

@@ -15,6 +15,7 @@ class TrainingConfig:
     steps_per_epoch: int = 100
     learning_rate: float = 1e-3
     gradient_clip_norm: Optional[float] = None
+    gradient_clip: Optional[float] = None
     eval_frequency: int = 20
     optimizer: Literal[
         "adam",
@@ -47,6 +48,7 @@ class TrainingConfig:
     every_k_schedule: int = 1
     use_schedule: bool = False
     use_combined_loss: bool = False
+    shortcut_weight: float = 0.5
 
 
 @dataclass

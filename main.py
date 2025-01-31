@@ -61,7 +61,8 @@ def main():
     parser.add_argument("--num-epochs", type=int, default=10000)
     parser.add_argument("--steps-per-epoch", type=int, default=100)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
-    parser.add_argument("--gradient-norm", type=float, default=1.0)
+    parser.add_argument("--gradient-norm", type=float, default=None)
+    parser.add_argument("--gradient-clip", type=float, default=None)
     parser.add_argument("--eval-frequency", type=int, default=20)
     parser.add_argument("--n-samples-eval", type=int, default=1024)
     parser.add_argument(
@@ -214,6 +215,7 @@ def main():
     )
     parser.add_argument("--use-schedule", action="store_true")
     parser.add_argument("--use-combined-loss", action="store_true")
+    parser.add_argument("--shortcut-weight", type=float, default=0.5)
     parser.add_argument("--epsilon-val", type=float, default=1.0)
     parser.add_argument("--min-dr", type=float, default=1e-3)
     parser.add_argument("--m", type=int, default=1)
@@ -261,6 +263,7 @@ def main():
         steps_per_epoch=args.steps_per_epoch,
         learning_rate=args.learning_rate,
         gradient_clip_norm=args.gradient_norm,
+        gradient_clip=args.gradient_clip,
         eval_frequency=args.eval_frequency,
         optimizer=args.optimizer,
         use_decoupled_loss=args.use_decoupled_loss,
@@ -279,6 +282,7 @@ def main():
         every_k_schedule=args.every_k_schedule,
         use_schedule=args.use_schedule,
         use_combined_loss=args.use_combined_loss,
+        shortcut_weight=args.shortcut_weight,
     )
 
     mcmc_config = MCMCConfig(
