@@ -665,6 +665,7 @@ def main():
             normalize=True,
             tanh=True,
             shortcut=config.training.use_shortcut,
+            mixed_precision=config.mixed_precision,
         )
     elif config.model.architecture == "mlp3":
         v_theta = VelocityFieldThree(

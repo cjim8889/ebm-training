@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 
 from utils.models import xavier_init, init_linear_weights
+from .mlp import MLPWithLayerNorm
 
 
 def get_fully_connected_senders_receivers(
@@ -37,6 +38,7 @@ class EGNNLayer(eqx.Module):
         dt: float = 0.001,
         eps: float = 1e-8,
         shortcut: bool = False,  # New parameter
+        mixed_precision: bool = False,
     ):
         self.dt = dt
         self.n_node = n_node
@@ -53,15 +55,17 @@ class EGNNLayer(eqx.Module):
 
         # Dynamic MLP input size based on shortcut
         mlp_in_size = 3 if shortcut else 2  # radial + (t, d)
-        self.pos_mlp = eqx.nn.MLP(
+        self.pos_mlp = MLPWithLayerNorm(
             in_size=mlp_in_size,
             out_size=1,
             width_size=hidden_size,
-            depth=1,
+            depth=2,
             activation=jax.nn.silu,
             final_activation=jax.nn.tanh if tanh else lambda x: x,
             key=key,
+            mixed_precision=mixed_precision,
         )
+
         self.pos_mlp = init_linear_weights(self.pos_mlp, xavier_init, key, scale=dt)
 
     def _pos_update(
@@ -129,6 +133,7 @@ class EGNN(eqx.Module):
         normalize: bool = False,
         tanh: bool = False,
         shortcut: bool = False,  # New configuration
+        mixed_precision: bool = False,
     ):
         self.n_node = n_node
         self.shortcut = shortcut
@@ -142,6 +147,7 @@ class EGNN(eqx.Module):
                 normalize=normalize,
                 tanh=tanh,
                 shortcut=shortcut,  # Propagate configuration
+                mixed_precision=mixed_precision,
             )
             for k in keys
         ]

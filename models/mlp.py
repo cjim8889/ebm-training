@@ -10,6 +10,7 @@ from utils.models import init_linear_weights, xavier_init
 class MLPWithLayerNorm(eqx.Module):
     layers: list
     activation: callable = eqx.static_field()
+    final_activation: callable = eqx.static_field()
     mixed_precision: bool = eqx.static_field()
 
     def __init__(
@@ -20,6 +21,7 @@ class MLPWithLayerNorm(eqx.Module):
         depth,
         key,
         activation=jax.nn.silu,
+        final_activation=lambda x: x,
         mixed_precision=False,
     ):
         keys = jax.random.split(key, depth + 1)
@@ -38,6 +40,7 @@ class MLPWithLayerNorm(eqx.Module):
         self.layers = layers
         self.activation = activation
         self.mixed_precision = mixed_precision
+        self.final_activation = final_activation
 
     def __call__(self, x):
         if self.mixed_precision:
@@ -68,7 +71,8 @@ class MLPWithLayerNorm(eqx.Module):
             )
             # Transpose the final weight matrix
             x = jnp.dot(x, weight.T) + bias  # Corrected here
-            return x.astype(jnp.float32)
+            x = x.astype(jnp.float32)
+            return x if self.final_activation is None else self.final_activation(x)
         else:
             for i, layer in enumerate(self.layers[:-1]):
                 if isinstance(layer, eqx.nn.Linear):
@@ -77,7 +81,11 @@ class MLPWithLayerNorm(eqx.Module):
                 else:
                     x = layer(x)
 
-            return self.layers[-1](x)
+            return (
+                self.layers[-1](x)
+                if self.final_activation is None
+                else self.final_activation(self.layers[-1](x))
+            )
 
 
 class TimeVelocityField(eqx.Module):
