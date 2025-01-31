@@ -648,7 +648,7 @@ def main():
             shortcut=config.training.use_shortcut,
             mixed_precision=config.mixed_precision,
         )
-    elif config.model.architecture == "pdn2":
+    elif config.model.architecture == "pdn3":
         v_theta = TimeVelocityFieldWithPairwiseFeatureThree(
             key=model_key,
             n_particles=config.density.n_particles,
