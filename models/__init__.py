@@ -5,6 +5,7 @@ from .mlp import (
     VelocityFieldTwo,
     VelocityFieldThree,
     TimeVelocityFieldWithPairwiseFeatureTwo,
+    TimeVelocityFieldWithPairwiseFeatureThree,
 )
 from .transformer import ParticleTransformer
 from .egnn import EGNN
