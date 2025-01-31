@@ -3,6 +3,7 @@ import jax
 import jax.numpy as jnp
 
 from utils.distributions import compute_distances
+from .mlp import MLPWithLayerNorm
 
 
 class EfficientPairwiseInteraction(eqx.Module):
@@ -60,43 +61,45 @@ class EfficientPairwiseInteraction(eqx.Module):
         return head_outputs_vmap.sum(axis=0)
 
 
-class EfficientMLP(eqx.Module):
-    layers: list
-    activation: callable = eqx.static_field()
+# class EfficientMLP(eqx.Module):
+#     layers: list
+#     activation: callable = eqx.static_field()
+#     mixed_precision: bool = eqx.static_field()
 
-    def __init__(
-        self,
-        in_size,
-        out_size,
-        hidden_size,
-        depth,
-        key,
-        activation=jax.nn.relu,
-        rms_norm=True,
-    ):
-        keys = jax.random.split(key, depth + 1)
-        layers = []
-        sizes = [in_size] + [hidden_size] * depth + [out_size]
+#     def __init__(
+#         self,
+#         in_size,
+#         out_size,
+#         hidden_size,
+#         depth,
+#         key,
+#         activation=jax.nn.relu,
+#         rms_norm=True,
+#         mixed_precision=False,
+#     ):
+#         keys = jax.random.split(key, depth + 1)
+#         layers = []
+#         sizes = [in_size] + [hidden_size] * depth + [out_size]
 
-        for i in range(len(sizes) - 1):
-            layers.append(eqx.nn.Linear(sizes[i], sizes[i + 1], key=keys[i]))
-            if i < len(sizes) - 2 and rms_norm:  # Skip norm on last layer
-                layers.append(eqx.nn.RMSNorm(hidden_size))
-            if i < len(sizes) - 2:
-                layers.append(eqx.nn.Lambda(activation))
+#         for i in range(len(sizes) - 1):
+#             layers.append(eqx.nn.Linear(sizes[i], sizes[i + 1], key=keys[i]))
+#             if i < len(sizes) - 2 and rms_norm:  # Skip norm on last layer
+#                 layers.append(eqx.nn.RMSNorm(hidden_size))
+#             if i < len(sizes) - 2:
+#                 layers.append(eqx.nn.Lambda(activation))
 
-        self.layers = layers
-        self.activation = activation
+#         self.layers = layers
+#         self.activation = activation
 
-    def __call__(self, x):
-        for layer in self.layers:
-            x = layer(x)
-        return x
+#     def __call__(self, x):
+#         for layer in self.layers:
+#             x = layer(x)
+#         return x
 
 
 class OptimizedVelocityField(eqx.Module):
     pairwise: EfficientPairwiseInteraction
-    mlp: EfficientMLP
+    mlp: MLPWithLayerNorm
     shortcut: bool = eqx.static_field()
     n_particles: int = eqx.static_field()
     n_spatial_dims: int = eqx.static_field()
@@ -111,6 +114,7 @@ class OptimizedVelocityField(eqx.Module):
         depth=4,
         heads=4,
         shortcut=False,
+        mixed_precision=False,
     ):
         self.shortcut = shortcut
         p_key, m_key = jax.random.split(key)
@@ -120,8 +124,14 @@ class OptimizedVelocityField(eqx.Module):
         )
 
         mlp_in = dim + hidden_size // heads + (2 if shortcut else 1)
-        self.mlp = EfficientMLP(
-            mlp_in, dim, hidden_size, depth, m_key, activation=jax.nn.gelu
+        self.mlp = MLPWithLayerNorm(
+            mlp_in,
+            dim,
+            hidden_size,
+            depth,
+            m_key,
+            activation=jax.nn.gelu,
+            mixed_precision=mixed_precision,
         )
 
         self.n_particles = n_particles
