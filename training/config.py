@@ -46,6 +46,7 @@ class TrainingConfig:
     n_probes: int = 5
     every_k_schedule: int = 1
     use_schedule: bool = False
+    use_combined_loss: bool = False
 
 
 @dataclass

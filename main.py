@@ -213,6 +213,7 @@ def main():
         default=0.2,
     )
     parser.add_argument("--use-schedule", action="store_true")
+    parser.add_argument("--use-combined-loss", action="store_true")
     parser.add_argument("--epsilon-val", type=float, default=1.0)
     parser.add_argument("--min-dr", type=float, default=1e-3)
     parser.add_argument("--m", type=int, default=1)
@@ -277,6 +278,7 @@ def main():
         n_probes=args.n_probes,
         every_k_schedule=args.every_k_schedule,
         use_schedule=args.use_schedule,
+        use_combined_loss=args.use_combined_loss,
     )
 
     mcmc_config = MCMCConfig(
