@@ -31,7 +31,7 @@ class MLPWithLayerNorm(eqx.Module):
         # Hidden layers
         for i in range(depth):
             layers.append(eqx.nn.Linear(current_size, width_size, key=keys[i]))
-            layers.append(eqx.nn.LayerNorm(width_size))
+            layers.append(eqx.nn.RMSNorm(width_size))
             current_size = width_size
 
         # Output layer
