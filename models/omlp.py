@@ -134,7 +134,7 @@ class OptimizedVelocityField(eqx.Module):
             hidden_size,
             depth,
             m_key,
-            activation=jax.nn.gelu,
+            activation=jax.nn.sigmoid,
             mixed_precision=mixed_precision,
             rms_norm=True,
         )
