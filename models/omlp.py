@@ -26,14 +26,18 @@ class EfficientPairwiseInteraction(eqx.Module):
         self.heads = heads
 
     def __call__(self, dists, t, d=None):
+        t = t.reshape(1)
+        if d is not None:
+            d = d.reshape(1)
+
         dists = dists.reshape(-1, 1)
         # dists: (N*(N-1)/2, 1)
         keys_all_heads = jax.vmap(self.key_proj)(dists)  # (N*(N-1)/2, dim * heads)
         values = jax.vmap(self.value_proj)(dists)  # (N*(N-1)/2, dim)
         B = jnp.concatenate([t, d] if d is not None else [t]).reshape(
             -1
-        )  # (1,) or (2,)
-        queries_all_heads = self.time_dist_proj(B)  # (dim * heads,)
+        )  # (1,1) or (1,2)
+        queries_all_heads = self.time_dist_proj(B.reshape(-1))  # (dim * heads,)
 
         keys = jnp.split(
             keys_all_heads, self.heads, axis=-1
@@ -139,6 +143,15 @@ class OptimizedVelocityField(eqx.Module):
         self.n_spatial_dims = n_spatial_dims
 
     def __call__(self, x, t, d=None):
+        if d is not None and isinstance(d, float):
+            d = jnp.array([d])
+        if isinstance(t, float):
+            t = jnp.array([t])
+
+        if d is not None:
+            d = d.reshape(1)
+        t = t.reshape(1)
+
         dists = compute_distances(
             x,
             n_particles=self.n_particles,
