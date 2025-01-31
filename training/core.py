@@ -73,13 +73,15 @@ def train_velocity_field(
     else:
         gradient_clipping = optax.identity()
 
-    lr_schedule = optax.warmup_cosine_decay_schedule(
-        init_value=0.0,
-        peak_value=config.training.learning_rate,
-        warmup_steps=500,
-        end_value=5e-5,
-        decay_steps=config.training.num_epochs * config.training.steps_per_epoch,
-    )
+    lr_schedule = config.training.learning_rate
+    if config.training.use_schedule:
+        lr_schedule = optax.warmup_cosine_decay_schedule(
+            init_value=0.0,
+            peak_value=config.training.learning_rate,
+            warmup_steps=500,
+            end_value=5e-5,
+            decay_steps=config.training.num_epochs * config.training.steps_per_epoch,
+        )
 
     base_optimizer = get_optimizer(
         config.training.optimizer,
