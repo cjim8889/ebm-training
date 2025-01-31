@@ -29,7 +29,7 @@ def log_weights_to_weights(log_weights: jnp.ndarray) -> jnp.ndarray:
 
 
 @eqx.filter_jit
-def estimate_covariance(
+def _estimate_covariance(
     positions: chex.Array,
     weights: Optional[chex.Array] = None,
     diagonal: bool = True,
@@ -72,7 +72,7 @@ def generate_samples_with_smc(
     eta: float = 0.1,
     rejection_sampling: bool = False,
     shift_fn: Callable[[jnp.ndarray], jnp.ndarray] = lambda x: x,
-    ess_threshold: float = 0.5,
+    ess_threshold: float = 0.6,
     resampling_fn: Callable[
         [jax.random.PRNGKey, jnp.ndarray, int], jnp.ndarray
     ] = systematic,
@@ -178,7 +178,7 @@ def generate_samples_with_smc(
         prev_log_weights = particles_prev["log_weights"]
         d = t - t_prev
         if covariances is None and estimate_covariance:
-            cov = estimate_covariance(
+            cov = _estimate_covariance(
                 prev_positions, log_weights_to_weights(prev_log_weights), diagonal=True
             )
 
