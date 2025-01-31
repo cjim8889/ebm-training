@@ -127,6 +127,7 @@ def loss_fn(
     shift_fn: Callable[[chex.Array], chex.Array] = lambda x: x,
     use_hutchinson: bool = False,
     key: Optional[jax.random.PRNGKey] = None,
+    combined_loss: bool = False,
     n_probes: int = 5,
 ) -> float:
     """Computes the loss for training the velocity field.
@@ -175,15 +176,18 @@ def loss_fn(
             v_theta, particles, score_fn, time_derivative_log_density
         )
 
-    # Compute L1 and L2 loss for epsilons
-    l1_loss = jnp.mean(jnp.abs(epsilons))  # L1 (MAE)
-    l2_loss = jnp.mean(epsilons**2)  # L2 (MSE)
-    combined_loss = 0.5 * l1_loss + 0.5 * l2_loss  # Adjust weights as needed
+    if combined_loss:
+        # Compute L1 and L2 loss for epsilons
+        l1_loss = jnp.mean(jnp.abs(epsilons))  # L1 (MAE)
+        l2_loss = jnp.mean(epsilons**2)  # L2 (MSE)
+        _loss = 0.5 * l1_loss + 0.5 * l2_loss  # Adjust weights as needed
+    else:
+        _loss = jnp.mean(epsilons**2)
 
     if particles.d is not None:
         short_cut_loss = batched_shortcut(
             v_theta, particles.x, particles.t, particles.d, shift_fn
         )
-        return combined_loss + 0.5 * jnp.mean(short_cut_loss)
+        return _loss + 0.5 * jnp.mean(short_cut_loss)
     else:
-        return combined_loss
+        return _loss

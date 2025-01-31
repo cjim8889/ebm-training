@@ -199,6 +199,7 @@ def train_velocity_field(
             config.training.use_hutchinson,
             key=key,
             n_probes=config.training.n_probes,
+            combined_loss=config.training.use_combined_loss,
         )
         updates, opt_state = optimizer.update(grads, opt_state, v_theta)
         v_theta = eqx.apply_updates(v_theta, updates)
