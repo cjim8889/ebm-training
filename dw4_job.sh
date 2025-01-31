@@ -13,33 +13,38 @@ cd $PBS_O_WORKDIR
 eval "$(~/anaconda3/bin/conda shell.bash hook)"
 source activate py12
 
-CUDA_VISIBLE_DEVICES=1 uv run main.py \
-  --num-samples 2560 \
+python main.py \
+  --num-samples 5120 \
   --depth 4 \
-  --hidden-dim 128 \
-  --network transformer \
+  --hidden-dim 256 \
+  --network pdn2 \
   --num-epochs 20000 \
-  --steps-per-epoch 500 \
+  --steps-per-epoch 300 \
   --mcmc-method vsmc \
   --mcmc-step-size 0.1 \
-  --mcmc-steps 6 \
+  --mcmc-steps 10 \
   --mcmc-integration-steps 10 \
   --initial-sigma 2. \
   --with-rejection \
   --target dw4o \
-  --seed 1234 \
+  --seed 12345 \
   --use-decoupled-loss \
   --batch-size 128 \
-  --learning-rate 6e-04 \
-  --gradient-norm 1. \
+  --learning-rate 1e-03 \
+  --gradient-clip 1. \
   --optimizer adamw \
-  --weight-decay 1e-04 \
+  --weight-decay 1e-03 \
   --time-batch-size 64 \
   --n-samples-eval 1024 \
   --use-cv \
   --data-path-test data/test_split_DW4.npy \
   --eval-frequency 60 \
   --use-shortcut \
+  --shortcut-weight 0.01 \
   --use-hutchinson \
-  --n-probes 1
+  --every-k-schedule 1 \
+  --mixed-precision \
+  --annealing-path inverse_power \
+  --use-schedule \
+  --use-combined-loss
 
