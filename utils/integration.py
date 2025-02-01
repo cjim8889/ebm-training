@@ -3,6 +3,7 @@ from typing import Callable, List, Tuple, Dict
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import diffrax
 
 from .distributions import divergence_velocity, divergence_velocity_with_shortcut
 from .ode import solve_neural_ode_diffrax
@@ -61,13 +62,14 @@ def generate_samples(
 
 
 @eqx.filter_jit
-def generate_samples_with_Tsit5(
+def generate_samples_with_diffrax(
     key: jax.random.PRNGKey,
     v_theta: Callable[[jnp.ndarray, float], jnp.ndarray],
     num_samples: int,
     ts: jnp.ndarray,
     sample_fn: Callable[[jax.random.PRNGKey, Tuple[int, ...]], jnp.ndarray],
     use_shortcut: bool = False,
+    solver: str = "Euler",
 ) -> Dict[str, jnp.ndarray]:
     initial_samples = sample_fn(key, (num_samples,))
     final_samples, _ = solve_neural_ode_diffrax(
@@ -79,6 +81,7 @@ def generate_samples_with_Tsit5(
         forward=True,
         max_steps=ts.shape[0],
         save_trajectory=True,
+        solver=diffrax.Tsit5() if solver == "Tsit5" else diffrax.Euler(),
     )
     return {
         "positions": final_samples,
@@ -169,12 +172,13 @@ def generate_samples_with_log_prob(
 
 
 @eqx.filter_jit
-def generate_samples_with_log_prob_Tsit5(
+def generate_samples_with_log_prob_diffrax(
     v_theta: Callable,
     initial_samples: jnp.ndarray,
     initial_log_probs: jnp.ndarray,
     ts: jnp.ndarray,
     use_shortcut: bool = False,
+    solver: str = "Euler",
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     final_samples, final_log_probs = solve_neural_ode_diffrax(
         v_theta=v_theta,
@@ -185,6 +189,7 @@ def generate_samples_with_log_prob_Tsit5(
         exact_logp=True,
         forward=True,
         max_steps=ts.shape[0],
+        solver=diffrax.Tsit5() if solver == "Tsit5" else diffrax.Euler(),
     )
     return final_samples, final_log_probs
 
