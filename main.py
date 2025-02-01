@@ -174,7 +174,7 @@ def main():
 
     # Integration configuration
     parser.add_argument(
-        "--integration-method", type=str, choices=["euler", "rk4"], default="euler"
+        "--integration-method", type=str, choices=["Euler", "Tsit5"], default="Euler"
     )
     parser.add_argument(
         "--schedule",
@@ -725,6 +725,7 @@ def main():
                 "decoupled" if config.training.use_decoupled_loss else "standard",
                 "shortcut" if config.training.use_shortcut else "noshortcut",
                 "cv" if config.mcmc.use_control_variate else "no_cv",
+                config.integration.method,
             ],
         )
 
