@@ -115,7 +115,7 @@ def train_velocity_field(
         )
 
     opt_state = optimizer.init(eqx.filter(v_theta, eqx.is_inexact_array))
-    integrator = euler_integrate
+    integrator = euler_integrate if config.integration.method == "Euler" else None
 
     def _generate(key: jax.random.PRNGKey, ts: jnp.ndarray, force_finite: bool = False):
         samples = generate_samples_with_diffrax(
@@ -125,6 +125,7 @@ def train_velocity_field(
             ts,
             path_distribution.sample_initial,
             use_shortcut=config.training.use_shortcut,
+            solver="Euler",  # We are using Euler method for integration
         )
         if force_finite:
             samples["positions"] = jnp.nan_to_num(
