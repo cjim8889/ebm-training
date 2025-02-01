@@ -26,7 +26,6 @@ samples, log_probs = solve_neural_ode_diffrax(
     save_trajectory=True,
     use_shortcut=True,
     forward=True,
-    max_steps=128,
 )
 
 print(samples.shape)

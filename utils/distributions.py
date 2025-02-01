@@ -400,7 +400,6 @@ def estimate_kl_divergence(
         use_shortcut=use_shortcut,
         exact_logp=True,
         forward=False,
-        max_steps=ts.shape[0],
     )
 
     # Compute log q(x(T)) = log q(x(0)) + accumulated log_probs
