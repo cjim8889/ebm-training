@@ -18,7 +18,7 @@ def solve_neural_ode_diffrax(
     key: jax.random.PRNGKey = None,
     forward: bool = True,
     save_trajectory: bool = False,
-    max_steps: int = 128,
+    solver: diffrax.AbstractSolver = diffrax.Euler(),
 ) -> Tuple[Float[Array, "batch dim"], Float[Array, "batch"]]:
     """
     Solve the neural ODE using Diffrax.
@@ -48,7 +48,8 @@ def solve_neural_ode_diffrax(
     augmented_state = (y0, initial_log_probs)
 
     # Configure solver and step controller
-    solver = diffrax.Tsit5()
+    if solver is None:
+        solver = diffrax.Euler()
 
     # Prepare arguments based on computation mode
     if exact_logp:
