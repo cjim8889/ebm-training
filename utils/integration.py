@@ -79,7 +79,6 @@ def generate_samples_with_diffrax(
         use_shortcut=use_shortcut,
         exact_logp=True,
         forward=True,
-        max_steps=ts.shape[0],
         save_trajectory=True,
         solver=diffrax.Tsit5() if solver == "Tsit5" else diffrax.Euler(),
     )
@@ -188,7 +187,6 @@ def generate_samples_with_log_prob_diffrax(
         use_shortcut=use_shortcut,
         exact_logp=True,
         forward=True,
-        max_steps=ts.shape[0],
         solver=diffrax.Tsit5() if solver == "Tsit5" else diffrax.Euler(),
     )
     return final_samples, final_log_probs
