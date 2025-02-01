@@ -18,7 +18,7 @@ from utils.eval import (
 from utils.hmc import generate_samples_with_hmc_correction
 from utils.integration import (
     euler_integrate,
-    generate_samples_with_Tsit5,
+    generate_samples_with_diffrax,
 )
 from utils.optimization import get_optimizer, inverse_power_schedule, power_schedule
 from utils.smc import generate_samples_with_smc
@@ -118,7 +118,7 @@ def train_velocity_field(
     integrator = euler_integrate
 
     def _generate(key: jax.random.PRNGKey, ts: jnp.ndarray, force_finite: bool = False):
-        samples = generate_samples_with_Tsit5(
+        samples = generate_samples_with_diffrax(
             key,
             v_theta,
             config.sampling.num_particles,
