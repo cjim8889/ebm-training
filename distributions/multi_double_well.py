@@ -13,7 +13,10 @@ from utils.distributions import (
     compute_wasserstein_distance_pot,
     compute_log_effective_sample_size,
 )
-from utils.integration import generate_samples_with_log_prob_diffrax
+from utils.integration import (
+    generate_samples_with_log_prob_diffrax,
+    generate_samples_with_log_prob,
+)
 
 from .base import Target
 
@@ -214,7 +217,7 @@ class MultiDoubleWellEnergy(Target):
         )  # Sample from base distribution q_0
         initial_log_probs = jax.vmap(base_density.log_prob)(initial_samples)
 
-        samples_q, samples_log_q = generate_samples_with_log_prob_diffrax(
+        samples_q, samples_log_q = generate_samples_with_log_prob(
             v_theta=v_theta,
             initial_samples=initial_samples,
             initial_log_probs=initial_log_probs,

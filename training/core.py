@@ -19,6 +19,7 @@ from utils.hmc import generate_samples_with_hmc_correction
 from utils.integration import (
     euler_integrate,
     generate_samples_with_diffrax,
+    generate_samples,
 )
 from utils.optimization import get_optimizer, inverse_power_schedule, power_schedule
 from utils.smc import generate_samples_with_smc
@@ -118,14 +119,16 @@ def train_velocity_field(
     integrator = euler_integrate if config.integration.method == "Euler" else None
 
     def _generate(key: jax.random.PRNGKey, ts: jnp.ndarray, force_finite: bool = False):
-        samples = generate_samples_with_diffrax(
-            key,
-            v_theta,
-            config.sampling.num_particles,
-            ts,
-            path_distribution.sample_initial,
-            use_shortcut=config.training.use_shortcut,
-            solver="Euler",  # We are using Euler method for integration
+        samples = (
+            generate_samples(  # Investigate why our euler is different than the diffrax
+                key,
+                v_theta,
+                config.sampling.num_particles,
+                ts,
+                path_distribution.sample_initial,
+                use_shortcut=config.training.use_shortcut,
+                # solver="Euler",  # We are using Euler method for integration
+            )
         )
         if force_finite:
             samples["positions"] = jnp.nan_to_num(
