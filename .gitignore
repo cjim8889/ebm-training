@@ -173,3 +173,7 @@ wandb
 profile/
 
 artifacts/
+
+
+# Mac Specific
+.DS_Store
