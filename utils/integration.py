@@ -32,7 +32,7 @@ def euler_integrate(
 
         return (samples, t), samples
 
-    _, output = jax.lax.scan(step, (initial_samples, 0.0), ts)
+    _, output = jax.lax.scan(step, (initial_samples, ts[0]), ts)
     return output
 
 
