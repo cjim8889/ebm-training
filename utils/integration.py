@@ -24,9 +24,9 @@ def euler_integrate(
         d = t - t_prev
 
         if use_shortcut:
-            samples = x_prev + d * jax.vmap(lambda x: v_theta(x, t, d))(x_prev)
+            samples = x_prev + d * jax.vmap(lambda x: v_theta(x, t_prev, d))(x_prev)
         else:
-            samples = x_prev + d * jax.vmap(lambda x: v_theta(x, t))(x_prev)
+            samples = x_prev + d * jax.vmap(lambda x: v_theta(x, t_prev))(x_prev)
 
         samples = batched_shift_fn(samples)
 

@@ -401,6 +401,13 @@ def estimate_kl_divergence(
         exact_logp=True,
         forward=False,
     )
+    # samples_rev, log_probs_q = reverse_time_flow(
+    #     v_theta=v_theta,
+    #     final_samples=samples_p,
+    #     final_time=final_time,
+    #     ts=ts,
+    #     use_shortcut=use_shortcut,
+    # )
 
     # Compute log q(x(T)) = log q(x(0)) + accumulated log_probs
     base_log_probs = base_log_prob_fn(samples_rev)  # Compute log q(x(0))
