@@ -19,7 +19,7 @@ python main.py \
   --hidden-dim 128 \
   --network mlp2 \
   --num-epochs 20000 \
-  --steps-per-epoch 500 \
+  --steps-per-epoch 200 \
   --mcmc-method vsmc \
   --mcmc-step-size 0.1 \
   --mcmc-steps 5 \
@@ -30,7 +30,7 @@ python main.py \
   --seed 1234 \
   --use-decoupled-loss \
   --batch-size 128 \
-  --learning-rate 1e-03 \
+  --learning-rate 6e-04 \
   --gradient-norm 1. \
   --optimizer adamw \
   --weight-decay 1e-04 \
@@ -38,6 +38,9 @@ python main.py \
   --n-samples-eval 1024 \
   --use-cv \
   --eval-frequency 60 \
+  --mixed-precision \
   --continuous-time \
-  --use-shortcut
+  --use-combined-loss \
+  --use-shortcut \
+  --shortcut-weight 0.5
 
