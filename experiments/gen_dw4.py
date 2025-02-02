@@ -1,3 +1,5 @@
+import os
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -11,8 +13,7 @@ from distributions import (
 )
 from models.mlp import TimeVelocityFieldWithPairwiseFeature
 from training.config import TrainingConfig, TrainingExperimentConfig
-from utils.eval import aggregate_eval_metrics, evaluate_model, log_metrics
-
+from utils.integration import generate_samples
 
 jax.config.update("jax_debug_nans", True)
 
@@ -56,24 +57,21 @@ path_distribution = AnnealedDistribution(
 )
 key, sample_key = jax.random.split(key)
 
-ts = jnp.linspace(0, 1, 128)
-
-all_eval_results = []
-for _ in range(5):
-    key, subkey = jax.random.split(key)
-    eval_metrics = evaluate_model(
-        subkey,
-        v_theta,
-        config,
-        path_distribution,
-        target_density,
-        1.0,
+for step in [1, 8, 16, 32, 64, 128]:
+    ts = jnp.linspace(0, 1, step)
+    samples = generate_samples(
+        sample_key, v_theta, 5000, ts, initial_density.sample, use_shortcut=True
     )
-    all_eval_results.append(eval_metrics)
 
-# Process and log metrics
-aggregated_metrics = aggregate_eval_metrics(all_eval_results)
-log_metrics(aggregated_metrics, config)
-print(aggregated_metrics)
+    # Save the samples to a local file
+    save_path = f"data/dw4_samples_{step}_steps.npz"
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    jnp.savez(
+        save_path,
+        positions=samples["positions"][-1],
+        times=ts,
+    )
+    print(f"Samples saved to {save_path}")
 
-plt.show()
+    fig = target_density.visualise(samples["positions"][-1])
+    plt.show()
