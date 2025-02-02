@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import wandb
 from distributions import GMM, MultivariateGaussian
 from models.mlp import VelocityFieldTwo
-from utils.integration import generate_samples_with_Tsit5
+from utils.integration import generate_samples
 
 run = wandb.init()
 artifact = run.use_artifact(
@@ -36,20 +36,21 @@ target_density = GMM(key, dim=2)
 
 key, sample_key = jax.random.split(key)
 
-ts = jnp.linspace(0, 1, 128)
-samples = generate_samples_with_Tsit5(
-    sample_key, v_theta, 5000, ts, initial_density.sample, use_shortcut=True
-)
+for step in [1, 8, 16, 32, 64]:
+    ts = jnp.linspace(0, 1, step)
+    samples = generate_samples(
+        sample_key, v_theta, 5000, ts, initial_density.sample, use_shortcut=True
+    )
 
-# Save the samples to a local file
-save_path = "data/gmm_samples.npz"
-os.makedirs(os.path.dirname(save_path), exist_ok=True)
-jnp.savez(
-    save_path,
-    positions=samples["positions"][-1],
-    times=ts,
-)
-print(f"Samples saved to {save_path}")
+    # Save the samples to a local file
+    save_path = f"data/gmm_samples_{step}_steps.npz"
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    jnp.savez(
+        save_path,
+        positions=samples["positions"][-1],
+        times=ts,
+    )
+    print(f"Samples saved to {save_path}")
 
-fig = target_density.visualise(samples["positions"][-1])
-plt.show()
+    fig = target_density.visualise(samples["positions"][-1])
+    plt.show()
