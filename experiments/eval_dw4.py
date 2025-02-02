@@ -19,7 +19,7 @@ config = TrainingExperimentConfig(
 )
 run = wandb.init()
 artifact = run.use_artifact(
-    "iclac/liouville_workshop/velocity_field_model_pbtx6j53:v16", type="model"
+    "iclac/liouville_workshop/velocity_field_model_tbyio36t:v4", type="model"
 )
 
 
@@ -32,7 +32,7 @@ v_theta = TimeVelocityFieldWithPairwiseFeature(
     key=key,
     n_particles=4,
     n_spatial_dim=2,
-    hidden_dim=256,
+    hidden_dim=512,
     depth=4,
     shortcut=True,
 )
@@ -41,7 +41,10 @@ v_theta = eqx.tree_deserialise_leaves(f"{artifact_dir}/model.eqx", v_theta)
 
 initial_density = MultivariateGaussian(dim=8, sigma=2.0)
 target_density = MultiDoubleWellEnergy(
-    dim=8, n_particles=4, data_path_test="data/test_split_DW4.npy"
+    dim=8,
+    n_particles=4,
+    data_path_test="data/test_split_DW4.npy",
+    n_samples_eval=5120,
 )
 
 path_distribution = AnnealedDistribution(
