@@ -35,7 +35,7 @@ target_density = ManyWellEnergy(dim=32)
 
 key, sample_key = jax.random.split(key)
 
-for step in [1, 8, 16, 32, 64]:
+for step in [1, 8, 16, 32, 64, 128]:
     ts = jnp.linspace(0, 1, step)
     samples = generate_samples(
         sample_key, v_theta, 5000, ts, initial_density.sample, use_shortcut=True
