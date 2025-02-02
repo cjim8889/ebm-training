@@ -139,3 +139,4 @@ class TrainingExperimentConfig:
     offline: bool = False
     debug: bool = False
     mixed_precision: bool = False
+    resume_from: Optional[str] = None

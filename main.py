@@ -243,6 +243,7 @@ def main():
     parser.add_argument("--data-path-test", type=str, default=None)
     parser.add_argument("--data-path-val", type=str, default=None)
     parser.add_argument("--data-path-train", type=str, default=None)
+    parser.add_argument("--resume-from", type=str, default=None)
 
     # Other configuration
     parser.add_argument(
@@ -389,6 +390,7 @@ def main():
         offline=args.offline,
         debug=args.debug,
         mixed_precision=args.mixed_precision,
+        resume_from=args.resume_from,
     )
 
     # Initialize distributions based on density config
@@ -715,7 +717,7 @@ def main():
 
     if not config.offline:
         # Handle logging hyperparameters
-        wandb.init(
+        run = wandb.init(
             project="liouville_workshop",
             config=vars(config),
             reinit=True,
@@ -728,6 +730,16 @@ def main():
                 config.integration.method,
             ],
         )
+
+    if config.resume_from is not None:
+        import equinox as eqx
+
+        artifact = run.use_artifact(
+            f"iclac/liouville_workshop/{config.resume_from}", type="model"
+        )
+
+        artifact_dir = artifact.download()
+        v_theta = eqx.tree_deserialise_leaves(f"{artifact_dir}/model.eqx", v_theta)
 
     if config.debug:
         config.training.num_epochs = 2
