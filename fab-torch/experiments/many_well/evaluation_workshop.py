@@ -171,7 +171,11 @@ def plot_energy_hist(fab_samples, target):
     idem_samples = torch.tensor(idem_samples)
     idem_energy = -(target.log_prob(idem_samples) - target.log_Z)
 
-    for energy, label in zip([gt_energy, fab_energy, idem_energy, nfs_energy], ['Ground Truth', 'FAB', 'IDEM', 'NFS']):
+    lfis_samples = np.load(f"{PATH}/ckpts/lfis_mw32_samples.npz")['positions']
+    lfis_samples = torch.tensor(lfis_samples)
+    lfis_energy = -(target.log_prob(lfis_samples) - target.log_Z)
+
+    for energy, label in zip([gt_energy, fab_energy, idem_energy, lfis_energy, nfs_energy], ['Ground Truth', 'FAB', 'IDEM', 'LFIS', r"$\text{NFS}^2$ (ours)"]):
     # for energy, label in zip([gt_energy], ['Ground Truth']):
         energy = energy.cpu().detach()
         axs.hist(
@@ -181,7 +185,7 @@ def plot_energy_hist(fab_samples, target):
             density=True,
             range=(5, 75),
             histtype="step",
-            linewidth=4,
+            linewidth=2,
             label=label,
         )
 
