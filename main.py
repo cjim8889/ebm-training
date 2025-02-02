@@ -728,6 +728,7 @@ def main():
                 "shortcut" if config.training.use_shortcut else "noshortcut",
                 "cv" if config.mcmc.use_control_variate else "no_cv",
                 config.integration.method,
+                "corrected",
             ],
         )
 
