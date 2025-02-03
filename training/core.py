@@ -207,6 +207,7 @@ def train_velocity_field(
             n_probes=config.training.n_probes,
             combined_loss=config.training.use_combined_loss,
             shortcut_weight=config.training.shortcut_weight,
+            random_alpha=config.training.random_alpha,
         )
         updates, opt_state = optimizer.update(grads, opt_state, v_theta)
         v_theta = eqx.apply_updates(v_theta, updates)
