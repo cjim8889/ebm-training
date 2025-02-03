@@ -24,33 +24,6 @@ def euler_integrate(
         d = t - t_prev
 
         if use_shortcut:
-            samples = x_prev + d * jax.vmap(lambda x: v_theta(x, t, d))(x_prev)
-        else:
-            samples = x_prev + d * jax.vmap(lambda x: v_theta(x, t))(x_prev)
-
-        samples = batched_shift_fn(samples)
-
-        return (samples, t), samples
-
-    _, output = jax.lax.scan(step, (initial_samples, ts[0]), ts)
-    return output
-
-
-@eqx.filter_jit
-def euler_integrate_2(
-    v_theta: Callable[[jnp.ndarray, jnp.ndarray, jnp.ndarray], jnp.ndarray],
-    initial_samples: jnp.ndarray,
-    ts: jnp.ndarray,
-    shift_fn: Callable[[jnp.ndarray], jnp.ndarray] = lambda x: x,
-    use_shortcut: bool = False,
-) -> jnp.ndarray:
-    batched_shift_fn = jax.vmap(shift_fn)
-
-    def step(carry, t):
-        x_prev, t_prev = carry
-        d = t - t_prev
-
-        if use_shortcut:
             samples = x_prev + d * jax.vmap(lambda x: v_theta(x, t_prev, d))(x_prev)
         else:
             samples = x_prev + d * jax.vmap(lambda x: v_theta(x, t_prev))(x_prev)

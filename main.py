@@ -718,7 +718,7 @@ def main():
     if not config.offline:
         # Handle logging hyperparameters
         run = wandb.init(
-            project="liouville_workshop",
+            project="liouville_workshop_corrected",
             config=vars(config),
             reinit=True,
             tags=[
@@ -736,7 +736,7 @@ def main():
         import equinox as eqx
 
         artifact = run.use_artifact(
-            f"iclac/liouville_workshop/{config.resume_from}", type="model"
+            f"iclac/liouville_workshop_corrected/{config.resume_from}", type="model"
         )
 
         artifact_dir = artifact.download()
