@@ -103,20 +103,60 @@ def shortcut(
     d: chex.Array,
     shift_fn: Callable[[chex.Array], chex.Array],
 ):
-    real_d = (jnp.clip(t + 2 * d, 0.0, 1.0) - t) / 2.0
+    # Compute half of the total step size
+    half_step_size = (jnp.clip(t + 2 * d, 0.0, 1.0) - t) / 2.0
 
-    s_t = v_theta(x, t, real_d)
-    x_t = shift_fn(x + s_t * real_d)
+    # Compute the shortcut step based on velocity model
+    shortcut_step = v_theta(x, t, half_step_size)
+    shifted_x = shift_fn(x + shortcut_step * half_step_size)
 
-    s_td = v_theta(x_t, t + real_d, real_d)
-    s_target = jax.lax.stop_gradient(s_t + s_td) / 2.0
+    # Compute the second part of the shortcut using the shifted state
+    shortcut_step_next = v_theta(shifted_x, t + half_step_size, half_step_size)
+    target_shortcut_step = (
+        jax.lax.stop_gradient(shortcut_step + shortcut_step_next) / 2.0
+    )
 
-    error = (v_theta(x, t, 2 * real_d) - s_target) ** 2
+    # Compute the error for shortcut consistency
+    error = (v_theta(x, t, 2 * half_step_size) - target_shortcut_step) ** 2
+
+    return error
+
+
+def shortcut_with_random_alpha(
+    v_theta: Callable[[chex.Array, float, float], chex.Array],
+    x: chex.Array,
+    t: chex.Array,
+    d: chex.Array,
+    alpha: chex.Array,  # New argument to specify the fraction of the interval for the first part
+    shift_fn: Callable[[chex.Array], chex.Array],
+):
+    # Compute the total step size (distance to move)
+    total_step_size = jnp.clip(t + 2 * d, 0.0, 1.0) - t  # No division by 2 needed now
+
+    # Compute the velocity for the first part of the split using alpha
+    first_part_velocity = v_theta(x, t, alpha * total_step_size)
+    first_part_state = shift_fn(x + first_part_velocity * alpha * total_step_size)
+
+    # Compute the velocity for the second part of the split using (1-alpha)
+    second_part_velocity = v_theta(
+        first_part_state, t + alpha * total_step_size, (1 - alpha) * total_step_size
+    )
+
+    # Calculate the target shortcut step as the weighted sum of both parts
+    target_shortcut_step = jax.lax.stop_gradient(
+        alpha * first_part_velocity + (1 - alpha) * second_part_velocity
+    )
+
+    # Compute the error for shortcut consistency
+    error = (v_theta(x, t, total_step_size) - target_shortcut_step) ** 2
 
     return error
 
 
 batched_shortcut = jax.vmap(shortcut, in_axes=(None, 0, 0, 0, None))
+batched_shortcut_with_random_alpha = jax.vmap(
+    shortcut_with_random_alpha, in_axes=(None, 0, 0, 0, 0, None)
+)
 
 
 def loss_fn(
@@ -130,6 +170,7 @@ def loss_fn(
     combined_loss: bool = False,
     n_probes: int = 5,
     shortcut_weight: float = 0.5,
+    random_alpha: bool = False,
 ) -> float:
     """Computes the loss for training the velocity field.
 
@@ -186,9 +227,16 @@ def loss_fn(
         _loss = jnp.mean(epsilons**2)
 
     if particles.d is not None:
-        short_cut_loss = batched_shortcut(
-            v_theta, particles.x, particles.t, particles.d, shift_fn
-        )
+        if random_alpha:
+            key, subkey = jax.random.split(key)
+            alpha = jax.random.uniform(subkey, shape=(particles.x.shape[0],))
+            short_cut_loss = batched_shortcut_with_random_alpha(
+                v_theta, particles.x, particles.t, particles.d, alpha, shift_fn
+            )
+        else:
+            short_cut_loss = batched_shortcut(
+                v_theta, particles.x, particles.t, particles.d, shift_fn
+            )
         return _loss + shortcut_weight * jnp.mean(short_cut_loss)
     else:
         return _loss
