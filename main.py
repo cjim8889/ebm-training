@@ -228,6 +228,7 @@ def main():
     )
     parser.add_argument("--use-schedule", action="store_true")
     parser.add_argument("--use-combined-loss", action="store_true")
+    parser.add_argument("--random-alpha", action="store_true")
     parser.add_argument("--shortcut-weight", type=float, default=0.5)
     parser.add_argument("--epsilon-val", type=float, default=1.0)
     parser.add_argument("--min-dr", type=float, default=1e-3)
@@ -297,6 +298,7 @@ def main():
         use_schedule=args.use_schedule,
         use_combined_loss=args.use_combined_loss,
         shortcut_weight=args.shortcut_weight,
+        random_alpha=args.random_alpha,
     )
 
     mcmc_config = MCMCConfig(
