@@ -17,28 +17,29 @@ from distributions import (
     TranslationInvariantGaussian,
 )
 from models import (
+    EGNN,
+    EquivariantTimeVelocityField,
+    OptimizedVelocityField,
+    ParticleTransformer,
     TimeVelocityField,
     TimeVelocityFieldWithPairwiseFeature,
-    ParticleTransformer,
-    EquivariantTimeVelocityField,
-    EGNN,
-    VelocityFieldTwo,
-    VelocityFieldThree,
-    TimeVelocityFieldWithPairwiseFeatureTwo,
-    OptimizedVelocityField,
     TimeVelocityFieldWithPairwiseFeatureThree,
+    TimeVelocityFieldWithPairwiseFeatureTwo,
+    VelocityFieldFour,
+    VelocityFieldThree,
+    VelocityFieldTwo,
 )
-from training.core import train_velocity_field
 from training.config import (
+    DensityConfig,
+    IntegrationConfig,
+    MCMCConfig,
+    ModelConfig,
+    ProgressiveTrainingConfig,
     SamplingConfig,
     TrainingConfig,
-    MCMCConfig,
-    IntegrationConfig,
-    ProgressiveTrainingConfig,
-    ModelConfig,
     TrainingExperimentConfig,
-    DensityConfig,
 )
+from training.core import train_velocity_field
 
 
 def main():
@@ -62,6 +63,7 @@ def main():
             "pdn2",
             "pdn3",
             "omlp",
+            "mlp4",
         ],
     )
 
@@ -626,6 +628,14 @@ def main():
         )
     elif config.model.architecture == "mlp2":
         v_theta = VelocityFieldTwo(
+            model_key,
+            dim=config.density.input_dim,
+            hidden_dim=config.model.hidden_dim,
+            depth=config.model.num_layers,
+            shortcut=config.training.use_shortcut,
+        )
+    elif config.model.architecture == "mlp4":
+        v_theta = VelocityFieldFour(
             model_key,
             dim=config.density.input_dim,
             hidden_dim=config.model.hidden_dim,

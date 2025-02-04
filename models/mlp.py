@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 
 from utils.distributions import compute_distances
-from utils.models import init_linear_weights, xavier_init
+from utils.models import init_linear_weights, xavier_init, kaiming_init
 
 
 class MLPWithLayerNorm(eqx.Module):
@@ -374,16 +374,18 @@ class AdaptiveFeatureProjection(eqx.Module):
     time_mlp: eqx.nn.MLP
     dist_mlp: eqx.nn.MLP
     transform: eqx.nn.Linear
+    activation: eqx.nn.Lambda
 
-    def __init__(self, dim, key):
+    def __init__(self, dim, key, activation=jax.nn.silu):
         t_key, d_key, proj_key = jax.random.split(key, 3)
         self.time_mlp = eqx.nn.MLP(1, dim, dim, 2, key=t_key)
         self.dist_mlp = eqx.nn.MLP(1, dim, dim, 2, key=d_key)
         self.transform = eqx.nn.Linear(dim * 2, dim, key=proj_key)
+        self.activation = eqx.nn.Lambda(activation)
 
     def __call__(self, t: chex.Array, d: chex.Array):
-        t_feat = jax.nn.silu(self.time_mlp(t))
-        d_feat = jax.nn.silu(self.dist_mlp(d))
+        t_feat = self.activation(self.time_mlp(t))
+        d_feat = self.activation(self.dist_mlp(d))
 
         concat = jnp.concatenate([t_feat, d_feat], axis=-1)
         return self.transform(concat)
@@ -456,6 +458,69 @@ class VelocityFieldTwo(eqx.Module):
         # Process through blocks
         for block in self.blocks:
             h = block(h + cond)  # Additive conditioning
+
+        # Final projection
+        return self.output_proj(self.norm(h))
+
+
+class VelocityFieldFour(eqx.Module):
+    input_proj: eqx.nn.Linear
+    blocks: list
+    norm: eqx.nn.LayerNorm
+    output_proj: eqx.nn.Linear
+    conditioning: AdaptiveFeatureProjection
+    shortcut: bool
+    dt: float
+
+    def __init__(self, key, dim, hidden_dim, depth=6, shortcut=False):
+        keys = jax.random.split(key, 6)
+        self.shortcut = shortcut
+
+        # Input processing
+        in_dim = dim + 2 if shortcut else dim + 1
+        self.input_proj = eqx.nn.Linear(in_dim, hidden_dim, key=keys[0])
+
+        # Residual blocks
+        self.blocks = [
+            eqx.nn.Sequential(
+                [
+                    eqx.nn.Linear(hidden_dim, hidden_dim, key=k),
+                    eqx.nn.RMSNorm(hidden_dim),
+                    eqx.nn.Lambda(jax.nn.gelu),
+                ]
+            )
+            for k in jax.random.split(keys[1], depth)
+        ]
+
+        # Output projection
+        self.norm = eqx.nn.RMSNorm(hidden_dim)
+        self.output_proj = eqx.nn.Linear(hidden_dim, dim, key=keys[3])
+        self._init_weights(keys[4])
+
+    def _init_weights(self, key):
+        """Ensure stable initialization with dt scaling"""
+        self.output_proj = init_linear_weights(self.output_proj, kaiming_init, key)
+
+    def __call__(self, x: chex.Array, t: float, d: float = None):
+        if isinstance(d, float):
+            d = jnp.array([d])
+        if isinstance(t, float):
+            t = jnp.array([t])
+
+        d = d.reshape(1)
+        t = t.reshape(1)
+        # Prepare inputs
+        if self.shortcut:
+            inputs = jnp.concatenate([x, t, d])
+        else:
+            inputs = jnp.concatenate([x, t])
+
+        # Project to hidden space
+        h = self.input_proj(inputs)
+
+        # Process through blocks
+        for block in self.blocks:
+            h = block(h)  # Additive conditioning
 
         # Final projection
         return self.output_proj(self.norm(h))
