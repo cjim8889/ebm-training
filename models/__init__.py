@@ -4,6 +4,7 @@ from .mlp import (
     EquivariantTimeVelocityField,
     VelocityFieldTwo,
     VelocityFieldThree,
+    VelocityFieldFour,
     TimeVelocityFieldWithPairwiseFeatureTwo,
     TimeVelocityFieldWithPairwiseFeatureThree,
 )
