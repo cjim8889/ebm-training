@@ -468,9 +468,7 @@ class VelocityFieldFour(eqx.Module):
     blocks: list
     norm: eqx.nn.LayerNorm
     output_proj: eqx.nn.Linear
-    conditioning: AdaptiveFeatureProjection
     shortcut: bool
-    dt: float
 
     def __init__(self, key, dim, hidden_dim, depth=6, shortcut=False):
         keys = jax.random.split(key, 6)
