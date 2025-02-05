@@ -264,11 +264,6 @@ class MultiDoubleWellEnergy(Target):
         )
 
         metrics["dist_total_variation"] = dist_total_variation
-
-        print(
-            jnp.isfinite(log_prob_samples).all(),
-            jnp.isfinite(log_prob_true_samples).all(),
-        )
         energy_total_variation = compute_total_variation_distance(
             log_prob_samples.reshape(-1, 1),
             log_prob_true_samples.reshape(-1, 1),
