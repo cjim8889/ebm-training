@@ -23,7 +23,11 @@ from .base import Target
 
 class MultiDoubleWellEnergy(Target):
     TIME_DEPENDENT = False
-    TARGET_METRIC = "e_w2_distance_mean"
+    TARGET_METRIC = (
+        ("dist_total_variation", True),
+        ("energy_total_variation", True),
+        ("ess", False),
+    )
 
     def __init__(
         self,
@@ -229,13 +233,6 @@ class MultiDoubleWellEnergy(Target):
 
         true_samples = self._test_set[: self.n_target_samples_eval]
 
-        x_w1_distance, x_w2_distance = compute_wasserstein_distance_pot(
-            samples_q, true_samples
-        )
-
-        metrics["w1_distance"] = x_w1_distance
-        metrics["w2_distance"] = x_w2_distance
-
         log_prob_samples = self.batched_log_prob(samples_q)
         log_prob_true_samples = self.batched_log_prob(true_samples)
 
@@ -259,7 +256,7 @@ class MultiDoubleWellEnergy(Target):
             samples_interatomic_dist,
             true_interatomic_dist,
             num_bins=200,
-            lower_bound=-10,
+            lower_bound=0,
             upper_bound=10,
         )
 
