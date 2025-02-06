@@ -200,7 +200,7 @@ class TimeVelocityFieldWithPairwiseFeature(eqx.Module):
 
         # Compute pairwise distances
         dists = compute_distances(
-            xs, self.n_particles, self.n_spatial_dim, repeat=False, min_dr=1e-4
+            xs, self.n_particles, self.n_spatial_dim, repeat=False, min_dr=1e-7
         )
         x_concat = jnp.concatenate([x_concat, dists.flatten()], axis=0)
 
