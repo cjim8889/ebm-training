@@ -84,6 +84,7 @@ def train_velocity_field(
             transition_steps=total_steps // 2,
             peak_value=config.training.learning_rate,
             pct_start=0.2,
+            final_div_factor=2.5,
         )
 
     base_optimizer = get_optimizer(
