@@ -23,14 +23,14 @@ config = TrainingExperimentConfig(
 )
 run = wandb.init()
 artifact = run.use_artifact(
-    "iclac/liouville_workshop/velocity_field_model_tbyio36t:v17", type="model"
+    "iclac/liouville_workshop_corrected/velocity_field_model_vozggoyb:v41", type="model"
 )
 
 
 artifact_dir = artifact.download()
 
 # Create a key for model initialization
-key = jax.random.PRNGKey(238)
+key = jax.random.PRNGKey(666)
 
 v_theta = TimeVelocityFieldWithPairwiseFeature(
     key=key,
@@ -48,7 +48,7 @@ target_density = MultiDoubleWellEnergy(
     dim=8,
     n_particles=4,
     data_path_test="data/test_split_DW4.npy",
-    n_samples_eval=2048,
+    n_samples_eval=4096,
 )
 
 path_distribution = AnnealedDistribution(
@@ -57,7 +57,7 @@ path_distribution = AnnealedDistribution(
 )
 key, sample_key = jax.random.split(key)
 
-for step in [1, 8, 16, 32, 64, 128]:
+for step in [128]:
     ts = jnp.linspace(0, 1, step)
     samples = generate_samples(
         sample_key, v_theta, 5000, ts, initial_density.sample, use_shortcut=True
