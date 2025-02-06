@@ -136,55 +136,90 @@ def log_metrics(
 def save_model_if_best(
     v_theta: Any,
     aggregated_metrics: Dict[str, Dict[str, Any]],
-    best_metrics: List[Tuple[float, int]],
+    best_metrics: List[Tuple[Tuple[float, ...], int]],
     model_version: int,
     target_density: Target,
-) -> Tuple[List[Tuple[float, int]], int]:
-    """Save model if it improves upon previous best metrics."""
+) -> Tuple[List[Tuple[Tuple[float, ...], int]], int]:
+    """Save model if it improves upon previous best metrics with hierarchical metrics support."""
     if not wandb.run:
         return best_metrics, model_version
 
+    # Get metrics in order of descending importance
     largest_step_key = max(aggregated_metrics.keys())
     largest_step_metrics = aggregated_metrics[largest_step_key]
-    current_metric = largest_step_metrics.get(target_density.TARGET_METRIC, None)
 
-    if current_metric is None:
-        return best_metrics, model_version
+    # Extract metric values based on target specification
+    metric_values = []
+    for metric_spec in target_density.TARGET_METRIC:
+        metric_name, lower_better = metric_spec
+        value = largest_step_metrics.get(f"{metric_name}_mean", None)
+        if value is None:
+            return best_metrics, model_version  # If any metric is missing, abort
+        metric_values.append((value, lower_better))
 
+    # Convert to comparable tuple (flip values if higher is better)
+    comparable_values = tuple(
+        val if lower_better else -val for val, lower_better in metric_values
+    )
+    raw_values = tuple(val for val, _ in metric_values)
+
+    # Check if this is better than any existing in top 10
     should_save = False
-    if len(best_metrics) < 3:
+    if len(best_metrics) < 10:
         should_save = True
-    elif current_metric < max(w2 for w2, _ in best_metrics):
-        should_save = True
+    else:
+        # Get worst in current top 10 (since list is maintained in sorted order)
+        worst_in_best = best_metrics[-1][0]
+        if comparable_values < worst_in_best:
+            should_save = True
 
     if should_save:
         model_version += 1
         model_name = f"velocity_field_model_{wandb.run.id}"
-        metric_name = target_density.TARGET_METRIC.replace("_mean", "")
-        model_path = (
-            f"{model_name}_v{model_version}_{metric_name}_{current_metric:.4f}.eqx"
+
+        # Create metric string for filename
+        metric_str = "_".join(
+            f"{name}_{val:.4f}"
+            for (name, _), val in zip(target_density.TARGET_METRIC, raw_values)
         )
+        model_path = f"{model_name}_v{model_version}_{metric_str}.eqx"
 
         eqx.tree_serialise_leaves(model_path, v_theta)
+
+        # Create metadata with all metrics
+        metadata = {
+            "version": model_version,
+            **{
+                name: val
+                for (name, _), val in zip(target_density.TARGET_METRIC, raw_values)
+            },
+        }
+
         artifact = wandb.Artifact(
             name=model_name,
             type="model",
-            metadata={
-                metric_name: current_metric,
-                "version": model_version,
-            },
+            metadata=metadata,
         )
         artifact.add_file(local_path=model_path, name="model.eqx")
 
-        best_metrics.append((current_metric, model_version))
+        # Insert and maintain sorted order
+        best_metrics.append((comparable_values, model_version))
         best_metrics.sort()
-        if len(best_metrics) > 3:
-            best_metrics.pop()
 
-        rank = len([m for m, _ in best_metrics if m <= current_metric])
-        aliases = [f"top{rank}"] if rank <= 3 else []
+        # Keep only top 10
+        if len(best_metrics) > 10:
+            best_metrics = best_metrics[:10]
+
+        # Determine ranking
+        better_models = sum(1 for m in best_metrics if m[0] < comparable_values)
+        rank = better_models + 1  # Actual 1-based position in sorted list
+
+        aliases = []
         if rank == 1:
             aliases.append("best")
+        if rank < 5:
+            aliases.append(f"top{rank}")
+
         wandb.log_artifact(artifact, aliases=aliases)
 
     return best_metrics, model_version
