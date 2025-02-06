@@ -20,16 +20,16 @@ config = TrainingExperimentConfig(
     offline=False,
     training=TrainingConfig(use_shortcut=True, shortcut_size=[32, 64, 128]),
 )
-run = wandb.init()
+run = wandb.init(project="ebm-training-corrected")
 artifact = run.use_artifact(
-    "iclac/liouville_workshop/velocity_field_model_tbyio36t:v17", type="model"
+    "iclac/liouville_workshop_corrected/velocity_field_model_vozggoyb:v41", type="model"
 )
 
 
 artifact_dir = artifact.download()
 
 # Create a key for model initialization
-key = jax.random.PRNGKey(238)
+key = jax.random.PRNGKey(520019)
 
 v_theta = TimeVelocityFieldWithPairwiseFeature(
     key=key,
@@ -55,8 +55,6 @@ path_distribution = AnnealedDistribution(
     target_density,
 )
 key, sample_key = jax.random.split(key)
-
-ts = jnp.linspace(0, 1, 128)
 
 all_eval_results = []
 for _ in range(5):
