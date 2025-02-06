@@ -49,8 +49,8 @@ def visualise_samples(target, path="", name="", plotting_bounds=(-1.4 * 40, 1.4 
         samples = np.load(f"{path}/gmm_samples_{step}_steps.npz")['positions']
         samples_list.append(samples)
 
-    fig, axs = plt.subplots(1, len(steps), figsize=(4, 12))
-    fig.subplots_adjust(hspace=0.01)
+    fig, axs = plt.subplots(1, len(steps), figsize=(25, 4))
+    # fig.subplots_adjust(hspace=0.01, wspace=0.5)
     for i in range(len(steps)):
         samples = torch.tensor(samples_list[i])
         plot_contours(
@@ -62,6 +62,7 @@ def visualise_samples(target, path="", name="", plotting_bounds=(-1.4 * 40, 1.4 
         )
         _plot_marginal_pair(samples, ax=axs[i], bounds=plotting_bounds, markersize=1.5)
         axs[i].set_axis_off()
+        axs[i].set_title(f"{steps[i]} steps", fontsize=20)
 
     plt.savefig(f"{name}.png", dpi=300, bbox_inches="tight", pad_inches=0.)
     plt.close()
@@ -70,8 +71,14 @@ def visualise_samples(target, path="", name="", plotting_bounds=(-1.4 * 40, 1.4 
 def main(cfg: DictConfig, debug=False):
     target = setup_target(cfg, 1000)
 
-    path = f"{PATH}/ckpts/samples/gmm/nfs/"
-    visualise_samples(target, path=path, name=f"{PATH}/nfs_gmm_diff_stpes")
+    # path = f"{PATH}/ckpts/samples/gmm/nfs/"
+    # visualise_samples(target, path=path, name=f"{PATH}/nfs_gmm_diff_stpes")
+
+    path = f"{PATH}/ckpts/samples/gmm/idem/"
+    visualise_samples(target, path=path, name=f"{PATH}/idem_gmm_diff_stpes")
+    
+    # path = f"{PATH}/ckpts/samples/gmm/lfis/"
+    # visualise_samples(target, path=path, name=f"{PATH}/lfis_gmm_diff_stpes")
 
 if __name__ == '__main__':
     main()

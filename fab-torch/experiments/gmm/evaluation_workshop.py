@@ -99,10 +99,11 @@ def main(cfg: DictConfig, debug=False):
     model = load_model(cfg, target, path_to_model)
     model.set_ais_target(min_is_target=False)
 
-    # nsf_samples = np.load(f"{PATH}/ckpts/nsf_gmm_samples.npz")['positions']
-    # visualise_samples(torch.tensor(nsf_samples), target, f"{PATH}/nsf_samples")
+    nsf_samples = np.load(f"{PATH}/ckpts/nfs_gmm_samples.npz")['positions']
+    visualise_samples(torch.tensor(nsf_samples), target, f"{PATH}/nfs_samples")
 
-    visualise_samples(model.flow.sample((5000,)).detach(), target, f"{PATH}/fab_samples")
+    # visualise_samples(model.flow.sample((5000,)).detach(), target, f"{PATH}/fab_samples")
+    exit()
 
 
 
