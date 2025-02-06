@@ -78,22 +78,12 @@ def train_velocity_field(
 
     lr_schedule = config.training.learning_rate
     if config.training.use_schedule:
-        cycle_epochs = 300  # Define the length of each cycle in epochs
-        num_cycles = config.training.num_epochs // cycle_epochs
-        cycle_steps = cycle_epochs * config.training.steps_per_epoch  # Steps per cycle
+        total_steps = config.training.num_epochs * config.training.steps_per_epoch
 
-        lr_schedule = optax.join_schedules(
-            schedules=[
-                optax.cosine_decay_schedule(
-                    init_value=config.training.learning_rate,
-                    decay_steps=cycle_steps,  # Correct decay_steps per cycle
-                )
-                for _ in range(num_cycles)
-            ],
-            boundaries=[
-                i * cycle_steps  # Correct boundaries based on cycle_steps
-                for i in range(1, num_cycles)
-            ],
+        lr_schedule = optax.cosine_onecycle_schedule(
+            transition_steps=total_steps // 2,
+            peak_value=config.training.learning_rate,
+            pct_start=0.2,
         )
 
     base_optimizer = get_optimizer(
