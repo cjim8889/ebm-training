@@ -10,12 +10,21 @@ import optax
 from jax.scipy.optimize import minimize
 
 from utils.distributions import remove_mean, remove_mean_decorator, compute_distances
+from utils.distributions import (
+    compute_log_effective_sample_size,
+)
+from utils.integration import (
+    generate_samples_with_log_prob,
+)
 
 from .base import Target
 
 
 class SoftCoreLennardJonesEnergy(Target):
     TIME_DEPENDENT = False
+    TARGET_METRIC = (
+        ("ess", False),
+    )
 
     def __init__(
         self,
@@ -23,11 +32,11 @@ class SoftCoreLennardJonesEnergy(Target):
         n_particles: int,
         sigma: float = 1.0,
         epsilon_val: float = 1.0,
-        alpha: float = 0.1,
+        alpha: float = 0.2,
         shift_fn: Callable[[jnp.ndarray], jnp.ndarray] = lambda x: x,
         min_dr: float = 1e-4,
         c: float = 0.5,
-        include_harmonic: bool = False,
+        include_harmonic: bool = True,
         log_prob_clip: float = None,
         log_prob_clip_min: float = None,
         log_prob_clip_max: float = None,
@@ -335,3 +344,41 @@ class SoftCoreLennardJonesEnergy(Target):
 
         fig.canvas.draw()
         return fig
+
+    def evaluate(
+        self,
+        key: chex.PRNGKey,
+        *,
+        v_theta: Callable,
+        ts: chex.Array,
+        base_density: Target,
+        use_shortcut: bool = False,
+        **kwargs,
+    ):
+        metrics = {}
+
+        key, sample_key = jax.random.split(key)
+        initial_samples = base_density.sample(
+            sample_key, (self.n_model_samples_eval,)
+        )  # Sample from base distribution q_0
+        initial_log_probs = jax.vmap(base_density.log_prob)(initial_samples)
+
+        samples_q, samples_log_q = generate_samples_with_log_prob(
+            v_theta=v_theta,
+            initial_samples=initial_samples,
+            initial_log_probs=initial_log_probs,
+            ts=ts,
+            use_shortcut=use_shortcut,
+        )
+
+        metrics["figure"] = self.visualise(samples_q)
+
+        log_prob_samples = self.batched_log_prob(samples_q)
+
+        ess = compute_log_effective_sample_size(
+            log_p=log_prob_samples,
+            log_q=samples_log_q,
+        )
+        metrics["ess"] = jnp.exp(ess)
+
+        return metrics

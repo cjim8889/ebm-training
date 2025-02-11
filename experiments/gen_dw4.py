@@ -23,7 +23,7 @@ config = TrainingExperimentConfig(
 )
 run = wandb.init()
 artifact = run.use_artifact(
-    "iclac/liouville_workshop_corrected/velocity_field_model_vozggoyb:v41", type="model"
+    'iclac/liouville_workshop_corrected/velocity_field_model_b4k28vfq:v118', type="model"
 )
 
 
