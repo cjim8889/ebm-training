@@ -17,16 +17,49 @@ def get_fully_connected_senders_receivers(
     return senders[mask], receivers[mask]
 
 
+class GEONORM(eqx.Module):
+    """SE(3)-Equivariant Geometric Normalization Layer"""
+    g: jnp.ndarray  # Learnable scale parameters [N,1]
+    b: jnp.ndarray  # Learnable direction coefficients [N,1]
+    eps: float
+    
+    def __init__(self, num_particles: int, eps: float = 1e-5,
+                 key: jax.random.PRNGKey = jax.random.PRNGKey(0)):
+        g_key, b_key = jax.random.split(key)
+        self.g = jax.random.normal(g_key, (num_particles, 1)) * 0.1
+        self.b = jax.random.normal(b_key, (num_particles, 1)) * 0.1
+        self.eps = eps
+
+    def __call__(self, x: jnp.ndarray, mu0: jnp.ndarray) -> jnp.ndarray:
+        """Input shape: [N,D] (N particles in D-dimensional space)"""
+        # Initialize mu0 on first call
+        mu = jnp.mean(x, axis=0, keepdims=True)  # Current centroid [1,D]
+        x_centered = x - mu  # Translation-invariant coordinates [N,D]
+        
+        # SE(3)-invariant radial distances
+        sigma = jnp.linalg.norm(x_centered, axis=1, keepdims=True) + self.eps  # [N,1]
+        
+        # Directional alignment term
+        mu_diff = mu - mu0  # [1,D]
+        mu_diff_norm = jnp.linalg.norm(mu_diff, axis=-1, keepdims=True) + self.eps  # [1,1]
+        direction = mu_diff / mu_diff_norm  # [1,D]
+        
+        # Geometric normalization
+        x_norm = (self.g * x_centered) / sigma  # Scaled translation-equivariant term
+        directional_term = self.b * direction  # Rotation-equivariant alignment
+        
+        return x_norm + directional_term + mu0  # [N,D]
+
 class EGNNLayer(eqx.Module):
     pos_mlp: eqx.nn.MLP
     normalize: bool
     eps: float
-    dt: float
     senders: jnp.ndarray
     receivers: jnp.ndarray
     seg_count_senders: jnp.ndarray
     n_node: int
     shortcut: bool  # New: Conditionally include step size 'd'
+    num_nearest_neighbors: Optional[int]  # New: Number of nearest neighbors
 
     def __init__(
         self,
@@ -35,12 +68,12 @@ class EGNNLayer(eqx.Module):
         key: jax.random.PRNGKey,
         normalize: bool = False,
         tanh: bool = False,
-        dt: float = 0.001,
-        eps: float = 1e-8,
+        eps: float = 1.,
+        dt: float = 0.01,
         shortcut: bool = False,  # New parameter
+        num_nearest_neighbors: int = 5,
         mixed_precision: bool = False,
     ):
-        self.dt = dt
         self.n_node = n_node
         self.normalize = normalize
         self.eps = eps
@@ -48,9 +81,10 @@ class EGNNLayer(eqx.Module):
 
         # Precompute graph structure
         self.senders, self.receivers = get_fully_connected_senders_receivers(n_node)
+        self.num_nearest_neighbors = num_nearest_neighbors
 
         # Precompute normalization constants
-        self.seg_count_senders = (n_node - 1) * jnp.ones(n_node, dtype=jnp.float32)
+        self.seg_count_senders = num_nearest_neighbors * jnp.ones(n_node, dtype=jnp.float32)
         self.seg_count_senders = jnp.maximum(self.seg_count_senders, 1.0)
 
         # Dynamic MLP input size based on shortcut
@@ -70,6 +104,7 @@ class EGNNLayer(eqx.Module):
 
     def _pos_update(
         self,
+        senders: jnp.ndarray,
         radial: jnp.ndarray,
         coord_diff: jnp.ndarray,
         t: float,
@@ -93,17 +128,8 @@ class EGNNLayer(eqx.Module):
         edge_scalars = jax.vmap(self.pos_mlp)(edge_features).squeeze(-1)
 
         trans = coord_diff * edge_scalars[:, None]
-        seg_sum = jax.ops.segment_sum(trans, self.senders, self.n_node)
+        seg_sum = jax.ops.segment_sum(trans, senders, self.n_node)
         return seg_sum / self.seg_count_senders[:, None]
-
-    def _coord2radial(self, coord: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        """Efficient coordinate to radial conversion."""
-        coord_diff = coord[self.senders] - coord[self.receivers]
-        radial = jnp.sum(coord_diff**2, axis=1, keepdims=True)
-        if self.normalize:
-            norm = jnp.sqrt(radial + self.eps)
-            coord_diff = coord_diff / norm
-        return radial, coord_diff
 
     def __call__(self, *args):
         """Flexible call signature based on shortcut configuration."""
@@ -112,10 +138,35 @@ class EGNNLayer(eqx.Module):
         else:
             pos, t = args
 
-        radial, coord_diff = self._coord2radial(pos)
+        n_node = pos.shape[0]
+        k = self.num_nearest_neighbors
+
+        # Compute pairwise distances
+        coord_diff = pos[:, None] - pos[None, :]  # [n, n, d]
+        radial = jnp.sum(coord_diff**2, axis=-1)  # [n, n]
+        
+        # Find k-nearest neighbors (excluding self)
+        if k is not None:
+            masked_radial = radial.at[jnp.diag_indices(n_node)].set(jnp.inf)
+            _, receivers = jax.lax.top_k(-masked_radial, k=k)  # [n, k]
+            senders = jnp.repeat(jnp.arange(n_node), k)
+            receivers = receivers.flatten()
+        else:  # Fully connected
+            senders, receivers = self.senders, self.receivers
+
+        # Compute edge features for selected pairs
+        coord_diff = pos[senders] - pos[receivers]
+        if self.normalize:
+            norm = jnp.sqrt(jnp.sum(coord_diff**2, axis=1, keepdims=True) + self.eps)
+            coord_diff = coord_diff / norm
+
+
+        radial = jnp.sum(coord_diff**2, axis=1, keepdims=True)
+
         pos_update = self._pos_update(
-            radial, coord_diff, t, d if self.shortcut else None
+            senders, radial, coord_diff, t, d if self.shortcut else None
         )
+
         return pos + pos_update
 
 
@@ -133,24 +184,32 @@ class EGNN(eqx.Module):
         normalize: bool = False,
         tanh: bool = False,
         shortcut: bool = False,  # New configuration
+        num_nearest_neighbors: int = None,
         mixed_precision: bool = False,
+        geonorm: bool = False,
     ):
         self.n_node = n_node
         self.shortcut = shortcut
         keys = jax.random.split(key, num_layers)
 
-        self.layers = [
-            EGNNLayer(
-                n_node=n_node,
-                hidden_size=hidden_size,
-                key=k,
-                normalize=normalize,
-                tanh=tanh,
-                shortcut=shortcut,  # Propagate configuration
-                mixed_precision=mixed_precision,
+        self.layers = []
+
+        for i, key in enumerate(keys):
+            self.layers.append(
+                EGNNLayer(
+                    n_node=n_node,
+                    hidden_size=hidden_size,
+                    key=key,
+                    normalize=normalize,
+                    tanh=tanh,
+                    shortcut=shortcut,
+                    num_nearest_neighbors=num_nearest_neighbors,
+                    mixed_precision=mixed_precision,
+                )
             )
-            for k in keys
-        ]
+            if geonorm and i < num_layers - 1:
+                key, _ = jax.random.split(key)
+                self.layers.append(GEONORM(n_node, key=key))
 
     def __call__(self, *args):
         """Dynamic forward pass supporting optional step size."""
@@ -160,9 +219,14 @@ class EGNN(eqx.Module):
             pos, t = args
 
         pos = pos.reshape(self.n_node, -1)
+        mu0 = jnp.mean(pos, axis=0, keepdims=True)
+
         for layer in self.layers:
-            if self.shortcut:
-                pos = layer(pos, t, d)
+            if isinstance(layer, EGNNLayer):
+                if self.shortcut:
+                    pos = layer(pos, t, d)
+                else:
+                    pos = layer(pos, t)
             else:
-                pos = layer(pos, t)
+                pos = layer(pos, mu0)
         return pos.reshape(-1)
