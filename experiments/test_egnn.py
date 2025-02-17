@@ -11,6 +11,9 @@ egnn = EGNN(
     hidden_size=32,
     key=key,
     num_layers=2,
+    normalize=True,
+    num_nearest_neighbors=5,
+    geonorm=True,
 )
 
 nodes = jnp.zeros((1,))
