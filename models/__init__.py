@@ -11,3 +11,4 @@ from .mlp import (
 from .transformer import ParticleTransformer
 from .egnn import EGNN
 from .omlp import OptimizedVelocityField
+from .imlp import InvariantFeatureNet

@@ -90,6 +90,95 @@ class MLPWithLayerNorm(eqx.Module):
                 if self.final_activation is None
                 else self.final_activation(self.layers[-1](x))
             )
+        
+class MLPWithNorm(eqx.Module):
+    layers: list
+    activation: callable = eqx.static_field()
+    final_activation: callable = eqx.static_field()
+    mixed_precision: bool = eqx.static_field()
+
+    def __init__(
+        self,
+        in_size,
+        out_size,
+        width_size,
+        depth,
+        key,
+        activation=jax.nn.silu,
+        final_activation=lambda x: x,
+        mixed_precision=False,
+        norm="rms",
+        dt=0.01,
+    ):
+        keys = jax.random.split(key, depth + 1)
+        layers = []
+        current_size = in_size
+
+        # Hidden layers
+        for i in range(depth):
+            layers.append(eqx.nn.Linear(current_size, width_size, key=keys[i]))
+            if norm == "rms":
+                layers.append(eqx.nn.RMSNorm(width_size))
+            elif norm == "layer":
+                layers.append(eqx.nn.LayerNorm(width_size))
+
+            layers.append(eqx.nn.Lambda(activation))
+            current_size = width_size
+
+        # Output layer
+        layers.append(eqx.nn.Linear(current_size, out_size, key=keys[-1]))
+
+        self.layers = layers
+        self.activation = activation
+        self.mixed_precision = mixed_precision
+        self.final_activation = final_activation
+
+        key, _ = jax.random.split(key)
+        init_linear_weights(self.layers, xavier_init, key, scale=dt)
+
+    def __call__(self, x):
+        if self.mixed_precision:
+            x = x.astype(jnp.bfloat16)  # Cast input to FP16
+            for i, layer in enumerate(self.layers[:-1]):
+                if isinstance(layer, eqx.nn.Linear):
+                    weight = layer.weight.astype(jnp.bfloat16)
+                    bias = (
+                        layer.bias.astype(jnp.bfloat16)
+                        if layer.bias is not None
+                        else None
+                    )
+                    # Transpose the weight matrix before multiplication
+                    x = jnp.dot(x, weight.T) + bias  # Corrected here
+                else:  # LayerNorm
+                    x = x.astype(jnp.float32)  # LayerNorm in FP32 for stability
+                    x = layer(x)
+                    x = x.astype(jnp.bfloat16)
+
+            # Final layer
+            final_layer = self.layers[-1]
+            weight = final_layer.weight.astype(jnp.bfloat16)
+            bias = (
+                final_layer.bias.astype(jnp.bfloat16)
+                if final_layer.bias is not None
+                else None
+            )
+            # Transpose the final weight matrix
+            x = jnp.dot(x, weight.T) + bias  # Corrected here
+            x = x.astype(jnp.float32)
+            return x if self.final_activation is None else self.final_activation(x)
+        else:
+            for i, layer in enumerate(self.layers[:-1]):
+                if isinstance(layer, eqx.nn.Linear):
+                    x = layer(x)
+                    x = self.activation(x)
+                else:
+                    x = layer(x)
+
+            return (
+                self.layers[-1](x)
+                if self.final_activation is None
+                else self.final_activation(self.layers[-1](x))
+            )
 
 
 class TimeVelocityField(eqx.Module):
