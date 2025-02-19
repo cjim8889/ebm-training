@@ -28,6 +28,7 @@ from models import (
     VelocityFieldFour,
     VelocityFieldThree,
     VelocityFieldTwo,
+    InvariantFeatureNet
 )
 from training.config import (
     DensityConfig,
@@ -64,6 +65,7 @@ def main():
             "pdn3",
             "omlp",
             "mlp4",
+            "ifn",
         ],
     )
 
@@ -664,6 +666,16 @@ def main():
         )
     elif config.model.architecture == "pdn3":
         v_theta = TimeVelocityFieldWithPairwiseFeatureThree(
+            key=model_key,
+            n_particles=config.density.n_particles,
+            n_spatial_dim=config.density.n_spatial_dim,
+            hidden_dim=config.model.hidden_dim,
+            depth=config.model.num_layers,
+            shortcut=config.training.use_shortcut,
+            mixed_precision=config.mixed_precision,
+        )
+    elif config.model.architecture == "ifn":
+        v_theta = InvariantFeatureNet(
             key=model_key,
             n_particles=config.density.n_particles,
             n_spatial_dim=config.density.n_spatial_dim,
