@@ -70,4 +70,5 @@ class InvariantFeatureNet(eqx.Module):
         )
         x_concat = jnp.concatenate([xs.flatten(), td_concat, dists.flatten(), centriod.flatten()], axis=0)
 
-        return self.mlp(x_concat) + centriod
+        output = self.mlp(x_concat).reshape(-1, self.n_spatial_dim) + centriod
+        return output.flatten() 
