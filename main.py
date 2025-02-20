@@ -332,10 +332,6 @@ def main():
         hidden_dim=args.hidden_dim, num_layers=args.depth, architecture=args.network
     )
 
-    # Set up shift function
-    def shift_fn(x):
-        return x - jnp.mean(x, axis=0, keepdims=True) if args.shift else x
-
     # Set up input dimensions and other target-specific parameters
     if args.target == "gmm":
         input_dim = 2
@@ -357,6 +353,16 @@ def main():
         input_dim = 39
         n_particles = 13
         n_spatial_dim = 3
+
+    # Set up shift function
+    def shift_fn(x):
+        if n_particles is None or n_spatial_dim is None or args.shift is False:
+            return x
+        
+        x = x.reshape(n_particles, n_spatial_dim)
+        mean = jnp.mean(x, axis=0, keepdims=True)
+        x -= mean
+        return x.flatten()
 
     density_config = DensityConfig(
         target_type=args.target,
