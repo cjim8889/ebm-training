@@ -36,7 +36,7 @@ class InvariantFeatureNet(eqx.Module):
                 depth=depth,
                 key=key,
                 mixed_precision=mixed_precision,
-                norm="rms",
+                norm="layer",
             )
         else:
             self.mlp = MLPWithNorm(
@@ -46,7 +46,7 @@ class InvariantFeatureNet(eqx.Module):
                 depth=depth,
                 key=key,
                 mixed_precision=mixed_precision,
-                norm="rms",
+                norm="layer",
             )
 
     def __call__(self, *input):
@@ -70,4 +70,4 @@ class InvariantFeatureNet(eqx.Module):
         )
         x_concat = jnp.concatenate([xs.flatten(), td_concat, dists.flatten(), centriod.flatten()], axis=0)
 
-        return self.mlp(x_concat)
+        return self.mlp(x_concat) + centriod
