@@ -28,7 +28,7 @@ from models import (
     VelocityFieldFour,
     VelocityFieldThree,
     VelocityFieldTwo,
-    InvariantFeatureNet
+    InvariantFeatureNet,
 )
 from training.config import (
     DensityConfig,
@@ -358,7 +358,7 @@ def main():
     def shift_fn(x):
         if n_particles is None or n_spatial_dim is None or args.shift is False:
             return x
-        
+
         x = x.reshape(n_particles, n_spatial_dim)
         mean = jnp.mean(x, axis=0, keepdims=True)
         x -= mean
@@ -730,10 +730,10 @@ def main():
             num_layers=config.model.num_layers,
             normalize=True,
             tanh=False,
-            num_nearest_neighbors=5,
+            num_nearest_neighbors=8,
             shortcut=config.training.use_shortcut,
             mixed_precision=config.mixed_precision,
-            geonorm=True,
+            geonorm=False,
         )
     elif config.model.architecture == "mlp3":
         v_theta = VelocityFieldThree(
