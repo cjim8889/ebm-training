@@ -84,6 +84,7 @@ class ModelConfig:
     num_layers: int = 3
     mlp_depth: int = 2
     norm: str = "rms"
+    geonorm: bool = False
     architecture: Literal["mlp", "pdn", "transformer", "emlp", "egnn"] = "mlp"
 
 
