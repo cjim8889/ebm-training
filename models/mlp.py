@@ -90,7 +90,8 @@ class MLPWithLayerNorm(eqx.Module):
                 if self.final_activation is None
                 else self.final_activation(self.layers[-1](x))
             )
-        
+
+
 class MLPWithNorm(eqx.Module):
     layers: list
     activation: callable = eqx.static_field()
@@ -525,12 +526,14 @@ class VelocityFieldTwo(eqx.Module):
         )
 
     def __call__(self, x: chex.Array, t: float, d: float = None):
-        if isinstance(d, float):
+        if d is not None and isinstance(d, float):
             d = jnp.array([d])
         if isinstance(t, float):
             t = jnp.array([t])
 
-        d = d.reshape(1)
+        if d is not None:
+            d = d.reshape(1)
+
         t = t.reshape(1)
         # Prepare inputs
         if self.shortcut:
