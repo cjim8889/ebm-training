@@ -252,6 +252,7 @@ def main():
     parser.add_argument("--data-path-train", type=str, default=None)
     parser.add_argument("--resume-from", type=str, default=None)
     parser.add_argument("--mlp-depth", type=int, default=2)
+    parser.add_argument("--geonorm", action="store_true")
     parser.add_argument("--norm", type=str, default="rms")
     # Other configuration
     parser.add_argument(
@@ -337,6 +338,7 @@ def main():
         architecture=args.network,
         mlp_depth=args.mlp_depth,
         norm=args.norm,
+        geonorm=args.geonorm,
     )
 
     # Set up input dimensions and other target-specific parameters
@@ -753,7 +755,7 @@ def main():
             num_nearest_neighbors=6,
             shortcut=config.training.use_shortcut,
             mixed_precision=config.mixed_precision,
-            geonorm=False,
+            geonorm=config.model.geonorm,
             mlp_depth=config.model.mlp_depth,
             norm=config.model.norm,
         )
