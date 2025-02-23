@@ -2,47 +2,31 @@ import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
-from distributions import AnnealedDistribution
-from distributions.multivariate_gaussian import MultivariateGaussian
-from distributions.time_dependent_lennard_jones_butler import (
-    TimeDependentLennardJonesEnergyButler,
-    TimeDependentLennardJonesEnergyButlerWithTemperatureTempered,
+from distributions import (
+    AnnealedDistribution,
+    SoftCoreLennardJonesEnergy,
+    TranslationInvariantGaussian,
 )
-
-from distributions import SoftCoreLennardJonesEnergy
-
 from utils.smc import generate_samples_with_smc
+
+jax.config.update("jax_platform_name", "cpu")
 
 key = jax.random.PRNGKey(1234)
 
-initial_density = MultivariateGaussian(dim=39, mean=0, sigma=1)
-# target_density = TimeDependentLennardJonesEnergyButler(
-#     dim=39,
-#     n_particles=13,
-#     alpha=0.2,
-#     sigma=1.0,
-#     epsilon_val=1.0,
-#     min_dr=1e-4,
-#     n=1,
-#     m=1,
-#     c=0.5,
-#     include_harmonic=True,
-# )
 target_density = SoftCoreLennardJonesEnergy(
     dim=39,
     n_particles=13,
-    alpha=0.2,
-    sigma=1.0,
-    epsilon_val=1.0,
-    min_dr=1e-4,
-    c=0.5,
     include_harmonic=True,
-    log_prob_clip=100.,
 )
 
+
+initial_density = TranslationInvariantGaussian(N=13, D=3, sigma=2.0)
 path_density = AnnealedDistribution(
-    initial_density=initial_density, target_density=target_density, method="linear"
+    initial_density=initial_density,
+    target_density=target_density,
+    method="geometric",
 )
+
 ts = jnp.linspace(0, 1, 128)
 print("Warmup done")
 keys = jax.random.split(key, 3)
@@ -50,8 +34,13 @@ key = keys[0]
 subkey = keys[1]
 covariance_key = keys[2]
 
+
 def shift_fn(x):
-    return x - jnp.mean(x, axis=0, keepdims=True)
+    x = x.reshape(-1, 3)
+    x_removed_mean = x - jnp.mean(x, axis=0, keepdims=True)
+    x = x_removed_mean.reshape(-1)
+    return x
+
 
 samples = generate_samples_with_smc(
     key=subkey,
@@ -59,9 +48,9 @@ samples = generate_samples_with_smc(
     num_samples=2560,
     ts=ts,
     sample_fn=path_density.sample_initial,
-    num_steps=5,
+    num_steps=10,
     integration_steps=10,
-    eta=0.018,
+    eta=0.01,
     rejection_sampling=True,
     ess_threshold=0.5,
     estimate_covariance=False,
