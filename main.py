@@ -251,7 +251,8 @@ def main():
     parser.add_argument("--data-path-val", type=str, default=None)
     parser.add_argument("--data-path-train", type=str, default=None)
     parser.add_argument("--resume-from", type=str, default=None)
-
+    parser.add_argument("--mlp-depth", type=int, default=2)
+    parser.add_argument("--norm", type=str, default="rms")
     # Other configuration
     parser.add_argument(
         "--use-decoupled-loss",
@@ -331,7 +332,11 @@ def main():
     )
 
     model_config = ModelConfig(
-        hidden_dim=args.hidden_dim, num_layers=args.depth, architecture=args.network
+        hidden_dim=args.hidden_dim,
+        num_layers=args.depth,
+        architecture=args.network,
+        mlp_depth=args.mlp_depth,
+        norm=args.norm,
     )
 
     # Set up input dimensions and other target-specific parameters
@@ -749,6 +754,8 @@ def main():
             shortcut=config.training.use_shortcut,
             mixed_precision=config.mixed_precision,
             geonorm=False,
+            mlp_depth=config.model.mlp_depth,
+            norm=config.model.norm,
         )
     elif config.model.architecture == "mlp3":
         v_theta = VelocityFieldThree(
