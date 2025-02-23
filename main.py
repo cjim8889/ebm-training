@@ -748,7 +748,7 @@ def main():
             num_nearest_neighbors=6,
             shortcut=config.training.use_shortcut,
             mixed_precision=config.mixed_precision,
-            geonorm=True,
+            geonorm=False,
         )
     elif config.model.architecture == "mlp3":
         v_theta = VelocityFieldThree(
