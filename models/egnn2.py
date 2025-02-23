@@ -28,6 +28,7 @@ class EGNNLayer(eqx.Module):
         n_node: int,
         hidden_size: int,
         key: jax.random.PRNGKey,
+        mlp_depth: int = 2,
         normalize: bool = False,
         tanh: bool = False,
         eps: float = 1.0,
@@ -35,6 +36,7 @@ class EGNNLayer(eqx.Module):
         shortcut: bool = False,
         num_nearest_neighbors: int = None,
         mixed_precision: bool = False,
+        norm: str = "rms",
     ):
         self.n_node = n_node
         self.normalize = normalize
@@ -58,11 +60,11 @@ class EGNNLayer(eqx.Module):
             in_size=in_size_e,
             out_size=hidden_size,  # Message dimension
             width_size=hidden_size,
-            depth=2,
+            depth=mlp_depth,
             activation=jax.nn.silu,
             key=keys[0],
             mixed_precision=mixed_precision,
-            norm="rms",
+            norm=norm,
         )
 
         # phi_h: processes [h_i, aggregated messages]
@@ -70,11 +72,11 @@ class EGNNLayer(eqx.Module):
             in_size=2 * hidden_size,
             out_size=hidden_size,
             width_size=hidden_size,
-            depth=2,
+            depth=mlp_depth,
             activation=jax.nn.silu,
             key=keys[1],
             mixed_precision=mixed_precision,
-            norm="rms",
+            norm=norm,
         )
 
         # phi_x: processes m_ij to scalar for position update
@@ -82,11 +84,11 @@ class EGNNLayer(eqx.Module):
             in_size=hidden_size,
             out_size=1,
             width_size=hidden_size,
-            depth=2,
+            depth=mlp_depth,
             activation=jax.nn.tanh if tanh else lambda x: x,
             key=keys[2],
             mixed_precision=mixed_precision,
-            norm="rms",
+            norm=norm,
         )
 
         # Initialize weights
@@ -169,12 +171,14 @@ class EGNNWithLearnableNodeFeatures(eqx.Module):
         hidden_size: int,
         key: jax.random.PRNGKey,
         num_layers: int = 4,
+        mlp_depth: int = 2,
         normalize: bool = False,
         tanh: bool = False,
         shortcut: bool = False,
         num_nearest_neighbors: int = None,
         mixed_precision: bool = False,
         geonorm: bool = False,
+        norm: str = "rms",
     ):
         self.n_node = n_node
         self.shortcut = shortcut
@@ -192,10 +196,12 @@ class EGNNWithLearnableNodeFeatures(eqx.Module):
                     hidden_size=hidden_size,
                     key=key,
                     normalize=normalize,
+                    mlp_depth=mlp_depth,
                     tanh=tanh,
                     shortcut=shortcut,
                     num_nearest_neighbors=num_nearest_neighbors,
                     mixed_precision=mixed_precision,
+                    norm=norm,
                 )
             )
             if geonorm and i < num_layers - 1:
