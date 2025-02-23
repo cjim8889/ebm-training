@@ -6,12 +6,7 @@ import blackjax
 import blackjax.smc.resampling as resampling
 import matplotlib.pyplot as plt
 
-from distributions.multivariate_gaussian import MultivariateGaussian
-from distributions.time_dependent_lennard_jones_butler import (
-    TimeDependentLennardJonesEnergyButler,
-    get_inverse_temperature,
-)
-from distributions import LennardJonesEnergy
+from distributions import TranslationInvariantGaussian, SoftCoreLennardJonesEnergy
 
 # plt.rcParams["figure.dpi"] = 300
 # plt.rcParams["figure.figsize"] = [6.0, 4.0]
@@ -20,28 +15,14 @@ jax.config.update("jax_platform_name", "cpu")
 
 key = jax.random.PRNGKey(1234)
 
-target_density = TimeDependentLennardJonesEnergyButler(
+target_density = SoftCoreLennardJonesEnergy(
     dim=39,
     n_particles=13,
-    alpha=0.2,
-    sigma=1.0,
-    epsilon_val=1.0,
-    min_dr=1e-4,
-    n=1,
-    m=1,
-    c=0.5,
     include_harmonic=True,
-    cubic_spline=False,
 )
-# target_density = LennardJonesEnergy(
-#     dim=39,
-#     n_particles=13,
-#     c=0.5,
-#     data_path_test="data/test_split_LJ13-1000.npy",
-#     include_harmonic=True,
-# )
 
-initial_density = MultivariateGaussian(dim=39, mean=0.0, sigma=1.0)
+
+initial_density = TranslationInvariantGaussian(N=13, D=3, sigma=2.0)
 
 
 def smc_inference_loop(rng_key, smc_kernel, initial_state, ts):

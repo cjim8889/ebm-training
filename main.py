@@ -29,6 +29,7 @@ from models import (
     VelocityFieldThree,
     VelocityFieldTwo,
     InvariantFeatureNet,
+    EGNNWithLearnableNodeFeatures,
 )
 from training.config import (
     DensityConfig,
@@ -66,6 +67,7 @@ def main():
             "omlp",
             "mlp4",
             "ifn",
+            "egnn2",
         ],
     )
 
@@ -734,6 +736,19 @@ def main():
             shortcut=config.training.use_shortcut,
             mixed_precision=config.mixed_precision,
             geonorm=False,
+        )
+    elif config.model.architecture == "egnn2":
+        v_theta = EGNNWithLearnableNodeFeatures(
+            key=model_key,
+            n_node=config.density.n_particles,
+            hidden_size=config.model.hidden_dim,
+            num_layers=config.model.num_layers,
+            normalize=True,
+            tanh=False,
+            num_nearest_neighbors=6,
+            shortcut=config.training.use_shortcut,
+            mixed_precision=config.mixed_precision,
+            geonorm=True,
         )
     elif config.model.architecture == "mlp3":
         v_theta = VelocityFieldThree(

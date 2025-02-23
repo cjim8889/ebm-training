@@ -1,14 +1,15 @@
+from .egnn import EGNN
+from .egnn2 import EGNNWithLearnableNodeFeatures
+from .imlp import InvariantFeatureNet
 from .mlp import (
+    EquivariantTimeVelocityField,
     TimeVelocityField,
     TimeVelocityFieldWithPairwiseFeature,
-    EquivariantTimeVelocityField,
-    VelocityFieldTwo,
-    VelocityFieldThree,
-    VelocityFieldFour,
-    TimeVelocityFieldWithPairwiseFeatureTwo,
     TimeVelocityFieldWithPairwiseFeatureThree,
+    TimeVelocityFieldWithPairwiseFeatureTwo,
+    VelocityFieldFour,
+    VelocityFieldThree,
+    VelocityFieldTwo,
 )
-from .transformer import ParticleTransformer
-from .egnn import EGNN
 from .omlp import OptimizedVelocityField
-from .imlp import InvariantFeatureNet
+from .transformer import ParticleTransformer
