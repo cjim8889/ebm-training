@@ -226,9 +226,13 @@ def hutchinson_divergence_velocity2(
     t: float,
     eps: chex.Array,
     d: Optional[float] = None,
+    dropout_key: Optional[jax.random.PRNGKey] = None,
 ) -> chex.Array:
     # Compute VJP once and reuse for all probes
-    v_fn = lambda x: v_theta(x, t, d) if d is not None else v_theta(x, t)
+    if dropout_key is not None:
+        v_fn = lambda x: v_theta(x, t, d, enable_dropout=True, key=dropout_key) if d is not None else v_theta(x, t, enable_dropout=True, key=dropout_key)
+    else:
+        v_fn = lambda x: v_theta(x, t, d) if d is not None else v_theta(x, t)
     _, f_vjp = jax.vjp(v_fn, x)
 
     # Batched computation using vmap
@@ -247,13 +251,18 @@ def hutchinson_divergence_velocity_single_probe(
     t: chex.Array,
     eps: chex.Array,  # Probe vector now passed as argument
     d: Optional[float] = None,
+    dropout_key: Optional[jax.random.PRNGKey] = None,
 ) -> chex.Array:
     """Compute divergence using single pre-defined probe vector."""
     # Validate probe vector shape
     chex.assert_shape(eps, x.shape)
 
     # Compute VJP once for the given probe
-    v_fn = lambda x: v_theta(x, t, d) if d is not None else v_theta(x, t)
+    if dropout_key is not None:
+        v_fn = lambda x: v_theta(x, t, d, enable_dropout=True, key=dropout_key) if d is not None else v_theta(x, t, enable_dropout=True, key=dropout_key)
+    else:
+        v_fn = lambda x: v_theta(x, t, d) if d is not None else v_theta(x, t)
+    
     _, f_vjp = jax.vjp(v_fn, x)
 
     # Direct computation without vmap (single probe)

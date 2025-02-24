@@ -186,6 +186,7 @@ def train_velocity_field(
 
     @eqx.filter_jit
     def step(key, v_theta, opt_state, particles):
+        key, dropout_key = jax.random.split(key)
         loss, grads = eqx.filter_value_and_grad(loss_fn)(
             v_theta,
             particles,
@@ -198,6 +199,7 @@ def train_velocity_field(
             combined_loss=config.training.use_combined_loss,
             shortcut_weight=config.training.shortcut_weight,
             random_alpha=config.training.random_alpha,
+            dropout_key=dropout_key if config.model.dropout is not None else None,
         )
         updates, opt_state = optimizer.update(grads, opt_state, v_theta)
         v_theta = eqx.apply_updates(v_theta, updates)

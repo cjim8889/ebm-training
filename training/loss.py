@@ -57,10 +57,13 @@ def epsilon_with_hutchinson(
     time_derivative_log_density: Callable[[chex.Array, float], float],
     eps: chex.Array,
     single_probe: bool,
+    dropout_key: Optional[jax.random.PRNGKey] = None,
 ):
     x, t, log_Z_t, d = particle.x, particle.t, particle.log_Z_t, particle.d
     dt_log_unormalised = time_derivative_log_density(x, t)
     dt_log_density = dt_log_unormalised - log_Z_t
+
+    hutchinson_key, dropout_key = jax.random.split(dropout_key) if dropout_key else (None, None)
 
     score = score_fn(x, t)
     if single_probe:
@@ -70,6 +73,7 @@ def epsilon_with_hutchinson(
             t,
             eps,
             d=d,
+            dropout_key=dropout_key,
         )
     else:
         div_v = hutchinson_divergence_velocity2(
@@ -78,11 +82,12 @@ def epsilon_with_hutchinson(
             t,
             eps,
             d=d,
+            dropout_key=dropout_key,
         )
     if d is not None:
-        v = v_theta(x, t, d)
+        v = v_theta(x, t, d) if hutchinson_key is None else v_theta(x, t, d, enable_dropout=True, key=hutchinson_key)
     else:
-        v = v_theta(x, t)
+        v = v_theta(x, t) if hutchinson_key is None else v_theta(x, t, enable_dropout=True, key=hutchinson_key)
 
     return jnp.nan_to_num(
         div_v + jnp.dot(v, score) + dt_log_density,
@@ -92,7 +97,7 @@ def epsilon_with_hutchinson(
 
 
 batched_epsilon_with_hutchinson = jax.vmap(
-    epsilon_with_hutchinson, in_axes=(None, 0, None, None, 0, None)
+    epsilon_with_hutchinson, in_axes=(None, 0, None, None, 0, None, 0)
 )
 
 
@@ -171,6 +176,7 @@ def loss_fn(
     n_probes: int = 5,
     shortcut_weight: float = 0.5,
     random_alpha: bool = False,
+    dropout_key: Optional[jax.random.PRNGKey] = None,
 ) -> float:
     """Computes the loss for training the velocity field.
 
@@ -184,6 +190,7 @@ def loss_fn(
     Returns:
         float: Mean squared error in satisfying the Liouville equation
     """
+    dropout_keys = jax.random.split(dropout_key, num=particles.x.shape[0]) if dropout_key is not None else None
     if use_hutchinson:
         if n_probes > 1:
             eps = jax.random.rademacher(
@@ -198,6 +205,7 @@ def loss_fn(
                 time_derivative_log_density,
                 eps,
                 False,
+                dropout_keys
             )
         else:
             eps = jax.random.rademacher(
@@ -212,6 +220,7 @@ def loss_fn(
                 time_derivative_log_density,
                 eps,
                 True,
+                dropout_keys
             )
     else:
         epsilons = batched_epsilon(

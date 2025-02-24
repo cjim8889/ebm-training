@@ -236,6 +236,7 @@ def main():
         type=float,
         default=0.2,
     )
+    parser.add_argument("--dropout", type=float, default=None)
     parser.add_argument("--r-min", type=float, default=0.2)
     parser.add_argument("--use-schedule", action="store_true")
     parser.add_argument("--use-combined-loss", action="store_true")
@@ -346,6 +347,7 @@ def main():
         norm=args.norm,
         geonorm=args.geonorm,
         num_heads=args.num_heads,
+        dropout=args.dropout,
     )
 
     # Set up input dimensions and other target-specific parameters
@@ -732,8 +734,8 @@ def main():
             hidden_size=config.model.hidden_dim,
             num_layers=config.model.num_layers,
             num_heads=config.model.num_heads,
-            dropout_rate=0.0,
-            attn_dropout_rate=0.0,
+            dropout_rate=config.model.dropout,
+            attn_dropout_rate=config.model.dropout,
             key=model_key,
             shortcut=config.training.use_shortcut,
         )
