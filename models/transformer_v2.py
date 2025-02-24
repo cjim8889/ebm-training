@@ -75,6 +75,7 @@ class EmbedderBlock(eqx.Module):
         self.shortcut = shortcut
         self.n_particles = n_particles
         self.embedding_size = embedding_size
+        self.mixed_precision = mixed_precision
 
         spatial_key, time_key, d_key = jax.random.split(key, 3)
         self.spatial_embedder = MixedPrecisionMLP(
