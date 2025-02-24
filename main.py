@@ -391,6 +391,7 @@ def main():
         m=args.m,
         n=args.n,
         c=args.c,
+        r_min=args.r_min,
         log_prob_clip=args.log_prob_clip,
         log_prob_clip_min=args.log_prob_clip_min,
         log_prob_clip_max=args.log_prob_clip_max,
