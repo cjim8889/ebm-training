@@ -32,7 +32,7 @@ class QuadraticSmoothedLJ(Target):
         sigma: float = 1.0,
         epsilon_val: float = 1.0,
         r_min: float = 0.1,
-        V_max: float = 1000.0,
+        V_max: float = 100.0,
         min_dr: float = 1e-4,
         c: float = 0.5,
         include_harmonic: bool = True,
