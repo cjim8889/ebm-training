@@ -79,11 +79,12 @@ def train_velocity_field(
     if config.training.use_schedule:
         total_steps = config.training.num_epochs * config.training.steps_per_epoch
 
-        lr_schedule = optax.cosine_onecycle_schedule(
-            transition_steps=total_steps // 2,
+        lr_schedule = optax.warmup_cosine_decay_schedule(
+            init_value=1e-5,
             peak_value=config.training.learning_rate,
-            pct_start=0.01,
-            final_div_factor=2.5,
+            warmup_steps=100 * config.training.steps_per_epoch,
+            decay_steps=total_steps // 4,
+            end_value=5e-05,
         )
 
     base_optimizer = get_optimizer(
