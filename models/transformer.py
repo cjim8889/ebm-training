@@ -141,7 +141,7 @@ class TransformerLayer(eqx.Module):
         )
 
     def __call__(self, x, enable_dropout=False, key=None):
-        attn_key, ffn_key = jax.random.split(key) if key else (None, None)
+        attn_key, ffn_key = jax.random.split(key) if key is not None else (None, None)
         x = self.attn(x, enable_dropout, attn_key)
         return self.ffn(x, enable_dropout, ffn_key)
 
