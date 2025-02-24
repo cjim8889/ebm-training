@@ -750,6 +750,7 @@ def main():
             attn_dropout_rate=0.0,
             key=model_key,
             shortcut=config.training.use_shortcut,
+            mixed_precision=config.mixed_precision,
         )
     elif config.model.architecture == "omlp":
         v_theta = OptimizedVelocityField(
