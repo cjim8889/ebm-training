@@ -31,6 +31,7 @@ from models import (
     VelocityFieldTwo,
     InvariantFeatureNet,
     EGNNWithLearnableNodeFeatures,
+    ParticleTransformerV2
 )
 from training.config import (
     DensityConfig,
@@ -69,6 +70,7 @@ def main():
             "mlp4",
             "ifn",
             "egnn2",
+            "transformer2",
         ],
     )
 
@@ -257,6 +259,7 @@ def main():
     parser.add_argument("--mlp-depth", type=int, default=2)
     parser.add_argument("--geonorm", action="store_true")
     parser.add_argument("--norm", type=str, default="rms")
+    parser.add_argument("--num-heads", type=int, default=4)
     # Other configuration
     parser.add_argument(
         "--use-decoupled-loss",
@@ -342,6 +345,7 @@ def main():
         mlp_depth=args.mlp_depth,
         norm=args.norm,
         geonorm=args.geonorm,
+        num_heads=args.num_heads,
     )
 
     # Set up input dimensions and other target-specific parameters
@@ -727,7 +731,19 @@ def main():
             n_spatial_dim=config.density.n_spatial_dim,
             hidden_size=config.model.hidden_dim,
             num_layers=config.model.num_layers,
-            num_heads=4,
+            num_heads=config.model.num_heads,
+            dropout_rate=0.0,
+            attn_dropout_rate=0.0,
+            key=model_key,
+            shortcut=config.training.use_shortcut,
+        )
+    elif config.model.architecture == "transformer2":
+        v_theta = ParticleTransformerV2(
+            n_particles=config.density.n_particles,
+            n_spatial_dim=config.density.n_spatial_dim,
+            hidden_size=config.model.hidden_dim,
+            num_layers=config.model.num_layers,
+            num_heads=config.model.num_heads,
             dropout_rate=0.0,
             attn_dropout_rate=0.0,
             key=model_key,
