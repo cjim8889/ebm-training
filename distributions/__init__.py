@@ -12,3 +12,4 @@ from .time_dependent_lennard_jones_butler import (
     TimeDependentLennardJonesEnergyButlerWithTemperatureTempered,
 )
 from .translation_invariant_gaussian import TranslationInvariantGaussian
+from .smoothed_lennar_jones import QuadraticSmoothedLJ

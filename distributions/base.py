@@ -8,8 +8,7 @@ class Target:
     """Base class for distributions"""
 
     TIME_DEPENDENT = False
-    TARGET_METRIC = "w2_distance_mean"
-
+    TARGET_METRIC = (("w2_distance", True),)
     def __init__(
         self,
         dim: int,
