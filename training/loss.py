@@ -63,7 +63,7 @@ def epsilon_with_hutchinson(
     dt_log_unormalised = time_derivative_log_density(x, t)
     dt_log_density = dt_log_unormalised - log_Z_t
 
-    hutchinson_key, dropout_key = jax.random.split(dropout_key) if dropout_key else (None, None)
+    hutchinson_key, dropout_key = jax.random.split(dropout_key) if dropout_key is not None else (None, None)
 
     score = score_fn(x, t)
     if single_probe:
