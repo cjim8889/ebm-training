@@ -18,7 +18,6 @@ from utils.eval import (
 from utils.hmc import generate_samples_with_hmc_correction
 from utils.integration import (
     euler_integrate,
-    generate_samples_with_diffrax,
     generate_samples,
 )
 from utils.optimization import get_optimizer, inverse_power_schedule, power_schedule

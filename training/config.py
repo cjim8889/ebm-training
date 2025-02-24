@@ -82,9 +82,11 @@ class ProgressiveTrainingConfig:
 class ModelConfig:
     hidden_dim: int = 256
     num_layers: int = 3
+    num_heads: int = 4
     mlp_depth: int = 2
     norm: str = "rms"
     geonorm: bool = False
+    dropout: float = None
     architecture: Literal["mlp", "pdn", "transformer", "emlp", "egnn"] = "mlp"
 
 
