@@ -234,6 +234,7 @@ def main():
         type=float,
         default=0.2,
     )
+    parser.add_argument("--r-min", type=float, default=0.2)
     parser.add_argument("--use-schedule", action="store_true")
     parser.add_argument("--use-combined-loss", action="store_true")
     parser.add_argument("--random-alpha", action="store_true")
@@ -625,6 +626,7 @@ def main():
             sigma=1.0,
             min_dr=config.density.min_dr,
             c=config.density.c,
+            r_min=config.density.r_min,
             include_harmonic=config.density.include_harmonic,
             log_prob_clip=config.density.log_prob_clip,
             log_prob_clip_min=config.density.log_prob_clip_min,
