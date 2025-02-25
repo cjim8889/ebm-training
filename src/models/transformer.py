@@ -28,11 +28,9 @@ class EmbedderBlock(eqx.Module):
         self.mp_policy = mp_policy
         in_dim = n_spatial_dim + 2 if shortcut else n_spatial_dim + 1
 
-        self.particle_embedder = eqx.nn.MLP(
-            in_size=in_dim,
-            out_size=embedding_size,
-            width_size=64,
-            depth=3,
+        self.particle_embedder = eqx.nn.Linear(
+            in_features=in_dim,
+            out_features=embedding_size,
             use_bias=True,
             key=key,
             dtype=mp_policy.param_dtype,
