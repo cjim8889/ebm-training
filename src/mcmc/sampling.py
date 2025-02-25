@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float, PRNGKeyArray
 
 from src.mcmc.smc import generate_samples_with_smc
-from src.ode import solve_neural_ode_diffrax
+from src.ode import solve_neural_ode_diffrax, solve_neural_ode_euler
 
 from .hmc import propagate_with_hmc
 
@@ -78,7 +78,7 @@ def sample_with_mcmc(
     # Apply MCMC based on the specified method
     if mcmc_method == "none":
         # No MCMC, just uniform weights and run the ode
-        output_samples, _ = solve_neural_ode_diffrax(
+        output_samples, _ = solve_neural_ode_euler(
             v_theta=v_theta,
             y0=initial_samples,
             ts=ts,
