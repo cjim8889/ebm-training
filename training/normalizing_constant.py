@@ -106,30 +106,22 @@ def estimate_log_Z_t(
     Returns:
         Estimate of log partition function
     """
-    # Apply policy casting - this is a no-op when mixed precision is disabled
-    xs_compute = mp_policy.cast_to_compute(xs)
-    weights_compute = mp_policy.cast_to_compute(weights)
-    ts_compute = mp_policy.cast_to_compute(ts)
-        
     # Compute time derivative with appropriate precision
     dt_log_unormalised_density = jax.vmap(
         lambda xs, t: jax.vmap(lambda x: time_derivative_log_density(x, t))(xs),
         in_axes=(0, 0),
-    )(xs_compute, ts_compute)
+    )(xs, ts)
 
     if use_control_variate:
         if use_shortcut:
-            d = jnp.diff(ts_compute, axis=-1)[0]
+            d = jnp.diff(ts, axis=-1)[0]
         else:
             d = None
 
-        epsilons = time_batched_control_variate_epsilon(v_theta, xs_compute, ts_compute, score_fn, d)
+        epsilons = time_batched_control_variate_epsilon(v_theta, xs, ts, score_fn, d)
         dt_log_unormalised_density = dt_log_unormalised_density + epsilons
 
     # Perform weighted sum with better numerical stability
-    result = jnp.sum(dt_log_unormalised_density * weights_compute, axis=-1, keepdims=True)
-    
-    # Cast result back to output precision
-    result = mp_policy.cast_to_output(result)
+    result = jnp.sum(dt_log_unormalised_density * weights, axis=-1, keepdims=True)
     
     return jnp.nan_to_num(result, nan=0.0, posinf=1.0, neginf=-1.0)
