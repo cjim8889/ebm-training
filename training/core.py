@@ -28,6 +28,108 @@ from .loss import Particle, loss_fn
 from .normalizing_constant import estimate_log_Z_t
 
 
+def generate_samples_with_optional_mcmc(
+    key: jax.random.PRNGKey,
+    v_theta: Callable,
+    ts: jnp.ndarray,
+    path_distribution: AnnealedDistribution,
+    config: TrainingExperimentConfig,
+    use_mcmc: bool = False,
+    force_finite: bool = False,
+):
+    """
+    Generate samples with or without MCMC correction.
+    
+    Args:
+        key: Random key
+        v_theta: Velocity field model
+        ts: Time steps
+        path_distribution: Annealed distribution
+        config: Training experiment configuration
+        use_mcmc: Whether to use MCMC correction
+        force_finite: Whether to replace non-finite values with finite ones
+        
+    Returns:
+        Samples dictionary
+    """
+    # We generate samples in full precision
+    ts_compute = config.mp_policy.cast_to_output(ts)
+    
+    integrator = euler_integrate if config.integration.method == "Euler" else None
+    
+    if not use_mcmc:
+        # Standard (non-MCMC) generation
+        samples = generate_samples(
+            key,
+            v_theta,
+            config.sampling.num_particles,
+            ts_compute,
+            path_distribution.sample_initial,
+            use_shortcut=config.training.use_shortcut,
+        )
+    else:
+        # MCMC generation
+        if config.mcmc.method == "hmc":
+            samples = generate_samples_with_hmc_correction(
+                key=key,
+                v_theta=v_theta,
+                sample_fn=path_distribution.sample_initial,
+                time_dependent_log_density=path_distribution.time_dependent_log_prob,
+                num_samples=config.sampling.num_particles,
+                ts=ts_compute,
+                integration_fn=integrator,
+                num_steps=config.mcmc.num_steps,
+                integration_steps=config.mcmc.num_integration_steps,
+                eta=config.mcmc.step_size,
+                rejection_sampling=config.mcmc.with_rejection,
+                shift_fn=config.density.shift_fn,
+                use_shortcut=config.training.use_shortcut,
+            )
+        elif config.mcmc.method == "smc":
+            samples = generate_samples_with_smc(
+                key=key,
+                time_dependent_log_density=path_distribution.time_dependent_log_prob,
+                num_samples=config.sampling.num_particles,
+                ts=ts_compute,
+                sample_fn=path_distribution.sample_initial,
+                num_steps=config.mcmc.num_steps,
+                integration_steps=config.mcmc.num_integration_steps,
+                eta=config.mcmc.step_size,
+                rejection_sampling=config.mcmc.with_rejection,
+                shift_fn=config.density.shift_fn,
+                estimate_covariance=False,
+                blackjax_hmc=True,
+                use_shortcut=config.training.use_shortcut,
+            )
+        elif config.mcmc.method == "vsmc":
+            samples = generate_samples_with_smc(
+                key=key,
+                time_dependent_log_density=path_distribution.time_dependent_log_prob,
+                num_samples=config.sampling.num_particles,
+                ts=ts_compute,
+                sample_fn=path_distribution.sample_initial,
+                num_steps=config.mcmc.num_steps,
+                integration_steps=config.mcmc.num_integration_steps,
+                eta=config.mcmc.step_size,
+                use_shortcut=config.training.use_shortcut,
+                shift_fn=config.density.shift_fn,
+                estimate_covariance=False,
+                blackjax_hmc=True,
+                v_theta=v_theta,
+            )
+        else:
+            raise ValueError(f"Unknown MCMC method: {config.mcmc.method}")
+
+    # Cast results back - this is a no-op when mixed precision is disabled
+    samples = config.mp_policy.cast_to_output(samples)
+                  
+    if force_finite:
+        samples["positions"] = jnp.nan_to_num(
+            samples["positions"], nan=0.0, posinf=1.0, neginf=-1.0
+        )
+    return samples
+
+
 def train_velocity_field(
     key: jax.random.PRNGKey,
     initial_density: Target,
@@ -107,114 +209,13 @@ def train_velocity_field(
         )
 
     opt_state = optimizer.init(eqx.filter(v_theta, eqx.is_inexact_array))
-    integrator = euler_integrate if config.integration.method == "Euler" else None
-
-    def _generate(key: jax.random.PRNGKey, ts: jnp.ndarray, force_finite: bool = False):
-        # Apply policy casting - this is a no-op when mixed precision is disabled
-        ts_compute = config.mp_policy.cast_to_compute(ts)
-            
-        samples = (
-            generate_samples(
-                key,
-                v_theta,
-                config.sampling.num_particles,
-                ts_compute,
-                path_distribution.sample_initial,
-                use_shortcut=config.training.use_shortcut,
-            )
-        )
-        
-        # Cast results back - this is a no-op when mixed precision is disabled
-        samples = {k: config.mp_policy.cast_to_output(v) if isinstance(v, jnp.ndarray) else v 
-                  for k, v in samples.items()}
-                      
-        if force_finite:
-            samples["positions"] = jnp.nan_to_num(
-                samples["positions"], nan=0.0, posinf=1.0, neginf=-1.0
-            )
-        return samples
-
-    def _generate_mcmc(
-        key: jax.random.PRNGKey, ts: jnp.ndarray, force_finite: bool = False
-    ):
-        # Apply policy casting - this is a no-op when mixed precision is disabled
-        ts_compute = config.mp_policy.cast_to_compute(ts)
-            
-        if config.mcmc.method == "hmc":
-            samples = generate_samples_with_hmc_correction(
-                key=key,
-                v_theta=v_theta,
-                sample_fn=path_distribution.sample_initial,
-                time_dependent_log_density=path_distribution.time_dependent_log_prob,
-                num_samples=config.sampling.num_particles,
-                ts=ts_compute,
-                integration_fn=integrator,
-                num_steps=config.mcmc.num_steps,
-                integration_steps=config.mcmc.num_integration_steps,
-                eta=config.mcmc.step_size,
-                rejection_sampling=config.mcmc.with_rejection,
-                shift_fn=config.density.shift_fn,
-                use_shortcut=config.training.use_shortcut,
-            )
-        elif config.mcmc.method == "smc":
-            samples = generate_samples_with_smc(
-                key=key,
-                time_dependent_log_density=path_distribution.time_dependent_log_prob,
-                num_samples=config.sampling.num_particles,
-                ts=ts_compute,
-                sample_fn=path_distribution.sample_initial,
-                num_steps=config.mcmc.num_steps,
-                integration_steps=config.mcmc.num_integration_steps,
-                eta=config.mcmc.step_size,
-                rejection_sampling=config.mcmc.with_rejection,
-                shift_fn=config.density.shift_fn,
-                estimate_covariance=False,
-                blackjax_hmc=True,
-                use_shortcut=config.training.use_shortcut,
-            )
-        elif config.mcmc.method == "vsmc":
-            samples = generate_samples_with_smc(
-                key=key,
-                time_dependent_log_density=path_distribution.time_dependent_log_prob,
-                num_samples=config.sampling.num_particles,
-                ts=ts_compute,
-                sample_fn=path_distribution.sample_initial,
-                num_steps=config.mcmc.num_steps,
-                integration_steps=config.mcmc.num_integration_steps,
-                eta=config.mcmc.step_size,
-                use_shortcut=config.training.use_shortcut,
-                shift_fn=config.density.shift_fn,
-                estimate_covariance=False,
-                blackjax_hmc=True,
-                v_theta=v_theta,
-            )
-
-        # Cast results back - this is a no-op when mixed precision is disabled
-        samples = {k: config.mp_policy.cast_to_output(v) if isinstance(v, jnp.ndarray) else v 
-                  for k, v in samples.items()}
-                      
-        if force_finite:
-            samples["positions"] = jnp.nan_to_num(
-                samples["positions"], nan=0.0, posinf=1.0, neginf=-1.0
-            )
-        return samples
 
     @eqx.filter_jit
     def step(key, v_theta, opt_state, particles):
         key, dropout_key = jax.random.split(key)
-        
-        # Cast input parameters to compute precision before loss calculation
-        particles_compute = config.mp_policy.cast_to_compute(particles)
-        
-        # Compute loss and gradients with mixed precision
-        def mp_loss_fn(v_theta, *args, **kwargs):
-            loss = loss_fn(v_theta, *args, **kwargs)
-            # Cast loss back to full precision for stability
-            return config.mp_policy.cast_to_output(loss)
-            
-        loss, grads = eqx.filter_value_and_grad(mp_loss_fn)(
+        loss, grads = eqx.filter_value_and_grad(loss_fn)(
             v_theta,
-            particles_compute,
+            particles,
             path_distribution.time_derivative,
             path_distribution.score_fn,
             config.density.shift_fn,
@@ -225,12 +226,6 @@ def train_velocity_field(
             shortcut_weight=config.training.shortcut_weight,
             random_alpha=config.training.random_alpha,
             dropout_key=dropout_key if config.model.dropout is not None else None,
-        )
-        
-        # Cast gradients back to parameter dtype for optimization
-        grads = jax.tree_map(
-            lambda g: config.mp_policy.cast_to_param(g) if g is not None else None,
-            grads
         )
             
         updates, opt_state = optimizer.update(grads, opt_state, v_theta)
@@ -252,7 +247,11 @@ def train_velocity_field(
         # Sample generation
         if config.training.use_decoupled_loss:
             key, subkey = jax.random.split(key)
-            mcmc_samples = _generate_mcmc(subkey, current_ts, force_finite=True)
+            mcmc_samples = generate_samples_with_optional_mcmc(
+                subkey, v_theta, current_ts, path_distribution, config, 
+                use_mcmc=True, force_finite=True
+            )
+            
             key, subkey = jax.random.split(key)
             log_Z_t = estimate_log_Z_t(
                 mcmc_samples["positions"],
@@ -277,13 +276,19 @@ def train_velocity_field(
                     print("MCMC Samples ESS: ", mcmc_samples["ess"])
 
             key, subkey = jax.random.split(key)
-            v_theta_samples = _generate(subkey, current_ts, force_finite=True)
+            v_theta_samples = generate_samples_with_optional_mcmc(
+                subkey, v_theta, current_ts, path_distribution, config,
+                use_mcmc=False, force_finite=True
+            )
             samples = jnp.concatenate(
                 [mcmc_samples["positions"], v_theta_samples["positions"]], axis=1
             )
         else:
             key, subkey = jax.random.split(key)
-            samples = _generate_mcmc(key, current_ts, force_finite=True)
+            samples = generate_samples_with_optional_mcmc(
+                key, v_theta, current_ts, path_distribution, config,
+                use_mcmc=True, force_finite=True
+            )
             if isinstance(samples, dict):
                 samples = samples["positions"]
             log_Z_t = None
