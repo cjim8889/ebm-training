@@ -86,7 +86,6 @@ def sample_with_mcmc(
             exact_logp=True,
             forward=True,
             save_trajectory=True,
-            solver=solver,
         )
 
         weights = jnp.ones((ts.shape[0], initial_samples.shape[0])) / initial_samples.shape[0]
@@ -105,7 +104,6 @@ def sample_with_mcmc(
             exact_logp=True,
             forward=True,
             save_trajectory=True,
-            solver=solver,
         )
 
         key, subkey = jax.random.split(key)

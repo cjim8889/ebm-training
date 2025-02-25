@@ -3,8 +3,8 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 
-from utils.distributions import compute_distances
-from utils.models import init_linear_weights, xavier_init, kaiming_init
+from src.utils.distributions import compute_distances
+from src.utils.models import init_linear_weights, xavier_init, kaiming_init
 
 
 class MLPWithLayerNorm(eqx.Module):

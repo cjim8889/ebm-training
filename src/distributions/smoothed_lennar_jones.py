@@ -6,15 +6,11 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import optax
 
-from utils.distributions import (
+from src.ode import generate_samples_with_log_prob
+from src.utils.distributions import (
     compute_distances,
     compute_log_effective_sample_size,
 )
-from utils.integration import (
-    generate_samples_with_log_prob,
-)
-
-
 
 from .base import Target
 

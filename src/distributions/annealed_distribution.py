@@ -1,5 +1,5 @@
 from .base import Target
-from utils.distributions import get_inverse_temperature
+from src.utils.distributions import get_inverse_temperature
 import jax
 import chex
 

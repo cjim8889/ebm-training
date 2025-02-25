@@ -8,7 +8,7 @@ import optax
 import ot as pot
 import ott
 
-from ode import solve_neural_ode_diffrax
+from src.ode import solve_neural_ode_diffrax
 
 
 def batched_remove_mean(x, n_particles, n_spatial_dim):

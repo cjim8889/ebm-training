@@ -1,7 +1,7 @@
 import equinox as eqx
 import jax.numpy as jnp
 
-from utils.distributions import compute_distances
+from src.utils.distributions import compute_distances
 
 from .mlp import MLPWithNorm
 

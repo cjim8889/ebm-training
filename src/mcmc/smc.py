@@ -261,7 +261,7 @@ def generate_samples_with_smc(
     }
 
 def systematic_resampling(
-    keys: PRNGKeyArray["num_timesteps 2"], 
+    keys: PRNGKeyArray, 
     weights: Float[Array, "num_timesteps num_samples"], 
     size: int
 ) -> Int[Array, "num_timesteps size"]:

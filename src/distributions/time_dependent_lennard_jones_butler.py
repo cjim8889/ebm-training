@@ -1,6 +1,6 @@
 import chex
-import jax
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
@@ -8,8 +8,8 @@ import optax
 from jax.scipy.optimize import minimize
 from scipy.interpolate import CubicSpline
 
-from utils.distributions import compute_distances
-from utils.optimization import soft_clip
+from src.utils.distributions import compute_distances
+from src.utils.optimization import soft_clip
 
 from .base import Target
 

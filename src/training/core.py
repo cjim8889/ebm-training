@@ -7,16 +7,16 @@ import jax.numpy as jnp
 import optax
 
 import wandb
-from distributions import AnnealedDistribution, Target
-from utils.distributions import sample_monotonic_uniform_ordered
-from utils.eval import (
+from src.distributions import AnnealedDistribution, Target
+from src.mcmc.sampling import sample_with_mcmc
+from src.utils.distributions import sample_monotonic_uniform_ordered
+from src.utils.eval import (
     aggregate_eval_metrics,
     evaluate_model,
     log_metrics,
     save_model_if_best,
 )
-from utils.sampling import sample_with_mcmc
-from utils.optimization import get_optimizer, inverse_power_schedule, power_schedule
+from src.utils.optimization import get_optimizer, inverse_power_schedule, power_schedule
 
 from .config import TrainingExperimentConfig
 from .loss import Particle, loss_fn
@@ -53,34 +53,34 @@ def generate_samples_with_optional_mcmc(
     # Determine MCMC method
     mcmc_method = config.mcmc.method if use_mcmc else "none"
     
+    # Generate initial samples
+    initial_samples = path_distribution.sample_initial(key, (config.sampling.num_particles,)).astype(config.mp_policy.output_dtype)
+
     # Use unified MCMC interface
     samples = sample_with_mcmc(
         key=key,
+        initial_samples=initial_samples,
         v_theta=v_theta,
-        sample_fn=path_distribution.sample_initial,
         time_dependent_log_density=path_distribution.time_dependent_log_prob,
         mcmc_method=mcmc_method,
-        num_samples=config.sampling.num_particles,
         ts=ts_compute,
         shift_fn=config.density.shift_fn,
         use_shortcut=config.training.use_shortcut,
         num_steps=config.mcmc.num_steps,
         integration_steps=config.mcmc.num_integration_steps,
         eta=config.mcmc.step_size,
-        rejection_sampling=config.mcmc.with_rejection,
         ess_threshold=0.6,  # Default value
         estimate_covariance=False,  # Default value
-        use_blackjax=True,  # Default value
         solver=config.integration.method,
     )
     
-    # Cast results back - this is a no-op when mixed precision is disabled
-    samples = config.mp_policy.cast_to_output(samples)
-                  
     if force_finite:
         samples["positions"] = jnp.nan_to_num(
             samples["positions"], nan=0.0, posinf=1.0, neginf=-1.0
         )
+    chex.assert_type(samples["positions"], config.mp_policy.output_dtype)
+    chex.assert_shape(samples["positions"], (ts.shape[0], config.sampling.num_particles, None))
+
     return samples
 
 

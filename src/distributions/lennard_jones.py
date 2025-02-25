@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import optax
 import numpy as np
 
-from utils.distributions import batched_remove_mean, compute_distances
+from src.utils.distributions import batched_remove_mean, compute_distances
 
 from .base import Target
 

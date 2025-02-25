@@ -5,7 +5,7 @@ import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
-from utils.distributions import (
+from src.utils.distributions import (
     compute_w1_distance_1d_pot,
     compute_w2_distance_1d_pot,
     compute_wasserstein_distance_pot,
@@ -13,10 +13,8 @@ from utils.distributions import (
     estimate_kl_divergence,
     compute_log_effective_sample_size,
 )
-from utils.integration import (
-    generate_samples_with_log_prob_diffrax,
-)
-from utils.plotting import plot_contours_2D, plot_marginal_pair
+from src.ode import generate_samples_with_log_prob
+from src.utils.plotting import plot_contours_2D, plot_marginal_pair
 
 from .base import Target
 from .double_well import DoubleWellEnergy
