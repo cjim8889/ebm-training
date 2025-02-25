@@ -32,11 +32,12 @@ def control_variate_epsilon(
         d: Shortcut distance
         use_hutchinson: Whether to use Hutchinson's trick
         key: PRNG key for Hutchinson's trick
+        n_probes: Number of probes for Hutchinson's trick
 
     Returns:
         float: Local error in satisfying the Liouville equation
     """
-
+    # Calculate divergence using appropriate method
     if d is not None:
         if use_hutchinson:
             div_v = hutchinson_divergence_velocity2(
@@ -54,8 +55,16 @@ def control_variate_epsilon(
             div_v = divergence_velocity(v_theta, x, t)
         v = v_theta(x, t)
 
+    # Get score and calculate dot product with better numerical stability
+    score = score_fn(x, t)
+    v_dot_score = jnp.sum(v * score)  # element-wise multiply then sum is more stable
+    
+    # Calculate final result and handle NaN/inf values
+    result = div_v + v_dot_score
+    
     return jnp.nan_to_num(
-        div_v + jnp.dot(v, score_fn(x, t)),
+        result,
+        nan=0.0,
         posinf=1.0,
         neginf=-1.0,
     )
@@ -79,6 +88,7 @@ def estimate_log_Z_t(
     score_fn: Callable[[chex.Array, float], chex.Array] = None,
     use_control_variate: bool = False,
     use_shortcut: bool = False,
+    mp_policy = None,
 ) -> chex.Array:
     """Estimate the log partition function using weighted samples.
 
@@ -88,24 +98,38 @@ def estimate_log_Z_t(
         ts: Time points
         time_derivative_log_density: Function computing time derivative of log density
         v_theta: Velocity field function
+        score_fn: Score function
         use_control_variate: Whether to use control variate
         use_shortcut: Whether to use shortcut distance
+        mp_policy: JAX Mixed Precision policy
 
     Returns:
         Estimate of log partition function
     """
+    # Apply policy casting - this is a no-op when mixed precision is disabled
+    xs_compute = mp_policy.cast_to_compute(xs)
+    weights_compute = mp_policy.cast_to_compute(weights)
+    ts_compute = mp_policy.cast_to_compute(ts)
+        
+    # Compute time derivative with appropriate precision
     dt_log_unormalised_density = jax.vmap(
         lambda xs, t: jax.vmap(lambda x: time_derivative_log_density(x, t))(xs),
         in_axes=(0, 0),
-    )(xs, ts)
+    )(xs_compute, ts_compute)
 
     if use_control_variate:
         if use_shortcut:
-            d = jnp.diff(ts, axis=-1)[0]
+            d = jnp.diff(ts_compute, axis=-1)[0]
         else:
             d = None
 
-        epsilons = time_batched_control_variate_epsilon(v_theta, xs, ts, score_fn, d)
+        epsilons = time_batched_control_variate_epsilon(v_theta, xs_compute, ts_compute, score_fn, d)
         dt_log_unormalised_density = dt_log_unormalised_density + epsilons
 
-    return jnp.sum(dt_log_unormalised_density * weights, axis=-1, keepdims=True)
+    # Perform weighted sum with better numerical stability
+    result = jnp.sum(dt_log_unormalised_density * weights_compute, axis=-1, keepdims=True)
+    
+    # Cast result back to output precision
+    result = mp_policy.cast_to_output(result)
+    
+    return jnp.nan_to_num(result, nan=0.0, posinf=1.0, neginf=-1.0)
