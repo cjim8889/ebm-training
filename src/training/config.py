@@ -61,6 +61,8 @@ class MCMCConfig:
     step_size: float = 0.01  # eta: MCMC step size
     with_rejection: bool = False
     use_control_variate: bool = False
+    lambda_max: float = 0.1  # Maximum value for lambda factor
+    lambda_epochs: float = 2000.0  # Number of epochs over which lambda increases
 
 
 @dataclass
