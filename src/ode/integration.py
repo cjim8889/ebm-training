@@ -6,6 +6,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float, PRNGKeyArray
 
 from .diffrax import solve_neural_ode_diffrax
+from .euler import solve_neural_ode_euler
 
 @eqx.filter_jit
 def generate_samples(
@@ -22,7 +23,7 @@ def generate_samples(
     # TODO: Add shift_fn
 
     initial_samples = sample_fn(key, (num_samples,))
-    final_samples, _ = solve_neural_ode_diffrax(
+    final_samples, _ = solve_neural_ode_euler(
         v_theta=v_theta,
         y0=initial_samples,
         ts=ts,
@@ -48,7 +49,7 @@ def generate_samples_with_log_prob(
     **kwargs,
 ) -> Tuple[Float[Array, "num_timesteps num_samples dim"], 
            Float[Array, "num_timesteps num_samples"]]:
-    final_samples, final_log_probs = solve_neural_ode_diffrax(
+    final_samples, final_log_probs = solve_neural_ode_euler(
         v_theta=v_theta,
         y0=initial_samples,
         ts=ts,
