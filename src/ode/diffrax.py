@@ -1,4 +1,4 @@
-from typing import Callable, Tuple
+from typing import Callable, Optional, Tuple
 import diffrax
 import equinox as eqx
 import jax
@@ -12,13 +12,13 @@ def solve_neural_ode_diffrax(
     v_theta: Callable,
     y0: Float[Array, "batch dim"],
     ts: Float[Array, "steps"],
-    log_p0: Float[Array, "batch"] = None,
+    log_p0: Optional[Float[Array, "batch"]] = None,
     use_shortcut: bool = False,
     exact_logp: bool = True,
     key: jax.random.PRNGKey = None,
     forward: bool = True,
     save_trajectory: bool = False,
-    solver: diffrax.AbstractSolver = diffrax.Euler(),
+    solver: Optional[diffrax.AbstractSolver] = None,
 ) -> Tuple[Float[Array, "batch dim"], Float[Array, "batch"]]:
     """
     Solve the neural ODE using Diffrax.
