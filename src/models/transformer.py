@@ -130,13 +130,13 @@ class EfficientFFN(eqx.Module):
         linear1 = self.mp_policy.cast_to_compute(self.linear1)
         linear2 = self.mp_policy.cast_to_compute(self.linear2)
         layernorm = self.mp_policy.cast_to_compute(self.layernorm)
-        dropout = self.mp_policy.cast_to_compute(self.dropout)
 
         residual = x
         # Apply vmap to linear layers to process each particle
         x = jax.vmap(linear1)(x)
-        x = jax.nn.gelu(x)
-        x = dropout(x, key=key, inference=not enable_dropout)
+        # Cast to FP32 before GELU activation for improved numerical stability
+        x = jax.nn.gelu(x.astype(jnp.float32))
+        x = self.dropout(x, key=key, inference=not enable_dropout)
         x = jax.vmap(linear2)(x) + residual
         return self.mp_policy.cast_to_output(jax.vmap(layernorm)(x.astype(jnp.float32)))
 
