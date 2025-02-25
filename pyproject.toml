@@ -8,7 +8,6 @@ dependencies = [
     "chex>=0.1.81",
     "distrax>=0.1.5",
     "equinox>=0.11.7",
-    "ipykernel>=6.29.5",
     "jaxlib==0.4.34",
     "jax==0.4.34",
     "jax-metal==0.1.1; platform_system == 'Darwin'",
@@ -25,8 +24,13 @@ dependencies = [
     "pot>=0.9.5",
     "diffrax>=0.6.1",
     "jmp>=0.0.4",
-    "jaxtyping>=0.2.36",
+    "jaxtyping>=0.2.36"
+]
+
+[project.optional-dependencies]
+tests = [
     "pytest>=8.3.4",
+    "ipykernel>=6.29.5"
 ]
 
 [tool.ruff.lint]

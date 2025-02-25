@@ -49,7 +49,7 @@ def generate_samples_with_log_prob(
     **kwargs,
 ) -> Tuple[Float[Array, "num_timesteps num_samples dim"], 
            Float[Array, "num_timesteps num_samples"]]:
-    final_samples, final_log_probs = solve_neural_ode_euler(
+    final_samples, final_log_probs = solve_neural_ode_diffrax(
         v_theta=v_theta,
         y0=initial_samples,
         ts=ts,
