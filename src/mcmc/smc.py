@@ -117,7 +117,7 @@ def generate_samples_with_smc(
     particles = {
         "positions": initial_samples,
         "log_weights": initial_log_weights,
-        "ess": jnp.array(num_samples),
+        "ess": jnp.array(1.0),
     }
 
     def _delta(positions, t, t_prev):
