@@ -24,6 +24,7 @@ dependencies = [
     "ott-jax==0.5.0",
     "pot>=0.9.5",
     "diffrax>=0.6.1",
+    "jmp>=0.0.4",
 ]
 
 [tool.ruff.lint]
