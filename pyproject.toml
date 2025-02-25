@@ -24,7 +24,7 @@ dependencies = [
     "pot>=0.9.5",
     "diffrax>=0.6.1",
     "jmp>=0.0.4",
-    "jaxtyping>=0.2.36"
+    "jaxtyping>=0.2.36",
 ]
 
 [project.optional-dependencies]
