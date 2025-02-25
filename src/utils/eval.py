@@ -6,8 +6,8 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
 import wandb
-from distributions import AnnealedDistribution, Target
-from training.config import TrainingExperimentConfig
+from src.distributions import AnnealedDistribution, Target
+from src.training.config import TrainingExperimentConfig
 
 
 def evaluate_model(

@@ -3,8 +3,8 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 
-from utils.models import xavier_init, init_linear_weights
-from .mlp import MLPWithLayerNorm
+from src.utils.models import xavier_init, init_linear_weights
+from src.models.mlp import MLPWithLayerNorm
 
 
 def get_fully_connected_senders_receivers(

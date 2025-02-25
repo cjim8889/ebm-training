@@ -6,21 +6,16 @@ import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
-from utils.distributions import (
+from src.ode import generate_samples_with_log_prob
+from src.utils.distributions import (
     compute_log_effective_sample_size,
     compute_total_variation_distance,
     compute_w1_distance_1d_pot,
     compute_w2_distance_1d_pot,
-    compute_w2_sinkhorn_distance,
-    compute_w2_sinkhorn_distance_ot,
     compute_wasserstein_distance_pot,
     estimate_kl_divergence,
 )
-from utils.integration import (
-    generate_samples_with_log_prob,
-    generate_samples_with_log_prob_diffrax,
-)
-from utils.plotting import plot_contours_2D, plot_marginal_pair
+from src.utils.plotting import plot_contours_2D, plot_marginal_pair
 
 from .base import Target
 

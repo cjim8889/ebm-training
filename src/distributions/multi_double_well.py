@@ -6,16 +6,13 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 
-from utils.distributions import (
+from src.ode import generate_samples_with_log_prob
+from src.utils.distributions import (
+    compute_log_effective_sample_size,
     compute_total_variation_distance,
     compute_w1_distance_1d_pot,
     compute_w2_distance_1d_pot,
     compute_wasserstein_distance_pot,
-    compute_log_effective_sample_size,
-)
-from utils.integration import (
-    generate_samples_with_log_prob_diffrax,
-    generate_samples_with_log_prob,
 )
 
 from .base import Target

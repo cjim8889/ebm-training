@@ -2,8 +2,8 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 
-from utils.distributions import compute_distances
-from .mlp import MLPWithLayerNorm
+from src.utils.distributions import compute_distances
+from src.models.mlp import MLPWithLayerNorm
 
 
 class EfficientPairwiseInteraction(eqx.Module):

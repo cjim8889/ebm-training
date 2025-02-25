@@ -5,7 +5,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 
-from utils.distributions import (
+from src.utils.distributions import (
     divergence_velocity,
     divergence_velocity_with_shortcut,
     hutchinson_divergence_velocity2,

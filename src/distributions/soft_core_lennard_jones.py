@@ -9,12 +9,12 @@ import matplotlib.pyplot as plt
 import optax
 from jax.scipy.optimize import minimize
 
-from utils.distributions import remove_mean, remove_mean_decorator, compute_distances
-from utils.distributions import (
+from src.ode import generate_samples_with_log_prob
+from src.utils.distributions import (
+    compute_distances,
     compute_log_effective_sample_size,
-)
-from utils.integration import (
-    generate_samples_with_log_prob,
+    remove_mean,
+    remove_mean_decorator,
 )
 
 from .base import Target

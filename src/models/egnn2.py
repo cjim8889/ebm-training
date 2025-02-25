@@ -4,7 +4,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 
-from utils.models import init_linear_weights, xavier_init
+from src.utils.models import init_linear_weights, xavier_init
 
 from .egnn import get_fully_connected_senders_receivers, GEONORM
 from .mlp import MLPWithNorm
