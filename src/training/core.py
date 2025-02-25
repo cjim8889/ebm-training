@@ -15,13 +15,8 @@ from utils.eval import (
     log_metrics,
     save_model_if_best,
 )
-from utils.hmc import generate_samples_with_hmc_correction
-from utils.integration import (
-    euler_integrate,
-    generate_samples,
-)
+from utils.sampling import sample_with_mcmc
 from utils.optimization import get_optimizer, inverse_power_schedule, power_schedule
-from utils.smc import generate_samples_with_smc
 
 from .config import TrainingExperimentConfig
 from .loss import Particle, loss_fn
@@ -55,71 +50,30 @@ def generate_samples_with_optional_mcmc(
     # We generate samples in full precision
     ts_compute = config.mp_policy.cast_to_output(ts)
     
-    integrator = euler_integrate if config.integration.method == "Euler" else None
+    # Determine MCMC method
+    mcmc_method = config.mcmc.method if use_mcmc else "none"
     
-    if not use_mcmc:
-        # Standard (non-MCMC) generation
-        samples = generate_samples(
-            key,
-            v_theta,
-            config.sampling.num_particles,
-            ts_compute,
-            path_distribution.sample_initial,
-            use_shortcut=config.training.use_shortcut,
-        )
-    else:
-        # MCMC generation
-        if config.mcmc.method == "hmc":
-            samples = generate_samples_with_hmc_correction(
-                key=key,
-                v_theta=v_theta,
-                sample_fn=path_distribution.sample_initial,
-                time_dependent_log_density=path_distribution.time_dependent_log_prob,
-                num_samples=config.sampling.num_particles,
-                ts=ts_compute,
-                integration_fn=integrator,
-                num_steps=config.mcmc.num_steps,
-                integration_steps=config.mcmc.num_integration_steps,
-                eta=config.mcmc.step_size,
-                rejection_sampling=config.mcmc.with_rejection,
-                shift_fn=config.density.shift_fn,
-                use_shortcut=config.training.use_shortcut,
-            )
-        elif config.mcmc.method == "smc":
-            samples = generate_samples_with_smc(
-                key=key,
-                time_dependent_log_density=path_distribution.time_dependent_log_prob,
-                num_samples=config.sampling.num_particles,
-                ts=ts_compute,
-                sample_fn=path_distribution.sample_initial,
-                num_steps=config.mcmc.num_steps,
-                integration_steps=config.mcmc.num_integration_steps,
-                eta=config.mcmc.step_size,
-                rejection_sampling=config.mcmc.with_rejection,
-                shift_fn=config.density.shift_fn,
-                estimate_covariance=False,
-                blackjax_hmc=True,
-                use_shortcut=config.training.use_shortcut,
-            )
-        elif config.mcmc.method == "vsmc":
-            samples = generate_samples_with_smc(
-                key=key,
-                time_dependent_log_density=path_distribution.time_dependent_log_prob,
-                num_samples=config.sampling.num_particles,
-                ts=ts_compute,
-                sample_fn=path_distribution.sample_initial,
-                num_steps=config.mcmc.num_steps,
-                integration_steps=config.mcmc.num_integration_steps,
-                eta=config.mcmc.step_size,
-                use_shortcut=config.training.use_shortcut,
-                shift_fn=config.density.shift_fn,
-                estimate_covariance=False,
-                blackjax_hmc=True,
-                v_theta=v_theta,
-            )
-        else:
-            raise ValueError(f"Unknown MCMC method: {config.mcmc.method}")
-
+    # Use unified MCMC interface
+    samples = sample_with_mcmc(
+        key=key,
+        v_theta=v_theta,
+        sample_fn=path_distribution.sample_initial,
+        time_dependent_log_density=path_distribution.time_dependent_log_prob,
+        mcmc_method=mcmc_method,
+        num_samples=config.sampling.num_particles,
+        ts=ts_compute,
+        shift_fn=config.density.shift_fn,
+        use_shortcut=config.training.use_shortcut,
+        num_steps=config.mcmc.num_steps,
+        integration_steps=config.mcmc.num_integration_steps,
+        eta=config.mcmc.step_size,
+        rejection_sampling=config.mcmc.with_rejection,
+        ess_threshold=0.6,  # Default value
+        estimate_covariance=False,  # Default value
+        use_blackjax=True,  # Default value
+        solver=config.integration.method,
+    )
+    
     # Cast results back - this is a no-op when mixed precision is disabled
     samples = config.mp_policy.cast_to_output(samples)
                   

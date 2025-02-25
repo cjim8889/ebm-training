@@ -1,17 +1,17 @@
-from typing import Callable, Tuple, Optional
+from typing import Callable, Optional, Dict, Tuple, Union
 
-import chex
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-
-from .hmc import sample_hamiltonian_monte_carlo, sample_hamiltonian_monte_carlo_blackjax
 from blackjax.smc.ess import ess
 from blackjax.smc.resampling import systematic
+from jaxtyping import Array, Float, Int, PRNGKeyArray
+
+from .hmc import sample_hamiltonian_monte_carlo_blackjax
 
 
 @jax.jit
-def log_weights_to_weights(log_weights: jnp.ndarray) -> jnp.ndarray:
+def log_weights_to_weights(log_weights: Float[Array, "num_samples"]) -> Float[Array, "num_samples"]:
     """
     Convert log weights to weights.
 
@@ -30,11 +30,11 @@ def log_weights_to_weights(log_weights: jnp.ndarray) -> jnp.ndarray:
 
 @eqx.filter_jit
 def _estimate_covariance(
-    positions: chex.Array,
-    weights: Optional[chex.Array] = None,
+    positions: Float[Array, "num_samples dim"],
+    weights: Optional[Float[Array, "num_samples"]] = None,
     diagonal: bool = True,
     regularization: float = 1e-6,
-) -> chex.Array:
+) -> Float[Array, "dim dim"]:
     N, d = positions.shape
     # Handle weights
     if weights is None:
@@ -62,69 +62,65 @@ def _estimate_covariance(
 
 @eqx.filter_jit
 def generate_samples_with_smc(
-    key: jax.random.PRNGKey,
-    time_dependent_log_density: Callable[[chex.Array, float], float],
+    key: PRNGKeyArray,
+    time_dependent_log_density: Callable[[Float[Array, "dim"], float], float],
     num_samples: int,
-    ts: jnp.ndarray,
-    sample_fn: Callable[[jax.random.PRNGKey, Tuple[int, ...]], jnp.ndarray],
+    ts: Float[Array, "num_timesteps"],
+    sample_fn: Callable[[PRNGKeyArray, Tuple[int, ...]], Float[Array, "num_samples dim"]],
     num_steps: int = 10,
     integration_steps: int = 3,
     eta: float = 0.1,
-    rejection_sampling: bool = False,
-    shift_fn: Callable[[jnp.ndarray], jnp.ndarray] = lambda x: x,
+    shift_fn: Callable[[Float[Array, "dim"]], Float[Array, "dim"]] = lambda x: x,
     ess_threshold: float = 0.6,
     resampling_fn: Callable[
-        [jax.random.PRNGKey, jnp.ndarray, int], jnp.ndarray
+        [PRNGKeyArray, Float[Array, "num_samples"], int], Int[Array, "num_samples"]
     ] = systematic,
-    incremental_log_delta: Optional[Callable[[chex.Array, float], float]] = None,
-    covariances: Optional[chex.Array] = None,
+    incremental_log_delta: Optional[Callable[[Float[Array, "dim"], float], float]] = None,
+    covariances: Optional[Float[Array, "num_timesteps dim dim"]] = None,
     estimate_covariance: bool = False,
-    blackjax_hmc: bool = True,
-    v_theta: Optional[Callable[[chex.Array, float], chex.Array]] = None,
+    v_theta: Optional[Callable[[Float[Array, "dim"], float], Float[Array, "dim"]]] = None,
     use_shortcut: bool = False,
-) -> jnp.ndarray:
+    initial_samples: Optional[Float[Array, "num_samples dim"]] = None,
+    initial_log_weights: Optional[Float[Array, "num_samples"]] = None,
+) -> Dict[str, Union[Float[Array, "num_timesteps num_samples dim"], 
+                     Float[Array, "num_timesteps num_samples"], 
+                     Float[Array, "num_timesteps"]]]:
     batched_shift_fn = jax.vmap(shift_fn)
-    if blackjax_hmc:
-        batched_hmc = jax.vmap(
-            lambda key, x, t, covariance: sample_hamiltonian_monte_carlo_blackjax(
-                key,
-                time_dependent_log_density,
-                x,
-                t,
-                num_steps,
-                integration_steps,
-                eta,
-                covariance,
-                shift_fn,
-            ),
-            in_axes=(0, 0, None, None),
-        )
-    else:
-        batched_hmc = jax.vmap(
-            lambda key, x, t, covariance: sample_hamiltonian_monte_carlo(
-                key,
-                time_dependent_log_density,
-                x,
-                t,
-                num_steps,
-                integration_steps,
-                eta,
-                rejection_sampling,
-                shift_fn,
-                covariance,
-            ),
-            in_axes=(0, 0, None, None),
-        )
+    batched_hmc = jax.vmap(
+        lambda key, x, t, covariance: sample_hamiltonian_monte_carlo_blackjax(
+            key,
+            time_dependent_log_density,
+            x,
+            t,
+            num_steps,
+            integration_steps,
+            eta,
+            covariance,
+            shift_fn,
+        ),
+        in_axes=(0, 0, None, None),
+    )
 
     key, subkey = jax.random.split(key)
-    initial_samples = sample_fn(subkey, (num_samples,))
-    log_weights = jnp.full((num_samples,), -jnp.log(num_samples))
+    
+    # Initialize particles with provided samples or generate new ones
+    if initial_samples is not None:
+        initial_positions = initial_samples
+    else:
+        initial_positions = sample_fn(subkey, (num_samples,))
+    
+    # Initialize log weights
+    if initial_log_weights is not None:
+        log_weights = initial_log_weights
+    else:
+        log_weights = jnp.full((num_samples,), -jnp.log(num_samples))
+    
     sample_keys = jax.random.split(key, num_samples * ts.shape[0]).reshape(
         ts.shape[0], num_samples, -1
     )
 
     particles = {
-        "positions": initial_samples,
+        "positions": initial_positions,
         "log_weights": log_weights,
     }
 
@@ -144,7 +140,10 @@ def generate_samples_with_smc(
         else:
             batched_v_theta = jax.vmap(v_theta, in_axes=(0, None))
 
-    def _resample(key, positions, log_weights):
+    def _resample(key: PRNGKeyArray, 
+                  positions: Float[Array, "num_samples dim"], 
+                  log_weights: Float[Array, "num_samples"]
+                 ) -> Tuple[Float[Array, "num_samples dim"], Float[Array, "num_samples"]]:
         """
         Resample particles based on their log weights.
 
@@ -229,10 +228,12 @@ def generate_samples_with_smc(
                 propagated_positions = shifted_positions + d * batched_v_theta(
                     shifted_positions, t_prev
                 )
+        else:
+            propagated_positions = shifted_positions
 
         # Apply HMC to propagate particles
         propagated_positions = batched_hmc(
-            keys, shifted_positions, t, cov
+            keys, propagated_positions, t, cov
         )  # Shape: (num_samples, ...)
 
         # Compute incremental weights
@@ -270,78 +271,11 @@ def generate_samples_with_smc(
         "ess": output["ess"],
     }
 
-
-@eqx.filter_jit
-def generate_samples_with_euler_smc(
-    key: jax.random.PRNGKey,
-    v_theta: Callable[[jnp.ndarray, float], jnp.ndarray],
-    time_dependent_log_density: Callable[[chex.Array, float], float],
-    num_samples: int,
-    ts: jnp.ndarray,
-    sample_fn: Callable[[jax.random.PRNGKey, Tuple[int, ...]], jnp.ndarray],
-    num_steps: int = 10,
-    integration_steps: int = 3,
-    eta: float = 0.1,
-    rejection_sampling: bool = False,
-    shift_fn: Callable[[jnp.ndarray], jnp.ndarray] = lambda x: x,
-    use_shortcut: bool = False,
-) -> jnp.ndarray:
-    batched_shift_fn = jax.vmap(shift_fn)
-    batched_hmc = jax.vmap(
-        lambda key, x, t: sample_hamiltonian_monte_carlo(
-            key,
-            time_dependent_log_density,
-            x,
-            t,
-            num_steps,
-            integration_steps,
-            eta,
-            rejection_sampling,
-            shift_fn,
-        ),
-        in_axes=(0, 0, None),
-    )
-
-    key, subkey = jax.random.split(key)
-    initial_samples = sample_fn(subkey, (num_samples,))
-    sample_keys = jax.random.split(key, num_samples * ts.shape[0]).reshape(
-        ts.shape[0], num_samples, 2
-    )
-
-    def step(carry, xs):
-        keys, t = xs
-
-        x_prev, t_prev = carry
-        d = t - t_prev
-
-        if use_shortcut:
-            samples = x_prev + d * jax.vmap(lambda x: v_theta(x, t, d))(x_prev)
-        else:
-            samples = x_prev + d * jax.vmap(lambda x: v_theta(x, t))(x_prev)
-
-        samples = batched_shift_fn(samples)
-        samples = batched_hmc(keys, samples, t)
-
-        return (samples, t), samples
-
-    _, output = jax.lax.scan(step, (initial_samples, 0.0), (sample_keys, ts))
-
-    uniform_weights = jnp.full(
-        (
-            ts.shape[0],
-            num_samples,
-        ),
-        1.0 / num_samples,
-    )
-    return {
-        "positions": output,
-        "weights": uniform_weights,
-    }
-
-
 def systematic_resampling(
-    keys: chex.PRNGKey, weights: jnp.ndarray, size: int
-) -> jnp.ndarray:
+    keys: PRNGKeyArray["num_timesteps 2"], 
+    weights: Float[Array, "num_timesteps num_samples"], 
+    size: int
+) -> Int[Array, "num_timesteps size"]:
     """
     Perform batched systematic resampling.
 

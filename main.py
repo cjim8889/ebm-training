@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import jmp
 
 import wandb
-from distributions import (
+from src.distributions import (
     GMM,
     LennardJonesEnergy,
     ManyWellEnergy,
@@ -18,7 +18,7 @@ from distributions import (
     TranslationInvariantGaussian,
     QuadraticSmoothedLJ
 )
-from models import (
+from src.models import (
     EGNN,
     EquivariantTimeVelocityField,
     OptimizedVelocityField,
@@ -34,7 +34,7 @@ from models import (
     EGNNWithLearnableNodeFeatures,
     ParticleTransformerV2
 )
-from training.config import (
+from src.training.config import (
     DensityConfig,
     IntegrationConfig,
     MCMCConfig,
@@ -44,7 +44,7 @@ from training.config import (
     TrainingConfig,
     TrainingExperimentConfig,
 )
-from training.core import train_velocity_field
+from src.training.core import train_velocity_field
 
 
 def create_mixed_precision_policy(mixed_precision=False):
