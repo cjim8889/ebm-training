@@ -1,9 +1,10 @@
-import matplotlib.pyplot as plt
-from typing import Optional, Tuple
 from itertools import product
-import jax.numpy as jnp
-import numpy as np
+from typing import Optional, Tuple
+
 import chex
+import jax.numpy as jnp
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 def plot_contours_2D(
