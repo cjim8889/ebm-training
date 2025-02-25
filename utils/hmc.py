@@ -10,7 +10,6 @@ from blackjax.mcmc.hmc import HMCState
 from .integration import (
     euler_integrate,
     generate_samples,
-    generate_samples_with_initial_values,
 )
 
 
@@ -210,50 +209,6 @@ def time_batched_sample_hamiltonian_monte_carlo(
     )
 
     return final_xs
-
-
-@eqx.filter_jit
-def generate_samples_with_hmc_correction_and_initial_values(
-    key: jax.random.PRNGKey,
-    v_theta: Callable[[jnp.ndarray, float], jnp.ndarray],
-    initial_samples: jnp.ndarray,
-    ts: jnp.ndarray,
-    time_dependent_log_density: Callable[[jnp.ndarray, float], float],
-    integration_fn: Callable[
-        [Callable[[jnp.ndarray, float], jnp.ndarray], jnp.ndarray, jnp.ndarray],
-        jnp.ndarray,
-    ] = euler_integrate,
-    num_steps: int = 3,
-    integration_steps: int = 3,
-    eta: float = 0.01,
-    rejection_sampling: bool = False,
-    shift_fn: Callable[[jnp.ndarray], jnp.ndarray] = lambda x: x,
-    use_shortcut: bool = False,
-    covariance: Optional[chex.Array] = None,
-) -> jnp.ndarray:
-    initial_samps = generate_samples_with_initial_values(
-        v_theta=v_theta,
-        initial_samples=initial_samples,
-        ts=ts,
-        integration_fn=integration_fn,
-        shift_fn=shift_fn,
-        use_shortcut=use_shortcut,
-    )
-
-    final_samples = time_batched_sample_hamiltonian_monte_carlo(
-        key,
-        time_dependent_log_density,
-        initial_samps,
-        ts,
-        num_steps,
-        integration_steps,
-        eta,
-        rejection_sampling,
-        shift_fn,
-        covariance,
-    )
-
-    return final_samples
 
 
 @eqx.filter_jit
