@@ -77,7 +77,7 @@ def propagate_with_hmc(
     eta: float = 0.1,
     shift_fn: Callable[[Float[Array, "dim"]], Float[Array, "dim"]] = lambda x: x,
     covariance: Optional[Float[Array, "dim dim"]] = None,
-) -> Dict[str, Float[Array, "num_timesteps num_samples dim"]]:
+) -> Float[Array, "num_timesteps num_samples dim"]:
     """
     Propagate samples using HMC.
     
@@ -131,10 +131,4 @@ def propagate_with_hmc(
         shift_fn,
     )
     
-    # Uniform weights for HMC
-    weights = jnp.ones((ts.shape[0], initial_samples.shape[1])) / initial_samples.shape[1]
-    
-    return {
-        "positions": final_samples,
-        "weights": weights,
-    }
+    return final_samples

@@ -1,5 +1,6 @@
-from typing import Callable, Optional, Dict, Tuple, Union
+from typing import Callable, Dict, Optional, Tuple, Union
 
+import chex
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -63,10 +64,9 @@ def _estimate_covariance(
 @eqx.filter_jit
 def generate_samples_with_smc(
     key: PRNGKeyArray,
+    initial_samples: Float[Array, "num_samples dim"],
     time_dependent_log_density: Callable[[Float[Array, "dim"], float], float],
-    num_samples: int,
     ts: Float[Array, "num_timesteps"],
-    sample_fn: Callable[[PRNGKeyArray, Tuple[int, ...]], Float[Array, "num_samples dim"]],
     num_steps: int = 10,
     integration_steps: int = 3,
     eta: float = 0.1,
@@ -75,12 +75,10 @@ def generate_samples_with_smc(
     resampling_fn: Callable[
         [PRNGKeyArray, Float[Array, "num_samples"], int], Int[Array, "num_samples"]
     ] = systematic,
-    incremental_log_delta: Optional[Callable[[Float[Array, "dim"], float], float]] = None,
     covariances: Optional[Float[Array, "num_timesteps dim dim"]] = None,
     estimate_covariance: bool = False,
     v_theta: Optional[Callable[[Float[Array, "dim"], float], Float[Array, "dim"]]] = None,
     use_shortcut: bool = False,
-    initial_samples: Optional[Float[Array, "num_samples dim"]] = None,
     initial_log_weights: Optional[Float[Array, "num_samples"]] = None,
 ) -> Dict[str, Union[Float[Array, "num_timesteps num_samples dim"], 
                      Float[Array, "num_timesteps num_samples"], 
@@ -101,36 +99,27 @@ def generate_samples_with_smc(
         in_axes=(0, 0, None, None),
     )
 
-    key, subkey = jax.random.split(key)
-    
+    num_samples = initial_samples.shape[0]
     # Initialize particles with provided samples or generate new ones
-    if initial_samples is not None:
-        initial_positions = initial_samples
-    else:
-        initial_positions = sample_fn(subkey, (num_samples,))
-    
-    # Initialize log weights
-    if initial_log_weights is not None:
-        log_weights = initial_log_weights
-    else:
-        log_weights = jnp.full((num_samples,), -jnp.log(num_samples))
+    chex.assert_rank(initial_samples, 2)
+    if initial_log_weights is None:
+        initial_log_weights = jnp.full((num_samples,), -jnp.log(num_samples))
+
+    chex.assert_rank(initial_log_weights, 1)
     
     sample_keys = jax.random.split(key, num_samples * ts.shape[0]).reshape(
         ts.shape[0], num_samples, -1
     )
 
     particles = {
-        "positions": initial_positions,
-        "log_weights": log_weights,
+        "positions": initial_samples,
+        "log_weights": initial_log_weights,
     }
 
     def _delta(positions, t, t_prev):
-        if incremental_log_delta is not None:
-            return incremental_log_delta(positions, t - t_prev)
-        else:
-            return time_dependent_log_density(
-                positions, t
-            ) - time_dependent_log_density(positions, t_prev)
+        return time_dependent_log_density(
+            positions, t
+        ) - time_dependent_log_density(positions, t_prev)
 
     batched_delta = jax.vmap(_delta, in_axes=(0, None, None))
 
