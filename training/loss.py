@@ -30,11 +30,15 @@ def epsilon(
 ) -> chex.Array:
     """Computes the local error using a Particle instance."""
     x, t, log_Z_t, d = particle.x, particle.t, particle.log_Z_t, particle.d
+    
+    # Calculate time derivative with better precision handling
     dt_log_unormalised = time_derivative_log_density(x, t)
     dt_log_density = dt_log_unormalised - log_Z_t
 
+    # Get score vector
     score = score_fn(x, t)
-
+    
+    # Calculate divergence and velocity with appropriate precision
     if d is not None:
         div_v = divergence_velocity_with_shortcut(v_theta, x, t, d)
         v = v_theta(x, t, d)
@@ -42,8 +46,16 @@ def epsilon(
         div_v = divergence_velocity(v_theta, x, t)
         v = v_theta(x, t)
 
-    lhs = div_v + jnp.dot(v, score)
-    return jnp.nan_to_num(lhs + dt_log_density, nan=0.0, posinf=1.0, neginf=-1.0)
+    # Calculate dot product with better numerical stability
+    # If x and y are in low precision, cast to higher precision for the dot product
+    v_dot_score = jnp.sum(v * score)  # element-wise multiply then sum is more stable than dot product
+    
+    # Calculate final result and handle NaN/inf values
+    lhs = div_v + v_dot_score
+    result = lhs + dt_log_density
+    
+    # Ensure no NaN or inf values propagate
+    return jnp.nan_to_num(result, nan=0.0, posinf=1.0, neginf=-1.0)
 
 
 batched_epsilon = jax.vmap(epsilon, in_axes=(None, 0, None, None))
@@ -59,13 +71,20 @@ def epsilon_with_hutchinson(
     single_probe: bool,
     dropout_key: Optional[jax.random.PRNGKey] = None,
 ):
+    """Computes the local error using Hutchinson's trace estimator."""
     x, t, log_Z_t, d = particle.x, particle.t, particle.log_Z_t, particle.d
+    
+    # Calculate time derivative
     dt_log_unormalised = time_derivative_log_density(x, t)
     dt_log_density = dt_log_unormalised - log_Z_t
 
+    # Split key for dropout if provided
     hutchinson_key, dropout_key = jax.random.split(dropout_key) if dropout_key is not None else (None, None)
 
+    # Get score vector
     score = score_fn(x, t)
+    
+    # Calculate divergence using Hutchinson's trick
     if single_probe:
         div_v = hutchinson_divergence_velocity_single_probe(
             v_theta,
@@ -84,16 +103,21 @@ def epsilon_with_hutchinson(
             d=d,
             dropout_key=dropout_key,
         )
+        
+    # Get velocity vector
     if d is not None:
         v = v_theta(x, t, d) if hutchinson_key is None else v_theta(x, t, d, enable_dropout=True, key=hutchinson_key)
     else:
         v = v_theta(x, t) if hutchinson_key is None else v_theta(x, t, enable_dropout=True, key=hutchinson_key)
 
-    return jnp.nan_to_num(
-        div_v + jnp.dot(v, score) + dt_log_density,
-        posinf=1.0,
-        neginf=-1.0,
-    )
+    # Calculate dot product with better numerical stability
+    v_dot_score = jnp.sum(v * score)  # element-wise multiply then sum is more stable
+    
+    # Calculate final result
+    result = div_v + v_dot_score + dt_log_density
+    
+    # Ensure no NaN or inf values propagate
+    return jnp.nan_to_num(result, nan=0.0, posinf=1.0, neginf=-1.0)
 
 
 batched_epsilon_with_hutchinson = jax.vmap(

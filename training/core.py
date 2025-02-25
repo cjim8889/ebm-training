@@ -110,17 +110,24 @@ def train_velocity_field(
     integrator = euler_integrate if config.integration.method == "Euler" else None
 
     def _generate(key: jax.random.PRNGKey, ts: jnp.ndarray, force_finite: bool = False):
+        # Apply policy casting - this is a no-op when mixed precision is disabled
+        ts_compute = config.mp_policy.cast_to_compute(ts)
+            
         samples = (
-            generate_samples(  # Investigate why our euler is different than the diffrax
+            generate_samples(
                 key,
                 v_theta,
                 config.sampling.num_particles,
-                ts,
+                ts_compute,
                 path_distribution.sample_initial,
                 use_shortcut=config.training.use_shortcut,
-                # solver="Euler",  # We are using Euler method for integration
             )
         )
+        
+        # Cast results back - this is a no-op when mixed precision is disabled
+        samples = {k: config.mp_policy.cast_to_output(v) if isinstance(v, jnp.ndarray) else v 
+                  for k, v in samples.items()}
+                      
         if force_finite:
             samples["positions"] = jnp.nan_to_num(
                 samples["positions"], nan=0.0, posinf=1.0, neginf=-1.0
@@ -130,6 +137,9 @@ def train_velocity_field(
     def _generate_mcmc(
         key: jax.random.PRNGKey, ts: jnp.ndarray, force_finite: bool = False
     ):
+        # Apply policy casting - this is a no-op when mixed precision is disabled
+        ts_compute = config.mp_policy.cast_to_compute(ts)
+            
         if config.mcmc.method == "hmc":
             samples = generate_samples_with_hmc_correction(
                 key=key,
@@ -137,7 +147,7 @@ def train_velocity_field(
                 sample_fn=path_distribution.sample_initial,
                 time_dependent_log_density=path_distribution.time_dependent_log_prob,
                 num_samples=config.sampling.num_particles,
-                ts=ts,
+                ts=ts_compute,
                 integration_fn=integrator,
                 num_steps=config.mcmc.num_steps,
                 integration_steps=config.mcmc.num_integration_steps,
@@ -151,7 +161,7 @@ def train_velocity_field(
                 key=key,
                 time_dependent_log_density=path_distribution.time_dependent_log_prob,
                 num_samples=config.sampling.num_particles,
-                ts=ts,
+                ts=ts_compute,
                 sample_fn=path_distribution.sample_initial,
                 num_steps=config.mcmc.num_steps,
                 integration_steps=config.mcmc.num_integration_steps,
@@ -167,7 +177,7 @@ def train_velocity_field(
                 key=key,
                 time_dependent_log_density=path_distribution.time_dependent_log_prob,
                 num_samples=config.sampling.num_particles,
-                ts=ts,
+                ts=ts_compute,
                 sample_fn=path_distribution.sample_initial,
                 num_steps=config.mcmc.num_steps,
                 integration_steps=config.mcmc.num_integration_steps,
@@ -179,6 +189,10 @@ def train_velocity_field(
                 v_theta=v_theta,
             )
 
+        # Cast results back - this is a no-op when mixed precision is disabled
+        samples = {k: config.mp_policy.cast_to_output(v) if isinstance(v, jnp.ndarray) else v 
+                  for k, v in samples.items()}
+                      
         if force_finite:
             samples["positions"] = jnp.nan_to_num(
                 samples["positions"], nan=0.0, posinf=1.0, neginf=-1.0
@@ -188,9 +202,19 @@ def train_velocity_field(
     @eqx.filter_jit
     def step(key, v_theta, opt_state, particles):
         key, dropout_key = jax.random.split(key)
-        loss, grads = eqx.filter_value_and_grad(loss_fn)(
+        
+        # Cast input parameters to compute precision before loss calculation
+        particles_compute = config.mp_policy.cast_to_compute(particles)
+        
+        # Compute loss and gradients with mixed precision
+        def mp_loss_fn(v_theta, *args, **kwargs):
+            loss = loss_fn(v_theta, *args, **kwargs)
+            # Cast loss back to full precision for stability
+            return config.mp_policy.cast_to_output(loss)
+            
+        loss, grads = eqx.filter_value_and_grad(mp_loss_fn)(
             v_theta,
-            particles,
+            particles_compute,
             path_distribution.time_derivative,
             path_distribution.score_fn,
             config.density.shift_fn,
@@ -202,6 +226,13 @@ def train_velocity_field(
             random_alpha=config.training.random_alpha,
             dropout_key=dropout_key if config.model.dropout is not None else None,
         )
+        
+        # Cast gradients back to parameter dtype for optimization
+        grads = jax.tree_map(
+            lambda g: config.mp_policy.cast_to_param(g) if g is not None else None,
+            grads
+        )
+            
         updates, opt_state = optimizer.update(grads, opt_state, v_theta)
         v_theta = eqx.apply_updates(v_theta, updates)
         return v_theta, opt_state, loss
@@ -232,6 +263,7 @@ def train_velocity_field(
                 score_fn=path_distribution.score_fn,
                 use_control_variate=config.mcmc.use_control_variate,
                 use_shortcut=config.training.use_shortcut,
+                mp_policy=config.mp_policy,
             )
             log_Z_t = jax.lax.stop_gradient(log_Z_t)
             if not config.offline:
