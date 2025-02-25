@@ -1,14 +1,14 @@
-from typing import Callable, Tuple, Optional
+from typing import Callable, Optional, Tuple
 
 import chex
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import optax
-import ott
 import ot as pot
+import ott
 
-from .ode import solve_neural_ode_diffrax
+from ode import solve_neural_ode_diffrax
 
 
 def batched_remove_mean(x, n_particles, n_spatial_dim):
