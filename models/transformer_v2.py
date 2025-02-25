@@ -3,12 +3,14 @@ from typing import Callable, List, Optional
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import jmp  # Add jmp import
 from jaxtyping import Array, Float
 
 
 class MixedPrecisionMLP(eqx.Module):
     layers: list
     activation: Callable = eqx.field(static=True)
+    mp_policy: Optional[jmp.Policy] = eqx.field(static=True)
     mixed_precision: bool = eqx.field(static=True)
 
     def __init__(
@@ -19,6 +21,7 @@ class MixedPrecisionMLP(eqx.Module):
         depth: int,
         key: jax.random.PRNGKey,
         activation: Callable = jax.nn.silu,
+        mp_policy: Optional[jmp.Policy] = None,
         mixed_precision: bool = False,
     ):
         keys = jax.random.split(key, depth + 1)
@@ -31,27 +34,32 @@ class MixedPrecisionMLP(eqx.Module):
         layers.append(eqx.nn.Linear(current_size, out_size, key=keys[-1]))
         self.layers = layers
         self.activation = activation
+        self.mp_policy = mp_policy
         self.mixed_precision = mixed_precision
 
     def __call__(self, x):
         if self.mixed_precision:
-            x = x.astype(jnp.bfloat16)
-            for layer in self.layers[:-1]:
+            # Use JMP policy to cast inputs to compute dtype
+            x = self.mp_policy.cast_to_compute(x)
+            
+            # Process through layers
+            for layer in self.layers:
                 if isinstance(layer, eqx.nn.Linear):
-                    weight = layer.weight.astype(jnp.bfloat16)
-                    bias = layer.bias.astype(jnp.bfloat16) if layer.bias is not None else None
+                    # Cast weights to compute dtype
+                    weight = self.mp_policy.cast_to_compute(layer.weight)
+                    bias = self.mp_policy.cast_to_compute(layer.bias)
                     x = jnp.dot(x, weight.T) + bias
-                else:  # activation
+                    x = self.activation(x)
+                else:
                     x = layer(x)
-            final_layer = self.layers[-1]
-            weight = final_layer.weight.astype(jnp.bfloat16)
-            bias = final_layer.bias.astype(jnp.bfloat16) if final_layer.bias is not None else None
-            x = jnp.dot(x, weight.T) + bias
-            return x.astype(jnp.float32)
+                    
+            # Cast back to output dtype
+            x = self.mp_policy.cast_to_output(x)
         else:
-            for layer in self.layers[:-1]:
+            # Process in full precision
+            for layer in self.layers:
                 x = layer(x)
-            return self.layers[-1](x)
+        return x
 
 class EmbedderBlock(eqx.Module):
     spatial_embedder: MixedPrecisionMLP
@@ -62,6 +70,7 @@ class EmbedderBlock(eqx.Module):
     embedding_size: int
     shortcut: bool = eqx.field(static=True)
     mixed_precision: bool = eqx.field(static=True)
+    mp_policy: Optional[jmp.Policy] = eqx.field(static=True)
 
     def __init__(
         self,
@@ -71,21 +80,26 @@ class EmbedderBlock(eqx.Module):
         key: jax.random.PRNGKey,
         shortcut: bool = False,
         mixed_precision: bool = False,
+        mp_policy: Optional[jmp.Policy] = None,
     ):
         self.shortcut = shortcut
         self.n_particles = n_particles
         self.embedding_size = embedding_size
         self.mixed_precision = mixed_precision
+        self.mp_policy = mp_policy
 
         spatial_key, time_key, d_key = jax.random.split(key, 3)
         self.spatial_embedder = MixedPrecisionMLP(
-            n_spatial_dim, embedding_size, width_size=32, depth=2, key=spatial_key, mixed_precision=mixed_precision
+            n_spatial_dim, embedding_size, width_size=32, depth=2, key=spatial_key, 
+            mixed_precision=mixed_precision, mp_policy=mp_policy
         )
         self.time_embedder = MixedPrecisionMLP(
-            1, embedding_size, width_size=32, depth=2, key=time_key, mixed_precision=mixed_precision
+            1, embedding_size, width_size=32, depth=2, key=time_key, 
+            mixed_precision=mixed_precision, mp_policy=mp_policy
         )
         self.d_embedder = (
-            MixedPrecisionMLP(1, embedding_size, width_size=32, depth=2, key=d_key, mixed_precision=mixed_precision)
+            MixedPrecisionMLP(1, embedding_size, width_size=32, depth=2, key=d_key, 
+                          mixed_precision=mixed_precision, mp_policy=mp_policy)
             if shortcut
             else None
         )
@@ -95,11 +109,12 @@ class EmbedderBlock(eqx.Module):
 
     def __call__(self, xs, t, d=None):
         if self.mixed_precision:
-            xs = xs.astype(jnp.bfloat16)
-            t = t.astype(jnp.bfloat16)
+            # Use JMP policy for type casting
+            xs = self.mp_policy.cast_to_compute(xs)
+            t = self.mp_policy.cast_to_compute(t)
             if d is not None:
-                d = d.astype(jnp.bfloat16)
-
+                d = self.mp_policy.cast_to_compute(d)
+                
         # Embed spatial positions
         xs_embed = jax.vmap(self.spatial_embedder)(xs)  # [n_particles, embedding_size]
 
@@ -121,8 +136,10 @@ class EmbedderBlock(eqx.Module):
             combined += d_embed
 
         # Layer normalization in float32 for stability
-        combined_fp32 = combined.astype(jnp.float32)
-        return jax.vmap(self.layernorm)(combined_fp32)
+        if self.mixed_precision:
+            combined = self.mp_policy.cast_to_output(combined)
+                
+        return jax.vmap(self.layernorm)(combined)
 
 
 class SimplifiedAttentionBlock(eqx.Module):
