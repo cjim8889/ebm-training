@@ -26,6 +26,7 @@ dependencies = [
     "diffrax>=0.6.1",
     "jmp>=0.0.4",
     "jaxtyping>=0.2.36",
+    "pytest>=8.3.4",
 ]
 
 [tool.ruff.lint]
