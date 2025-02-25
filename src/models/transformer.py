@@ -29,8 +29,8 @@ class EmbedderBlock(eqx.Module):
         in_dim = n_spatial_dim + 2 if shortcut else n_spatial_dim + 1
 
         self.particle_embedder = eqx.nn.MLP(
-            in_features=in_dim,
-            out_features=embedding_size,
+            in_size=in_dim,
+            out_size=embedding_size,
             width_size=64,
             depth=3,
             use_bias=True,
