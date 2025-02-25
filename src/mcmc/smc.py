@@ -60,8 +60,8 @@ def _estimate_covariance(
         cov_diag += regularization * jnp.eye(d)
         return cov_diag
 
-
 @eqx.filter_jit
+@chex.assert_max_traces(n=1)
 def generate_samples_with_smc(
     key: PRNGKeyArray,
     initial_samples: Float[Array, "num_samples dim"],
@@ -80,6 +80,7 @@ def generate_samples_with_smc(
     v_theta: Optional[Callable[[Float[Array, "dim"], float], Float[Array, "dim"]]] = None,
     use_shortcut: bool = False,
     initial_log_weights: Optional[Float[Array, "num_samples"]] = None,
+    lambda_factor: Float[Array, ""] = 1.0,
 ) -> Dict[str, Union[Float[Array, "num_timesteps num_samples dim"], 
                      Float[Array, "num_timesteps num_samples"], 
                      Float[Array, "num_timesteps"]]]:
@@ -227,11 +228,11 @@ def generate_samples_with_smc(
         if v_theta is not None:
             if use_shortcut:
                 # Match Euler's behavior by using t_prev and absolute dt
-                propagated_positions = shifted_positions + d * batched_v_theta(
+                propagated_positions = shifted_positions + lambda_factor * d * batched_v_theta(
                     shifted_positions, t_prev, jnp.abs(d)
                 )
             else:
-                propagated_positions = shifted_positions + d * batched_v_theta(
+                propagated_positions = shifted_positions + lambda_factor * d * batched_v_theta(
                     shifted_positions, t_prev
                 )
         else:

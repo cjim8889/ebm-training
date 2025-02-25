@@ -30,6 +30,7 @@ def sample_with_mcmc(
     estimate_covariance: bool = False,
     covariance: Optional[Float[Array, "dim dim"]] = None,
     solver: str = "Euler",
+    lambda_factor: Float[Array, ""] = 1.0,
     **kwargs
 ) -> Dict[str, Union[Float[Array, "num_timesteps num_samples dim"], 
                     Float[Array, "num_timesteps num_samples"],
@@ -58,6 +59,7 @@ def sample_with_mcmc(
         estimate_covariance: Whether to estimate covariance in SMC
         covariance: Fixed covariance matrix (optional) with shape (dim, dim)
         solver: Integration solver to use ("Euler" or "Tsit5")
+        lambda_factor: Factor for adjusting the importance of the velocity field in SMC
         **kwargs: Additional arguments
         
     Returns:
@@ -144,6 +146,7 @@ def sample_with_mcmc(
             estimate_covariance=estimate_covariance,
             v_theta=v_theta_smc,
             use_shortcut=use_shortcut,
+            lambda_factor=lambda_factor,
         )
     
     else:

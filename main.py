@@ -208,6 +208,10 @@ def main():
     parser.add_argument("--mcmc-integration-steps", type=int, default=3)
     parser.add_argument("--mcmc-step-size", type=float, default=0.2)
     parser.add_argument("--with-rejection", action="store_true")
+    parser.add_argument("--lambda-max", type=float, default=0.1, 
+                       help="Maximum value for lambda factor in velocity field contribution")
+    parser.add_argument("--lambda-epochs", type=float, default=4000.0,
+                       help="Number of epochs over which lambda factor increases from 0 to lambda-max")
 
     # Integration configuration
     parser.add_argument(
@@ -351,6 +355,8 @@ def main():
         step_size=args.mcmc_step_size,
         with_rejection=args.with_rejection,
         use_control_variate=args.use_cv,
+        lambda_max=args.lambda_max,
+        lambda_epochs=args.lambda_epochs,
     )
 
     integration_config = IntegrationConfig(

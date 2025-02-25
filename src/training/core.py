@@ -5,6 +5,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import optax
+from jaxtyping import Array, Float
 
 import wandb
 from src.distributions import AnnealedDistribution, Target
@@ -31,6 +32,7 @@ def generate_samples_with_optional_mcmc(
     config: TrainingExperimentConfig,
     use_mcmc: bool = False,
     force_finite: bool = False,
+    lambda_factor: Float[Array, ""] = 1.0,
 ):
     """
     Generate samples with or without MCMC correction.
@@ -43,6 +45,7 @@ def generate_samples_with_optional_mcmc(
         config: Training experiment configuration
         use_mcmc: Whether to use MCMC correction
         force_finite: Whether to replace non-finite values with finite ones
+        lambda_factor: Factor controlling the contribution of the velocity field
         
     Returns:
         Samples dictionary
@@ -72,6 +75,7 @@ def generate_samples_with_optional_mcmc(
         ess_threshold=0.6,  # Default value
         estimate_covariance=False,  # Default value
         solver=config.integration.method,
+        lambda_factor=lambda_factor,
     )
     
     if force_finite:
@@ -102,6 +106,21 @@ def train_velocity_field(
     )
 
     current_end_time = config.sampling.num_timesteps
+
+    # Lambda factor scheduling
+    lambda_max = config.mcmc.lambda_max  # Default to 1.0 if not specified
+    lambda_epochs = config.mcmc.lambda_epochs  # Default to 1 if not specified
+    lambda_total_steps = lambda_epochs * config.training.steps_per_epoch
+
+    def compute_lambda_factor(step):
+        # Exponentially increase lambda from 0 to lambda_max
+        # Calculate progress as a combination of epoch and step
+        total_progress = step / lambda_total_steps
+        
+        if total_progress >= lambda_epochs:
+            return jnp.array(lambda_max, dtype=jnp.float32)
+        # Exponential growth from almost 0 to lambda_max
+        return jnp.array(lambda_max * (1.0 - jnp.exp(-5.0 * total_progress / lambda_epochs)), dtype=jnp.float32)
 
     # Set up base time steps
     if config.integration.schedule == "linear":
@@ -191,6 +210,13 @@ def train_velocity_field(
     )
 
     for epoch in range(config.training.num_epochs):
+        # Calculate current lambda_factor based on the epoch
+        current_lambda = compute_lambda_factor(epoch * config.training.steps_per_epoch)
+        if not config.offline:
+            wandb.log({"lambda_factor": current_lambda})
+        else:
+            print(f"Epoch {epoch}, Lambda Factor: {current_lambda}")
+            
         # Handle time steps for this epoch
         if config.integration.continuous_time:
             key, subkey = jax.random.split(key)
@@ -203,7 +229,7 @@ def train_velocity_field(
             key, subkey = jax.random.split(key)
             mcmc_samples = generate_samples_with_optional_mcmc(
                 subkey, v_theta, current_ts, path_distribution, config, 
-                use_mcmc=True, force_finite=True
+                use_mcmc=True, force_finite=True, lambda_factor=current_lambda
             )
             
             key, subkey = jax.random.split(key)
@@ -232,7 +258,7 @@ def train_velocity_field(
             key, subkey = jax.random.split(key)
             v_theta_samples = generate_samples_with_optional_mcmc(
                 subkey, v_theta, current_ts, path_distribution, config,
-                use_mcmc=False, force_finite=True
+                use_mcmc=False, force_finite=True, lambda_factor=current_lambda
             )
             samples = jnp.concatenate(
                 [mcmc_samples["positions"], v_theta_samples["positions"]], axis=1
@@ -241,7 +267,7 @@ def train_velocity_field(
             key, subkey = jax.random.split(key)
             samples = generate_samples_with_optional_mcmc(
                 key, v_theta, current_ts, path_distribution, config,
-                use_mcmc=True, force_finite=True
+                use_mcmc=True, force_finite=True, lambda_factor=current_lambda
             )
             if isinstance(samples, dict):
                 samples = samples["positions"]
@@ -269,6 +295,7 @@ def train_velocity_field(
         )
 
         for s in range(config.training.steps_per_epoch):
+            # Update lambda factor for each step within the epoch
             key, subkey = jax.random.split(key)
             indices = jax.random.choice(
                 subkey,
