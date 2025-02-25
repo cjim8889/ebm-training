@@ -107,13 +107,17 @@ def generate_samples_with_smc(
 
     chex.assert_rank(initial_log_weights, 1)
     
-    sample_keys = jax.random.split(key, num_samples * ts.shape[0]).reshape(
-        ts.shape[0], num_samples, -1
+    # Split keys for all samples and all timesteps, but exclude the first timestep (since we use initial_samples)
+    num_scan_steps = ts.shape[0] - 1  # We need one less step than the number of timestamps
+    sample_keys = jax.random.split(key, num_samples * num_scan_steps).reshape(
+        num_scan_steps, num_samples, -1
     )
 
+    # Initial particles at time ts[0]
     particles = {
         "positions": initial_samples,
         "log_weights": initial_log_weights,
+        "ess": jnp.array(num_samples),
     }
 
     def _delta(positions, t, t_prev):
@@ -159,19 +163,31 @@ def generate_samples_with_smc(
         return new_positions, new_log_weights
 
     def step(carry, inputs):
-        keys, t, cov = inputs
-        particles_prev, t_prev = carry
-
-        prev_positions = particles_prev["positions"]
-        prev_log_weights = particles_prev["log_weights"]
+        particles_prev, t_idx = carry
+        keys, cov_t = inputs
+        
+        # Get current and next time from ts
+        t_prev = ts[t_idx]
+        t = ts[t_idx + 1]
+        
+        # Time step for ODE integration
         d = t - t_prev
+        
+        # Use provided covariance or estimate it if needed
         if covariances is None and estimate_covariance:
             cov = _estimate_covariance(
-                prev_positions, log_weights_to_weights(prev_log_weights), diagonal=True
+                particles_prev["positions"], 
+                log_weights_to_weights(particles_prev["log_weights"]), 
+                diagonal=True
             )
+        elif covariances is None:
+            # Use default identity covariance when neither provided nor estimated
+            cov = None
+        else:
+            cov = cov_t
 
         # Compute ESS and Resample if necessary
-        ess_val = ess(log_weights=prev_log_weights)  # Scalar
+        ess_val = ess(log_weights=particles_prev["log_weights"])  # Scalar
         ess_percentage = ess_val / num_samples  # Scalar
 
         # Define the condition for resampling
@@ -179,18 +195,18 @@ def generate_samples_with_smc(
             resample_key, _ = jax.random.split(keys[0])
             # Resample particles
             new_positions, new_log_weights = _resample(
-                resample_key, prev_positions, prev_log_weights
+                resample_key, particles_prev["positions"], particles_prev["log_weights"]
             )
 
             return {"positions": new_positions, "log_weights": new_log_weights}
 
         def do_nothing():
             # Keep the particles as is with normalized log weights
-            log_weights_normalized = prev_log_weights - jax.scipy.special.logsumexp(
-                prev_log_weights
+            log_weights_normalized = particles_prev["log_weights"] - jax.scipy.special.logsumexp(
+                particles_prev["log_weights"]
             )
             return {
-                "positions": prev_positions,
+                "positions": particles_prev["positions"],
                 "log_weights": log_weights_normalized,
             }
 
@@ -210,8 +226,9 @@ def generate_samples_with_smc(
         # If v_theta is provided, use it to propagate particles first
         if v_theta is not None:
             if use_shortcut:
+                # Match Euler's behavior by using t_prev and absolute dt
                 propagated_positions = shifted_positions + d * batched_v_theta(
-                    shifted_positions, t_prev, d
+                    shifted_positions, t_prev, jnp.abs(d)
                 )
             else:
                 propagated_positions = shifted_positions + d * batched_v_theta(
@@ -233,31 +250,61 @@ def generate_samples_with_smc(
             next_log_weights
         )
 
-        # Update time
+        # Update carry with new particles and next time index
+        # Include the ess key to match the input carry structure
         new_carry = (
             {
                 "positions": propagated_positions,
                 "log_weights": next_log_weights,
+                "ess": particles_new["ess"],  # Make sure to include ess in the new carry
             },
-            t,
+            t_idx + 1,
         )
 
-        # Output current particles
-        return new_carry, particles_new
+        # Output particles at time t
+        return new_carry, {
+            "positions": propagated_positions,
+            "log_weights": next_log_weights,
+            "ess": particles_new["ess"],
+        }
 
-    # Perform the SMC over all time steps
-    _, output = jax.lax.scan(
+    # Prepare covariances for scan if provided
+    if covariances is not None:
+        scan_covariances = covariances[1:]  # Skip first element since we match with ts[1:] in the scan
+    else:
+        scan_covariances = None
+    
+    # Run scan over time indices from 0 to num_timesteps-2
+    # This will generate particles at times ts[1] to ts[num_timesteps-1]
+    _, scan_particles = jax.lax.scan(
         step,
-        (particles, 0.0),  # Initial carry: particles and initial time
-        (sample_keys, ts, covariances),  # Inputs: resampled keys and time steps
+        (particles, 0),  # Initial carry: particles at ts[0] and time index 0
+        (sample_keys, scan_covariances),  # Inputs for each time step
     )
-
-    weights = jax.vmap(log_weights_to_weights)(output["log_weights"])
+    
+    # Now we need to include the initial particles at ts[0]
+    all_positions = jnp.concatenate([
+        jnp.expand_dims(particles["positions"], axis=0),
+        scan_particles["positions"]
+    ], axis=0)
+    
+    all_log_weights = jnp.concatenate([
+        jnp.expand_dims(particles["log_weights"], axis=0),
+        scan_particles["log_weights"]
+    ], axis=0)
+    
+    all_ess = jnp.concatenate([
+        jnp.expand_dims(particles["ess"], axis=0),
+        scan_particles["ess"]
+    ], axis=0)
+    
+    # Convert all log weights to weights
+    all_weights = jax.vmap(log_weights_to_weights)(all_log_weights)
 
     return {
-        "positions": output["positions"],
-        "weights": weights,
-        "ess": output["ess"],
+        "positions": all_positions,
+        "weights": all_weights,
+        "ess": all_ess,
     }
 
 def systematic_resampling(
