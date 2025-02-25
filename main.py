@@ -2,6 +2,7 @@ import argparse
 
 import jax
 import jax.numpy as jnp
+import jmp
 
 import wandb
 from distributions import (
@@ -45,6 +46,33 @@ from training.config import (
 )
 from training.core import train_velocity_field
 
+
+def create_mixed_precision_policy(mixed_precision=False):
+    """
+    Create a mixed precision policy for the model.
+    
+    Args:
+        mixed_precision (bool): Whether to use mixed precision. If True, uses bfloat16 
+                               for computation while keeping parameters in float32.
+                               
+    Returns:
+        jmp.Policy: A policy object that can be used to control mixed precision behavior.
+    """
+    if mixed_precision:
+        # Use bfloat16 for computation, but keep parameters in float32
+        policy = jmp.Policy(
+            param_dtype=jnp.float32,    # Keep parameters in float32
+            compute_dtype=jnp.bfloat16, # Use bfloat16 for computation
+            output_dtype=jnp.float32,   # Return outputs in float32
+        )
+    else:
+        # Use float32 throughout when mixed precision is disabled
+        policy = jmp.Policy(
+            param_dtype=jnp.float32,
+            compute_dtype=jnp.float32,
+            output_dtype=jnp.float32,
+        )
+    return policy
 
 def main():
     parser = argparse.ArgumentParser()
@@ -423,6 +451,10 @@ def main():
         mixed_precision=args.mixed_precision,
         resume_from=args.resume_from,
     )
+    
+    # Create and set mixed precision policy
+    mp_policy = create_mixed_precision_policy(config.mixed_precision)
+    config.mp_policy = mp_policy
 
     # Initialize distributions based on density config
     key, subkey = jax.random.split(key)
@@ -738,6 +770,7 @@ def main():
             attn_dropout_rate=config.model.dropout,
             key=model_key,
             shortcut=config.training.use_shortcut,
+            mp_policy=config.mp_policy,
         )
     elif config.model.architecture == "transformer2":
         v_theta = ParticleTransformerV2(
@@ -750,7 +783,7 @@ def main():
             attn_dropout_rate=config.model.dropout,
             key=model_key,
             shortcut=config.training.use_shortcut,
-            mixed_precision=config.mixed_precision,
+            mp_policy=config.mp_policy,
         )
     elif config.model.architecture == "omlp":
         v_theta = OptimizedVelocityField(

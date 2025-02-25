@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import jmp
 from typing import Optional, Literal, Callable, Any, List
 
 
@@ -147,3 +148,4 @@ class TrainingExperimentConfig:
     debug: bool = False
     mixed_precision: bool = False
     resume_from: Optional[str] = None
+    mp_policy: jmp.Policy = None  # Field to store the JMP mixed precision policy
