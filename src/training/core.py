@@ -182,6 +182,13 @@ def train_velocity_field(
         )
 
     opt_state = optimizer.init(eqx.filter(v_theta, eqx.is_inexact_array))
+    
+    # Function to get current learning rate from schedule
+    def get_current_lr(step_count):
+        if config.training.use_schedule:
+            return lr_schedule(step_count)
+        else:
+            return config.training.learning_rate
 
     @eqx.filter_jit
     def step(key, v_theta, opt_state, particles):
@@ -316,15 +323,15 @@ def train_velocity_field(
             epoch_loss += loss
             if s % 20 == 0:
                 if not config.offline:
-                    wandb.log({"loss": loss})
+                    wandb.log({"loss": loss, "learning_rate": get_current_lr(epoch * config.training.steps_per_epoch + s)})
                 else:
-                    print(f"Epoch {epoch}, Step {s}, Loss: {loss}")
+                    print(f"Epoch {epoch}, Step {s}, Loss: {loss}, Learning Rate: {get_current_lr(epoch * config.training.steps_per_epoch + s)}")
 
         avg_loss = epoch_loss / config.training.steps_per_epoch
         if not config.offline:
-            wandb.log({"epoch": epoch, "average_loss": avg_loss})
+            wandb.log({"epoch": epoch, "average_loss": avg_loss, "epoch_learning_rate": get_current_lr(epoch * config.training.steps_per_epoch)})
         else:
-            print(f"Epoch {epoch}, Average Loss: {avg_loss}")
+            print(f"Epoch {epoch}, Average Loss: {avg_loss}, Learning Rate: {get_current_lr(epoch * config.training.steps_per_epoch)}")
 
         if epoch % config.training.eval_frequency == 0:
             # Run multiple evaluations
