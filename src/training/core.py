@@ -155,11 +155,11 @@ def train_velocity_field(
         total_steps = config.training.num_epochs * config.training.steps_per_epoch
 
         lr_schedule = optax.warmup_cosine_decay_schedule(
-            init_value=1e-5,
+            init_value=config.training.schedule_init_value,
             peak_value=config.training.learning_rate,
-            warmup_steps=100 * config.training.steps_per_epoch,
-            decay_steps=total_steps // 4,
-            end_value=5e-05,
+            warmup_steps=config.training.schedule_warmup_steps,
+            decay_steps=int(total_steps * config.training.schedule_decay_fraction),
+            end_value=config.training.schedule_end_value,
         )
 
     base_optimizer = get_optimizer(

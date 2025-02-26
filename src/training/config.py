@@ -51,6 +51,11 @@ class TrainingConfig:
     use_schedule: bool = False
     use_combined_loss: bool = False
     shortcut_weight: float = 0.5
+    # Learning rate schedule parameters
+    schedule_init_value: float = 1e-5  # Initial learning rate value for schedule
+    schedule_warmup_steps: int = 10000  # Number of warmup steps
+    schedule_decay_fraction: float = 0.25  # Fraction of total steps used for decay
+    schedule_end_value: float = 1e-5  # Final learning rate value after decay
 
 
 @dataclass
