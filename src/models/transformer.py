@@ -28,9 +28,12 @@ class EmbedderBlock(eqx.Module):
         self.mp_policy = mp_policy
         in_dim = n_spatial_dim + 2 if shortcut else n_spatial_dim + 1
 
-        self.particle_embedder = eqx.nn.Linear(
-            in_features=in_dim,
-            out_features=embedding_size,
+        self.particle_embedder = eqx.nn.MLP(
+            in_size=in_dim,
+            out_size=embedding_size,
+            width_size=64,
+            depth=3,
+            activation=jax.nn.silu,
             use_bias=True,
             key=key,
             dtype=mp_policy.param_dtype,
@@ -92,8 +95,8 @@ class SimplifiedAttentionBlock(eqx.Module):
         attn_key, dropout_key = (
             jax.random.split(key) if key is not None else (None, None)
         )
-        inputs = self.mp_policy.cast_to_compute(inputs)
-        attention = self.mp_policy.cast_to_compute(self.attention)
+        inputs = self.mp_policy.cast_to_output(inputs)
+        attention = self.mp_policy.cast_to_output(self.attention)
 
         # Self-attention with residual connection
         attn_out = attention(
@@ -106,7 +109,7 @@ class SimplifiedAttentionBlock(eqx.Module):
         attn_out = self.dropout(attn_out, key=dropout_key, inference=not enable_dropout)
         attn_out = inputs + attn_out
 
-        return self.mp_policy.cast_to_output(jax.vmap(self.layernorm)(attn_out.astype(jnp.float32)))
+        return jax.vmap(self.layernorm)(attn_out)
 
 
 class EfficientFFN(eqx.Module):
