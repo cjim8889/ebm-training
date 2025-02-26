@@ -205,6 +205,32 @@ def main():
     parser.add_argument(
         "--noise-scale", type=float, default=0.01, help="Noise scale for noisy SGD"
     )
+    
+    # Learning rate schedule parameters
+    parser.add_argument(
+        "--schedule-init-value", 
+        type=float, 
+        default=1e-5, 
+        help="Initial learning rate value for warmup cosine decay schedule"
+    )
+    parser.add_argument(
+        "--schedule-warmup-steps", 
+        type=int, 
+        default=10000, 
+        help="Number of warmup steps for learning rate schedule"
+    )
+    parser.add_argument(
+        "--schedule-decay-fraction", 
+        type=float, 
+        default=0.25, 
+        help="Fraction of total steps used for decay phase in learning rate schedule"
+    )
+    parser.add_argument(
+        "--schedule-end-value", 
+        type=float, 
+        default=1e-5, 
+        help="Final learning rate value after decay in schedule"
+    )
 
     # MCMC configuration
     parser.add_argument(
@@ -352,6 +378,10 @@ def main():
         use_combined_loss=args.use_combined_loss,
         shortcut_weight=args.shortcut_weight,
         random_alpha=args.random_alpha,
+        schedule_init_value=args.schedule_init_value,
+        schedule_warmup_steps=args.schedule_warmup_steps,
+        schedule_decay_fraction=args.schedule_decay_fraction,
+        schedule_end_value=args.schedule_end_value,
     )
 
     mcmc_config = MCMCConfig(
