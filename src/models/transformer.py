@@ -44,7 +44,12 @@ class EmbedderBlock(eqx.Module):
         self.n_particles = n_particles
         self.n_spatial_dim = n_spatial_dim
 
-    def __call__(self, xs, t, d=None):
+    def __call__(
+        self, 
+        xs: Float[Array, "num_particles spatial_dim"],
+        t: Float[Array, ""],
+        d: Optional[Float[Array, ""]] = None
+    ) -> Float[Array, "num_particles embedding_dim"]:
         if self.shortcut:
             d = jnp.broadcast_to(d, (xs.shape[0], 1))
             t = jnp.broadcast_to(t, (xs.shape[0], 1))
@@ -91,7 +96,12 @@ class SimplifiedAttentionBlock(eqx.Module):
         self.layernorm = eqx.nn.LayerNorm(hidden_size, dtype=jnp.float32)
         self.dropout = eqx.nn.Dropout(dropout_rate)
 
-    def __call__(self, inputs, enable_dropout=False, key=None):
+    def __call__(
+        self, 
+        inputs: Float[Array, "num_particles hidden_size"],
+        enable_dropout: bool = False, 
+        key: Optional[jax.random.PRNGKey] = None
+    ) -> Float[Array, "num_particles hidden_size"]:
         attn_key, dropout_key = (
             jax.random.split(key) if key is not None else (None, None)
         )
@@ -128,7 +138,12 @@ class EfficientFFN(eqx.Module):
         self.layernorm = eqx.nn.LayerNorm(hidden_size, dtype=jnp.float32)
         self.dropout = eqx.nn.Dropout(dropout_rate)
 
-    def __call__(self, x, enable_dropout=False, key=None):
+    def __call__(
+        self, 
+        x: Float[Array, "num_particles hidden_size"],
+        enable_dropout: bool = False, 
+        key: Optional[jax.random.PRNGKey] = None
+    ) -> Float[Array, "num_particles hidden_size"]:
         x = self.mp_policy.cast_to_compute(x)
         linear1 = self.mp_policy.cast_to_compute(self.linear1)
         linear2 = self.mp_policy.cast_to_compute(self.linear2)
@@ -169,7 +184,12 @@ class TransformerLayer(eqx.Module):
             mp_policy=mp_policy,
         )
 
-    def __call__(self, x, enable_dropout=False, key=None):
+    def __call__(
+        self, 
+        x: Float[Array, "num_particles hidden_size"],
+        enable_dropout: bool = False, 
+        key: Optional[jax.random.PRNGKey] = None
+    ) -> Float[Array, "num_particles hidden_size"]:
         attn_key, ffn_key = jax.random.split(key) if key is not None else (None, None)
 
         x = self.mp_policy.cast_to_compute(x)
@@ -228,13 +248,13 @@ class ParticleTransformer(eqx.Module):
 
     def __call__(
         self,
-        xs: Float[Array, "..."],
-        t: Float,
-        d: Optional[Float] = None,
+        xs: Float[Array, "num_particles * spatial_dim"],
+        t: Float[Array, ""],
+        d: Optional[Float[Array, ""]] = None,
         *,
         enable_dropout: bool = False,
         key: Optional[jax.random.PRNGKey] = None,
-    ) -> Float[Array, "..."]:
+    ) -> Float[Array, "num_particles * spatial_dim"]:
         if self.shortcut and d is None:
             raise ValueError("d must be provided when shortcut is enabled")
         

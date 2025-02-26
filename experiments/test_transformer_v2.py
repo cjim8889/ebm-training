@@ -1,7 +1,8 @@
 import jax
 import jax.numpy as jnp
-from models.transformer_v2 import ParticleTransformerV2
+import jmp
 
+from src.models.transformer_v2 import ParticleTransformerV2
 
 # Initialize PRNG key
 key = jax.random.PRNGKey(42)
@@ -15,6 +16,7 @@ num_heads = 4
 ff_dim = 64
 depth = 2
 shortcut = False
+mp_policy = jmp.Policy(jnp.float32, jnp.float32, jnp.float32)
 
 
 net = ParticleTransformerV2(
@@ -27,6 +29,7 @@ net = ParticleTransformerV2(
     attn_dropout_rate=0.1,
     key=key,
     shortcut=True,
+    mp_policy=mp_policy,
 )
 
 # Example input
