@@ -1,76 +1,19 @@
-from typing import Callable, List, Optional
+from typing import List, Optional
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-import jmp  # Add jmp import
+import jmp
 from jaxtyping import Array, Float
 
 
-class MixedPrecisionMLP(eqx.Module):
-    layers: list
-    activation: Callable = eqx.field(static=True)
-    mp_policy: Optional[jmp.Policy] = eqx.field(static=True)
-    mixed_precision: bool = eqx.field(static=True)
-
-    def __init__(
-        self,
-        in_size: int,
-        out_size: int,
-        width_size: int,
-        depth: int,
-        key: jax.random.PRNGKey,
-        activation: Callable = jax.nn.silu,
-        mp_policy: Optional[jmp.Policy] = None,
-        mixed_precision: bool = False,
-    ):
-        keys = jax.random.split(key, depth + 1)
-        layers = []
-        current_size = in_size
-        for i in range(depth):
-            layers.append(eqx.nn.Linear(current_size, width_size, key=keys[i]))
-            layers.append(eqx.nn.Lambda(activation))
-            current_size = width_size
-        layers.append(eqx.nn.Linear(current_size, out_size, key=keys[-1]))
-        self.layers = layers
-        self.activation = activation
-        self.mp_policy = mp_policy
-        self.mixed_precision = mixed_precision
-
-    def __call__(self, x):
-        if self.mixed_precision:
-            # Use JMP policy to cast inputs to compute dtype
-            x = self.mp_policy.cast_to_compute(x)
-            
-            # Process through layers
-            for layer in self.layers:
-                if isinstance(layer, eqx.nn.Linear):
-                    # Cast weights to compute dtype
-                    weight = self.mp_policy.cast_to_compute(layer.weight)
-                    bias = self.mp_policy.cast_to_compute(layer.bias)
-                    x = jnp.dot(x, weight.T) + bias
-                    x = self.activation(x)
-                else:
-                    x = layer(x)
-                    
-            # Cast back to output dtype
-            x = self.mp_policy.cast_to_output(x)
-        else:
-            # Process in full precision
-            for layer in self.layers:
-                x = layer(x)
-        return x
-
 class EmbedderBlock(eqx.Module):
-    spatial_embedder: MixedPrecisionMLP
-    time_embedder: MixedPrecisionMLP
-    d_embedder: Optional[MixedPrecisionMLP]
+    particle_embedder: eqx.nn.Linear
     layernorm: eqx.nn.LayerNorm
     n_particles: int
-    embedding_size: int
+    n_spatial_dim: int
     shortcut: bool = eqx.field(static=True)
-    mixed_precision: bool = eqx.field(static=True)
-    mp_policy: Optional[jmp.Policy] = eqx.field(static=True)
+    mp_policy: jmp.Policy = eqx.field(static=True)
 
     def __init__(
         self,
@@ -78,68 +21,49 @@ class EmbedderBlock(eqx.Module):
         n_spatial_dim: int,
         embedding_size: int,
         key: jax.random.PRNGKey,
+        mp_policy: jmp.Policy,
         shortcut: bool = False,
-        mixed_precision: bool = False,
-        mp_policy: Optional[jmp.Policy] = None,
     ):
         self.shortcut = shortcut
-        self.n_particles = n_particles
-        self.embedding_size = embedding_size
-        self.mixed_precision = mixed_precision
         self.mp_policy = mp_policy
+        in_dim = n_spatial_dim + 2 if shortcut else n_spatial_dim + 1
 
-        spatial_key, time_key, d_key = jax.random.split(key, 3)
-        self.spatial_embedder = MixedPrecisionMLP(
-            n_spatial_dim, embedding_size, width_size=32, depth=2, key=spatial_key, 
-            mixed_precision=mixed_precision, mp_policy=mp_policy
+        self.particle_embedder = eqx.nn.MLP(
+            in_size=in_dim,
+            out_size=embedding_size,
+            width_size=64,
+            depth=3,
+            activation=jax.nn.silu,
+            use_bias=True,
+            key=key,
+            dtype=mp_policy.param_dtype,
         )
-        self.time_embedder = MixedPrecisionMLP(
-            1, embedding_size, width_size=32, depth=2, key=time_key, 
-            mixed_precision=mixed_precision, mp_policy=mp_policy
-        )
-        self.d_embedder = (
-            MixedPrecisionMLP(1, embedding_size, width_size=32, depth=2, key=d_key, 
-                          mixed_precision=mixed_precision, mp_policy=mp_policy)
-            if shortcut
-            else None
-        )
+        # Correct LayerNorm shape to feature dimension only
+        self.layernorm = eqx.nn.LayerNorm(shape=(embedding_size,), dtype=jnp.float32)
 
-        # Layer normalization
-        self.layernorm = eqx.nn.LayerNorm(embedding_size)
+        self.n_particles = n_particles
+        self.n_spatial_dim = n_spatial_dim
 
-    def __call__(self, xs, t, d=None):
-        if self.mixed_precision:
-            # Use JMP policy for type casting
-            xs = self.mp_policy.cast_to_compute(xs)
-            t = self.mp_policy.cast_to_compute(t)
-            if d is not None:
-                d = self.mp_policy.cast_to_compute(d)
-                
-        # Embed spatial positions
-        xs_embed = jax.vmap(self.spatial_embedder)(xs)  # [n_particles, embedding_size]
-
-        # Embed time `t`
-        if jnp.ndim(t) == 0:
-            t = jnp.expand_dims(t, 0)
-        t_embed = self.time_embedder(t)  # [embedding_size, ]
-        t_embed = t_embed.reshape(1, -1)  # Reshape to [1, embedding_size]
-
-        # Combine embeddings: xs + t
-        combined = xs_embed + t_embed
-
-        # If shortcut, embed `d` and add to combined embeddings
+    def __call__(
+        self, 
+        xs: Float[Array, "num_particles spatial_dim"],
+        t: Float[Array, ""],
+        d: Optional[Float[Array, ""]] = None
+    ) -> Float[Array, "num_particles embedding_dim"]:
         if self.shortcut:
-            if jnp.ndim(d) == 0:
-                d = jnp.expand_dims(d, 0)
-            d_embed = self.d_embedder(d)  # [embedding_size, ]
-            d_embed = d_embed.reshape(1, -1)  # Reshape to [1, embedding_size]
-            combined += d_embed
+            d = jnp.broadcast_to(d, (xs.shape[0], 1))
+            t = jnp.broadcast_to(t, (xs.shape[0], 1))
+            input = jnp.concatenate([xs, t, d], axis=-1)
+        else:
+            t = jnp.broadcast_to(t, (xs.shape[0], 1))
+            input = jnp.concatenate([xs, t], axis=-1)
 
-        # Layer normalization in float32 for stability
-        if self.mixed_precision:
-            combined = self.mp_policy.cast_to_output(combined)
-                
-        return jax.vmap(self.layernorm)(combined)
+        input = self.mp_policy.cast_to_compute(input)
+        embedder = self.mp_policy.cast_to_compute(self.particle_embedder)
+
+        embedded = jax.vmap(embedder)(input)
+        # Apply LayerNorm with vmap per-particle using fp32
+        return self.mp_policy.cast_to_output(jax.vmap(self.layernorm)(embedded.astype(jnp.float32)))
 
 
 class SimplifiedAttentionBlock(eqx.Module):
@@ -148,8 +72,9 @@ class SimplifiedAttentionBlock(eqx.Module):
     attention: eqx.nn.MultiheadAttention
     layernorm: eqx.nn.LayerNorm
     dropout: eqx.nn.Dropout
+    rope_embeddings: eqx.nn.RotaryPositionalEmbedding
+    mp_policy: jmp.Policy = eqx.field(static=True)
     num_heads: int = eqx.field(static=True)
-    mixed_precision: bool = eqx.field(static=True)
 
     def __init__(
         self,
@@ -158,142 +83,117 @@ class SimplifiedAttentionBlock(eqx.Module):
         dropout_rate: float,
         attention_dropout_rate: float,
         key: jax.random.PRNGKey,
-        mixed_precision: bool = False,
+        mp_policy: jmp.Policy,
     ):
+        self.mp_policy = mp_policy
         self.num_heads = num_heads
-        self.mixed_precision = mixed_precision
         self.attention = eqx.nn.MultiheadAttention(
             num_heads=num_heads,
             query_size=hidden_size,
             dropout_p=attention_dropout_rate,
             key=key,
-            dtype=jnp.bfloat16 if mixed_precision else jnp.float32,
+            dtype=mp_policy.param_dtype,
         )
-        self.layernorm = eqx.nn.LayerNorm(hidden_size)
+        self.layernorm = eqx.nn.LayerNorm(hidden_size, dtype=jnp.float32)
         self.dropout = eqx.nn.Dropout(dropout_rate)
+        self.rope_embeddings = eqx.nn.RotaryPositionalEmbedding(
+            embedding_size=hidden_size // num_heads,
+            theta=10000.0,
+            dtype=mp_policy.param_dtype,
+        )
 
-    def __call__(self, inputs, enable_dropout=False, key=None):
+    def __call__(
+        self, 
+        inputs: Float[Array, "num_particles hidden_size"],
+        enable_dropout: bool = False, 
+        key: Optional[jax.random.PRNGKey] = None
+    ) -> Float[Array, "num_particles hidden_size"]:
+        def process_heads(
+            query_heads: Float[Array, "num_particles num_heads qk_size"],
+            key_heads: Float[Array, "num_particles num_heads qk_size"],
+            value_heads: Float[Array, "num_particles num_heads vo_size"]
+        ) -> tuple[
+            Float[Array, "num_particles num_heads qk_size"],
+            Float[Array, "num_particles num_heads qk_size"],
+            Float[Array, "num_particles num_heads vo_size"]
+        ]:
+            query_heads = jax.vmap(self.rope_embeddings,
+                                   in_axes=1,
+                                   out_axes=1)(query_heads)
+            key_heads = jax.vmap(self.rope_embeddings,
+                                 in_axes=1,
+                                 out_axes=1)(key_heads)
+
+            return query_heads, key_heads, value_heads
+        
+
         attn_key, dropout_key = (
             jax.random.split(key) if key is not None else (None, None)
         )
-
-        if self.mixed_precision:
-            inputs = inputs.astype(jnp.bfloat16)
+        inputs = self.mp_policy.cast_to_output(inputs)
+        attention = self.mp_policy.cast_to_output(self.attention)
 
         # Self-attention with residual connection
-        attn_out = self.attention(
+        attn_out = attention(
             query=inputs,
             key_=inputs,
             value=inputs,
             inference=not enable_dropout,
             key=attn_key,
+            process_heads=process_heads,
         )
         attn_out = self.dropout(attn_out, key=dropout_key, inference=not enable_dropout)
         attn_out = inputs + attn_out
 
-        # Layer normalization in float32 for stability
-        attn_out = attn_out.astype(jnp.float32)
         return jax.vmap(self.layernorm)(attn_out)
 
+
 class EfficientFFN(eqx.Module):
-    """
-    An efficient feed-forward network (FFN) module with mixed precision support.
-    
-    Args:
-        hidden_size (int): The size of the hidden dimension.
-        dropout_rate (float): The dropout rate to apply after activations.
-        key (jax.random.PRNGKey): Random key for initializing the layers.
-        mixed_precision (bool, optional): Whether to use mixed precision (bfloat16 for efficiency,
-            float32 for stability). Defaults to False.
-    """
-    conv: eqx.nn.Conv1d
+    """Optimized feed-forward network with parameter reuse."""
+
     linear1: eqx.nn.Linear
     linear2: eqx.nn.Linear
-    linear3: eqx.nn.Linear
     layernorm: eqx.nn.LayerNorm
     dropout: eqx.nn.Dropout
-    mixed_precision: bool = eqx.field(static=True)
-
-    def __init__(
-        self,
-        hidden_size: int,
-        dropout_rate: float,
-        key: jax.random.PRNGKey,
-        mixed_precision: bool = False,
-    ):
-        self.mixed_precision = mixed_precision
-        key, subkey = jax.random.split(key)
-        self.conv = eqx.nn.Conv1d(
-            in_channels=hidden_size,
-            out_channels=hidden_size,
-            kernel_size=3,
-            padding=1,
-            groups=hidden_size,  # Depthwise convolution
-            key=subkey,
-            dtype=jnp.bfloat16 if mixed_precision else jnp.float32,
-        )
-        key, subkey1, subkey2, subkey3 = jax.random.split(key, 4)
-        self.linear1 = eqx.nn.Linear(hidden_size, hidden_size * 4, key=subkey1, dtype=jnp.bfloat16 if mixed_precision else jnp.float32)
-        self.linear2 = eqx.nn.Linear(hidden_size * 4, hidden_size * 4, key=subkey2, dtype=jnp.bfloat16 if mixed_precision else jnp.float32)
-        self.linear3 = eqx.nn.Linear(hidden_size * 4, hidden_size, key=subkey3, dtype=jnp.bfloat16 if mixed_precision else jnp.float32)
-        self.layernorm = eqx.nn.LayerNorm(hidden_size)
+    mp_policy: jmp.Policy = eqx.field(static=True)
+    def __init__(self, hidden_size, dropout_rate, key, mp_policy: jmp.Policy):
+        self.mp_policy = mp_policy
+        key1, key2 = jax.random.split(key)
+        self.linear1 = eqx.nn.Linear(hidden_size, hidden_size * 4, key=key1, dtype=mp_policy.param_dtype)
+        self.linear2 = eqx.nn.Linear(hidden_size * 4, hidden_size, key=key2, dtype=mp_policy.param_dtype)
+        self.layernorm = eqx.nn.LayerNorm(hidden_size, dtype=jnp.float32)
         self.dropout = eqx.nn.Dropout(dropout_rate)
 
     def __call__(
-        self,
-        x: Float[Array, "n_particles hidden_size"],
-        enable_dropout: bool = False,
+        self, 
+        x: Float[Array, "num_particles hidden_size"],
+        enable_dropout: bool = False, 
         key: Optional[jax.random.PRNGKey] = None
-    ) -> Float[Array, "n_particles hidden_size"]:
-        """
-        Forward pass of the EfficientFFN module.
+    ) -> Float[Array, "num_particles hidden_size"]:
+        x = self.mp_policy.cast_to_compute(x)
+        linear1 = self.mp_policy.cast_to_compute(self.linear1)
+        linear2 = self.mp_policy.cast_to_compute(self.linear2)
+        layernorm = self.mp_policy.cast_to_compute(self.layernorm)
 
-        Args:
-            x (Float[Array, "n_particles hidden_size"]): Input tensor.
-            enable_dropout (bool, optional): Whether to enable dropout during the forward pass.
-                Defaults to False.
-            key (Optional[jax.random.PRNGKey], optional): Random key for dropout. Required if
-                enable_dropout is True. Defaults to None.
-
-        Returns:
-            Float[Array, "n_particles hidden_size"]: Output tensor after applying the FFN.
-        """
-        # Cast input to bfloat16 if mixed precision is enabled
-        if self.mixed_precision:
-            x = x.astype(jnp.bfloat16)
-
-        # Apply depthwise convolution across particles
-        x_conv = self.conv(x.transpose(1, 0)).transpose(1, 0)  # [n_particles, hidden_size]
-        x = x + x_conv
-
-        # Apply FFN with three layers
         residual = x
-        x = jax.vmap(self.linear1)(x)
-        x = jax.nn.gelu(x)
-        if enable_dropout and key is not None:
-            x = self.dropout(x, key=key, inference=not enable_dropout)
-        
-        x = jax.vmap(self.linear2)(x)
-        x = jax.nn.gelu(x)
-        if enable_dropout and key is not None:
-            x = self.dropout(x, key=key, inference=not enable_dropout)
-        
-        x = jax.vmap(self.linear3)(x)
-        # Add residual connection
-        x = residual + x
+        # Apply vmap to linear layers to process each particle
+        x = jax.vmap(linear1)(x)
+        # Cast to FP32 before GELU activation for improved numerical stability
+        x = jax.nn.gelu(x.astype(jnp.float32))
+        x = self.dropout(x, key=key, inference=not enable_dropout)
+        x = jax.vmap(linear2)(x) + residual
+        return self.mp_policy.cast_to_output(jax.vmap(layernorm)(x.astype(jnp.float32)))
 
-        # Apply layer normalization in float32 for stability
-        if self.mixed_precision:
-            x = x.astype(jnp.float32)
-        return jax.vmap(self.layernorm)(x)
 
 class TransformerLayer(eqx.Module):
     """Combined transformer layer with optimized components."""
 
     attn: SimplifiedAttentionBlock
     ffn: EfficientFFN
+    mp_policy: jmp.Policy = eqx.field(static=True)
 
-    def __init__(self, hidden_size, num_heads, dropout_rate, attn_dropout_rate, key, mixed_precision=False):
+    def __init__(self, hidden_size, num_heads, dropout_rate, attn_dropout_rate, key, mp_policy: jmp.Policy):
+        self.mp_policy = mp_policy
         key1, key2 = jax.random.split(key)
         self.attn = SimplifiedAttentionBlock(
             hidden_size=hidden_size,
@@ -301,30 +201,36 @@ class TransformerLayer(eqx.Module):
             dropout_rate=dropout_rate,
             attention_dropout_rate=attn_dropout_rate,
             key=key1,
-            mixed_precision=mixed_precision,
+            mp_policy=mp_policy,
         )
         self.ffn = EfficientFFN(
             hidden_size=hidden_size,
             dropout_rate=dropout_rate,
             key=key2,
-            mixed_precision=mixed_precision,
+            mp_policy=mp_policy,
         )
 
-    def __call__(self, x, enable_dropout=False, key=None):
+    def __call__(
+        self, 
+        x: Float[Array, "num_particles hidden_size"],
+        enable_dropout: bool = False, 
+        key: Optional[jax.random.PRNGKey] = None
+    ) -> Float[Array, "num_particles hidden_size"]:
         attn_key, ffn_key = jax.random.split(key) if key is not None else (None, None)
+
+        x = self.mp_policy.cast_to_compute(x)
         x = self.attn(x, enable_dropout, attn_key)
-        return self.ffn(x, enable_dropout, ffn_key)
+        return self.mp_policy.cast_to_output(self.ffn(x, enable_dropout, ffn_key))
 
 
 class ParticleTransformerV2(eqx.Module):
     """Efficient transformer with optional d-conditioning."""
 
-    n_spatial_dim: int = eqx.field(static=True)
     embedder: EmbedderBlock
     layers: List[TransformerLayer]
     predictor: eqx.nn.Linear
     shortcut: bool = eqx.field(static=True)
-    mixed_precision: bool = eqx.field(static=True)
+    mp_policy: jmp.Policy = eqx.field(static=True)
 
     def __init__(
         self,
@@ -336,11 +242,11 @@ class ParticleTransformerV2(eqx.Module):
         dropout_rate: float,
         attn_dropout_rate: float,
         key: jax.random.PRNGKey,
+        mp_policy: jmp.Policy,
         shortcut: bool = False,
-        mixed_precision: bool = False,
     ):
         self.shortcut = shortcut
-        self.mixed_precision = mixed_precision
+        self.mp_policy = mp_policy
         e_key, l_key, p_key = jax.random.split(key, 3)
 
         self.embedder = EmbedderBlock(
@@ -349,7 +255,7 @@ class ParticleTransformerV2(eqx.Module):
             embedding_size=hidden_size,
             key=e_key,
             shortcut=shortcut,
-            mixed_precision=mixed_precision,
+            mp_policy=mp_policy,
         )
 
         self.layers = [
@@ -359,28 +265,33 @@ class ParticleTransformerV2(eqx.Module):
                 dropout_rate=dropout_rate,
                 attn_dropout_rate=attn_dropout_rate,
                 key=k,
-                mixed_precision=mixed_precision,
+                mp_policy=mp_policy,
             )
             for k in jax.random.split(l_key, num_layers)
         ]
 
-        self.predictor = eqx.nn.MLP(hidden_size, n_spatial_dim, width_size=hidden_size//2, depth=2, key=p_key, dtype=jnp.bfloat16 if mixed_precision else jnp.float32)
-
-        self.n_spatial_dim = n_spatial_dim
+        self.predictor = eqx.nn.Linear(hidden_size, n_spatial_dim, key=p_key, dtype=mp_policy.param_dtype)
 
     def __call__(
         self,
-        xs: Float[Array, "..."],
-        t: Float,
-        d: Optional[Float] = None,
+        xs: Float[Array, "num_particles * spatial_dim"],
+        t: Float[Array, ""],
+        d: Optional[Float[Array, ""]] = None,
         *,
         enable_dropout: bool = False,
         key: Optional[jax.random.PRNGKey] = None,
-    ) -> Float[Array, "..."]:
+    ) -> Float[Array, "num_particles * spatial_dim"]:
         if self.shortcut and d is None:
             raise ValueError("d must be provided when shortcut is enabled")
+        
+        xs = self.mp_policy.cast_to_compute(xs)
+        t = self.mp_policy.cast_to_compute(t)
+        if d is not None:
+            d = self.mp_policy.cast_to_compute(d)
 
-        xs = xs.reshape(-1, self.n_spatial_dim)
+        predictor = self.mp_policy.cast_to_compute(self.predictor)
+
+        xs = xs.reshape(-1, self.embedder.n_spatial_dim)
         x = self.embedder(xs, t, d=d if self.shortcut else None)
 
         for layer in self.layers:
@@ -388,8 +299,4 @@ class ParticleTransformerV2(eqx.Module):
             if key is not None:
                 key, _ = jax.random.split(key)
 
-        if self.mixed_precision:
-            x = x.astype(jnp.bfloat16)
-
-        output = jax.vmap(self.predictor)(x).flatten()
-        return output.astype(jnp.float32)
+        return self.mp_policy.cast_to_output(jax.vmap(predictor)(x).flatten())
