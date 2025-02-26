@@ -2,9 +2,6 @@ import os
 os.environ['XLA_FLAGS'] = (
     '--xla_gpu_triton_gemm_any=true '
     '--xla_gpu_enable_custom_fusions=true '
-    '--xla_gpu_enable_address_computation_fusion=true '
-    '--xla_gpu_enable_cudnn_fmha=true '
-    '--xla_gpu_enable_latency_hiding_scheduler=true '
 )
 
 import argparse
