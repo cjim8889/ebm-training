@@ -325,6 +325,8 @@ def main():
     parser.add_argument("--geonorm", action="store_true")
     parser.add_argument("--norm", type=str, default="rms")
     parser.add_argument("--num-heads", type=int, default=4)
+    parser.add_argument("--log-z-estimation-frequency", type=int, default=1,
+                       help="How often to estimate log_Z_t (in epochs) for decoupled loss")
     # Other configuration
     parser.add_argument(
         "--use-decoupled-loss",
@@ -382,6 +384,7 @@ def main():
         schedule_warmup_steps=args.schedule_warmup_steps,
         schedule_decay_fraction=args.schedule_decay_fraction,
         schedule_end_value=args.schedule_end_value,
+        log_z_estimation_frequency=args.log_z_estimation_frequency,
     )
 
     mcmc_config = MCMCConfig(

@@ -56,6 +56,8 @@ class TrainingConfig:
     schedule_warmup_steps: int = 10000  # Number of warmup steps
     schedule_decay_fraction: float = 0.25  # Fraction of total steps used for decay
     schedule_end_value: float = 1e-5  # Final learning rate value after decay
+    # Log Z estimation frequency (only used when use_decoupled_loss is True)
+    log_z_estimation_frequency: int = 1  # How often to estimate log_Z_t (in epochs)
 
 
 @dataclass
