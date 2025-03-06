@@ -11,6 +11,7 @@ import jmp
 from equinox.nn import Dropout, Linear
 from jax import random as jrandom
 from jaxtyping import Array, Bool, Float, PRNGKeyArray
+from .mrpe import MolecularRotaryPositionalEmbedding
 
 
 def dot_product_attention_weights(
@@ -19,9 +20,7 @@ def dot_product_attention_weights(
     distance_bias: Float[Array, "q_seq kv_seq"],
     mask: Optional[Bool[Array, "q_seq kv_seq"]] = None,
 ) -> Float[Array, "q_seq kv_seq"]:
-    query = query / math.sqrt(query.shape[-1])
-    logits = jnp.einsum("sd,Sd->sS", query, key)
-    logits = logits + distance_bias
+    logits = (jnp.einsum("sd,Sd->sS", query, key) + distance_bias) / math.sqrt(query.shape[-1])
 
     if mask is not None:
         if mask.shape != logits.shape:
@@ -52,11 +51,16 @@ def dot_product_attention(
     key: Optional[PRNGKeyArray] = None,
     inference: Optional[bool] = None,
 ) -> Float[Array, "q_seq v_size"]:
-    distance_bias = w + jnp.exp(-gamma * pairwise_distances ** 2)
+    distance_bias = 0.1 * (pairwise_distances ** 2)
+    # Do not penalize self-attention; ensure the diagonal is zero.
+    distance_bias = distance_bias.at[jnp.diag_indices(distance_bias.shape[0])].set(0.0)
+
     weights = dot_product_attention_weights(query, key_, distance_bias, mask)
     if dropout is not None:
         weights = dropout(weights, key=key, inference=inference)
+
     attn = jnp.einsum("sS,Sd->sd", weights, value)
+    print(attn)
     return attn
 
 
@@ -228,8 +232,8 @@ class MultiheadAttention(eqx.Module, strict=True):
         )
         self.dropout = Dropout(dropout_p, inference=inference)
 
-        self.w = jnp.zeros(())
-        self.gamma = jnp.ones(())
+        self.w = jnp.ones(()) * 0.01
+        self.gamma = jnp.ones(()) * 0.5
 
         self.num_heads = num_heads
         self.query_size = query_size
@@ -366,6 +370,7 @@ class MultiheadAttention(eqx.Module, strict=True):
 class EmbedderBlock(eqx.Module):
     particle_embedder: eqx.nn.Linear
     layernorm: eqx.nn.LayerNorm
+    mrpe: MolecularRotaryPositionalEmbedding
     n_particles: int
     n_spatial_dim: int
     shortcut: bool = eqx.field(static=True)
@@ -379,10 +384,11 @@ class EmbedderBlock(eqx.Module):
         key: jax.random.PRNGKey,
         mp_policy: jmp.Policy,
         shortcut: bool = False,
+        theta: float = 10000.0,
     ):
         self.shortcut = shortcut
         self.mp_policy = mp_policy
-        in_dim = n_spatial_dim + 2 if shortcut else n_spatial_dim + 1
+        in_dim = embedding_size + 2 if shortcut else embedding_size + 1
 
         self.particle_embedder = eqx.nn.MLP(
             in_size=in_dim,
@@ -396,7 +402,15 @@ class EmbedderBlock(eqx.Module):
         )
         # Correct LayerNorm shape to feature dimension only
         self.layernorm = eqx.nn.LayerNorm(shape=(embedding_size,), dtype=jnp.float32)
-
+        key, freq_key = jax.random.split(key)
+        self.mrpe = MolecularRotaryPositionalEmbedding(
+            embedding_size=embedding_size,
+            key=key,
+            freq_key=freq_key,
+            theta=theta,
+            dtype=mp_policy.param_dtype,
+        )
+        
         self.n_particles = n_particles
         self.n_spatial_dim = n_spatial_dim
 
@@ -409,12 +423,16 @@ class EmbedderBlock(eqx.Module):
         if self.shortcut:
             d = jnp.broadcast_to(d, (xs.shape[0], 1))
             t = jnp.broadcast_to(t, (xs.shape[0], 1))
-            input = jnp.concatenate([xs, t, d], axis=-1)
+            td = jnp.concatenate([t, d], axis=-1)
         else:
             t = jnp.broadcast_to(t, (xs.shape[0], 1))
-            input = jnp.concatenate([xs, t], axis=-1)
+            td = t
 
-        input = self.mp_policy.cast_to_compute(input)
+        xs = self.mp_policy.cast_to_compute(xs)
+        td = self.mp_policy.cast_to_compute(td)
+        xs = self.mrpe(xs)
+        input = jnp.concatenate([xs, td], axis=-1)
+
         embedder = self.mp_policy.cast_to_compute(self.particle_embedder)
 
         embedded = jax.vmap(embedder)(input)
@@ -428,7 +446,6 @@ class SimplifiedAttentionBlock(eqx.Module):
     attention: eqx.nn.MultiheadAttention
     layernorm: eqx.nn.LayerNorm
     dropout: eqx.nn.Dropout
-    rope_embeddings: eqx.nn.RotaryPositionalEmbedding
     mp_policy: jmp.Policy = eqx.field(static=True)
     num_heads: int = eqx.field(static=True)
 
@@ -440,11 +457,10 @@ class SimplifiedAttentionBlock(eqx.Module):
         attention_dropout_rate: float,
         key: jax.random.PRNGKey,
         mp_policy: jmp.Policy,
-        theta: float = 10000.0,
     ):
         self.mp_policy = mp_policy
         self.num_heads = num_heads
-        self.attention = MultiheadAttention(
+        self.attention = eqx.nn.MultiheadAttention(
             num_heads=num_heads,
             query_size=hidden_size,
             dropout_p=attention_dropout_rate,
@@ -453,38 +469,14 @@ class SimplifiedAttentionBlock(eqx.Module):
         )
         self.layernorm = eqx.nn.LayerNorm(hidden_size, dtype=jnp.float32)
         self.dropout = eqx.nn.Dropout(dropout_rate)
-        self.rope_embeddings = eqx.nn.RotaryPositionalEmbedding(
-            embedding_size=hidden_size // num_heads,
-            theta=theta,
-            dtype=mp_policy.param_dtype,
-        )
 
     def __call__(
         self, 
         inputs: Float[Array, "num_particles hidden_size"],
-        pairwise_distances: Float[Array, "num_particles num_particles"],
+        # pairwise_distances: Float[Array, "num_particles num_particles"],
         enable_dropout: bool = False, 
         key: Optional[jax.random.PRNGKey] = None
     ) -> Float[Array, "num_particles hidden_size"]:
-        def process_heads(
-            query_heads: Float[Array, "num_particles num_heads qk_size"],
-            key_heads: Float[Array, "num_particles num_heads qk_size"],
-            value_heads: Float[Array, "num_particles num_heads vo_size"]
-        ) -> tuple[
-            Float[Array, "num_particles num_heads qk_size"],
-            Float[Array, "num_particles num_heads qk_size"],
-            Float[Array, "num_particles num_heads vo_size"]
-        ]:
-            query_heads = jax.vmap(self.rope_embeddings,
-                                   in_axes=1,
-                                   out_axes=1)(query_heads)
-            key_heads = jax.vmap(self.rope_embeddings,
-                                 in_axes=1,
-                                 out_axes=1)(key_heads)
-
-            return query_heads, key_heads, value_heads
-        
-
         attn_key, dropout_key = (
             jax.random.split(key) if key is not None else (None, None)
         )
@@ -496,10 +488,9 @@ class SimplifiedAttentionBlock(eqx.Module):
             query=inputs,
             key_=inputs,
             value=inputs,
-            pairwise_distances=pairwise_distances,
+            # pairwise_distances=pairwise_distances,
             inference=not enable_dropout,
             key=attn_key,
-            process_heads=process_heads,
         )
         attn_out = self.dropout(attn_out, key=dropout_key, inference=not enable_dropout)
         attn_out = inputs + attn_out
@@ -551,7 +542,7 @@ class TransformerLayer(eqx.Module):
     ffn: EfficientFFN
     mp_policy: jmp.Policy = eqx.field(static=True)
 
-    def __init__(self, hidden_size, num_heads, dropout_rate, attn_dropout_rate, key, mp_policy: jmp.Policy, theta: float = 10000.0):
+    def __init__(self, hidden_size, num_heads, dropout_rate, attn_dropout_rate, key, mp_policy: jmp.Policy):
         self.mp_policy = mp_policy
         key1, key2 = jax.random.split(key)
         self.attn = SimplifiedAttentionBlock(
@@ -561,7 +552,6 @@ class TransformerLayer(eqx.Module):
             attention_dropout_rate=attn_dropout_rate,
             key=key1,
             mp_policy=mp_policy,
-            theta=theta,
         )
         self.ffn = EfficientFFN(
             hidden_size=hidden_size,
@@ -573,15 +563,15 @@ class TransformerLayer(eqx.Module):
     def __call__(
         self, 
         x: Float[Array, "num_particles hidden_size"],
-        pairwise_distances: Float[Array, "num_particles num_particles"],
+        # pairwise_distances: Float[Array, "num_particles num_particles"],
         enable_dropout: bool = False, 
         key: Optional[jax.random.PRNGKey] = None
     ) -> Float[Array, "num_particles hidden_size"]:
         attn_key, ffn_key = jax.random.split(key) if key is not None else (None, None)
 
-        pairwise_distances = self.mp_policy.cast_to_compute(pairwise_distances)
+        # pairwise_distances = self.mp_policy.cast_to_compute(pairwise_distances)
         x = self.mp_policy.cast_to_compute(x)
-        x = self.attn(x, pairwise_distances, enable_dropout, attn_key)
+        x = self.attn(x, enable_dropout, attn_key)
         return self.mp_policy.cast_to_output(self.ffn(x, enable_dropout, ffn_key))
 
 
@@ -619,6 +609,7 @@ class ParticleTransformerV3(eqx.Module):
             key=e_key,
             shortcut=shortcut,
             mp_policy=mp_policy,
+            theta=theta,
         )
 
         self.layers = [
@@ -629,7 +620,6 @@ class ParticleTransformerV3(eqx.Module):
                 attn_dropout_rate=attn_dropout_rate,
                 key=k,
                 mp_policy=mp_policy,
-                theta=theta,
             )
             for k in jax.random.split(l_key, num_layers)
         ]
@@ -657,9 +647,9 @@ class ParticleTransformerV3(eqx.Module):
 
         xs = xs.reshape(-1, self.embedder.n_spatial_dim)
         x = self.embedder(xs, t, d=d if self.shortcut else None)
-        pairwise_distances = jnp.linalg.norm(xs[:, None, :] - xs[None, :, :], axis=-1)
+
         for layer in self.layers:
-            x = layer(x, pairwise_distances, enable_dropout, key)
+            x = layer(x, enable_dropout, key)
             if key is not None:
                 key, _ = jax.random.split(key)
 

@@ -1,4 +1,5 @@
 import os
+
 os.environ['XLA_FLAGS'] = (
     '--xla_gpu_triton_gemm_any=true '
     '--xla_gpu_enable_custom_fusions=true '
@@ -17,18 +18,22 @@ from src.distributions import (
     ManyWellEnergy,
     MultiDoubleWellEnergy,
     MultivariateGaussian,
+    QuadraticSmoothedLJ,
     SoftCoreLennardJonesEnergy,
     TimeDependentLennardJonesEnergy,
     TimeDependentLennardJonesEnergyButler,
     TimeDependentLennardJonesEnergyButlerWithTemperatureTempered,
     TranslationInvariantGaussian,
-    QuadraticSmoothedLJ
 )
 from src.models import (
     EGNN,
+    EGNNWithLearnableNodeFeatures,
     EquivariantTimeVelocityField,
+    InvariantFeatureNet,
     OptimizedVelocityField,
     ParticleTransformer,
+    ParticleTransformerV2,
+    ParticleTransformerV3,
     TimeVelocityField,
     TimeVelocityFieldWithPairwiseFeature,
     TimeVelocityFieldWithPairwiseFeatureThree,
@@ -36,10 +41,6 @@ from src.models import (
     VelocityFieldFour,
     VelocityFieldThree,
     VelocityFieldTwo,
-    InvariantFeatureNet,
-    EGNNWithLearnableNodeFeatures,
-    ParticleTransformerV2,
-    ParticleTransformerV3
 )
 from src.training.config import (
     DensityConfig,
@@ -343,9 +344,9 @@ def main():
     parser.add_argument("--every-k-schedule", type=int, default=1)
     args = parser.parse_args()
 
-    # if args.debug:
-    # jax.config.update("jax_debug_nans", True)
-    # jax.config.update("jax_debug_infs", True)
+    if args.debug:
+        jax.config.update("jax_debug_nans", True)
+        jax.config.update("jax_debug_infs", True)
 
     # Set random seed
     key = jax.random.PRNGKey(args.seed)
@@ -936,11 +937,22 @@ def main():
         artifact_dir = artifact.download()
         v_theta = eqx.tree_deserialise_leaves(f"{artifact_dir}/model.eqx", v_theta)
 
-    if config.debug:
-        config.training.num_epochs = 2
-        import jax.profiler as profiler
+    # if config.debug:
+    #     config.training.num_epochs = 2
+    #     import jax.profiler as profiler
 
-        with profiler.trace("profile"):
+    #     with profiler.trace("profile"):
+    #         # Train model
+    #         v_theta = train_velocity_field(
+    #             key=key,
+    #             initial_density=initial_density,
+    #             target_density=target_density,
+    #             v_theta=v_theta,
+    #             config=config,
+    #         )
+    # else:
+    if config.debug:
+        with jax.disable_jit():
             # Train model
             v_theta = train_velocity_field(
                 key=key,
@@ -958,7 +970,5 @@ def main():
             v_theta=v_theta,
             config=config,
         )
-
-
 if __name__ == "__main__":
     main()
