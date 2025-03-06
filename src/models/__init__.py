@@ -14,3 +14,4 @@ from .mlp import (
 from .omlp import OptimizedVelocityField
 from .transformer import ParticleTransformer
 from .transformer_v2 import ParticleTransformerV2
+from .transformer_v3 import ParticleTransformerV3

@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
+from typing import Any, Callable, List, Literal, Optional
+
 import jmp
-from typing import Optional, Literal, Callable, Any, List
 
 
 @dataclass
@@ -95,6 +96,7 @@ class ModelConfig:
     num_heads: int = 4
     mlp_depth: int = 2
     norm: str = "rms"
+    theta: float = 10000.0
     geonorm: bool = False
     dropout: float = None
     architecture: Literal["mlp", "pdn", "transformer", "emlp", "egnn"] = "mlp"
