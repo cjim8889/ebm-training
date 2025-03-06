@@ -132,7 +132,6 @@ def epsilon_with_hutchinson_Q(
     score_fn: Callable[[chex.Array, float], chex.Array],
     time_derivative_log_density: Callable[[chex.Array, float], float],
     n_probes: int = 4,
-    r: int = 4,
     dropout_key: Optional[jax.random.PRNGKey] = None,
 ):
     """Computes the local error using Hutchinson's trace estimator."""
@@ -145,11 +144,10 @@ def epsilon_with_hutchinson_Q(
     # Get score vector
     score = score_fn(x, t)
     
-    div_v, Q, primals = divergence_velocity_hutchpp(
+    div_v, _, primals = divergence_velocity_hutchpp(
         v_theta,
         x,
         t,
-        r=r,
         n_probes=n_probes,
         d=d,
         dropout_key=dropout_key,
@@ -165,7 +163,7 @@ def epsilon_with_hutchinson_Q(
     return jnp.nan_to_num(result, nan=0.0, posinf=1.0, neginf=-1.0)
 
 batched_epsilon_with_hutchinson_Q = jax.vmap(
-    epsilon_with_hutchinson_Q, in_axes=(None, 0, None, None, None, None, 0)
+    epsilon_with_hutchinson_Q, in_axes=(None, 0, None, None, None, 0)
 )
 
 def shortcut(
@@ -296,7 +294,6 @@ def loss_fn(
             score_fn,
             time_derivative_log_density,
             n_probes,
-            4,
             dropout_keys
         )
     else:
@@ -304,7 +301,7 @@ def loss_fn(
             v_theta, particles, score_fn, time_derivative_log_density
         )
 
-        
+
     if combined_loss:
         # Compute L1 and L2 loss for epsilons
         l1_loss = jnp.mean(jnp.abs(epsilons))  # L1 (MAE)
