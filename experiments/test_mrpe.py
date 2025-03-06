@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 import jmp
 
-from src.models.transformer_v3 import ParticleTransformerV3
+from src.models.mrpe import MolecularRotaryPositionalEmbedding
 
 # Initialize PRNG key
 key = jax.random.PRNGKey(42)
@@ -19,22 +19,17 @@ shortcut = False
 mp_policy = jmp.Policy(jnp.float32, jnp.float32, jnp.float32)
 
 
-net = ParticleTransformerV3(
-    n_particles=n_particles,
-    n_spatial_dim=n_spatial_dim,
-    hidden_size=hidden_dim,
-    num_layers=depth,
-    num_heads=num_heads,
-    dropout_rate=0.1,
-    attn_dropout_rate=0.1,
+embedding = MolecularRotaryPositionalEmbedding(
+    embedding_size=32,
     key=key,
-    shortcut=True,
-    mp_policy=mp_policy,
-    theta=100.0,
+    freq_key=key,
+    theta=1000.0,
+    dtype=jnp.float32,
 )
-
 # Example input
 inputs = jax.random.normal(key, (13, 3))
-output = net(inputs, 0, 0.15, enable_dropout=True, key=key)
+output = embedding(inputs)
 
 print(output.shape)  # (13 * 3)
+print(output)
+print(inputs)
