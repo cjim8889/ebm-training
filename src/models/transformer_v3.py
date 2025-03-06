@@ -390,16 +390,7 @@ class EmbedderBlock(eqx.Module):
         self.mp_policy = mp_policy
         in_dim = embedding_size + 2 if shortcut else embedding_size + 1
 
-        self.particle_embedder = eqx.nn.MLP(
-            in_size=in_dim,
-            out_size=embedding_size,
-            width_size=64,
-            depth=3,
-            activation=jax.nn.silu,
-            use_bias=True,
-            key=key,
-            dtype=mp_policy.param_dtype,
-        )
+        self.particle_embedder = eqx.nn.Linear(in_dim, embedding_size, use_bias=True, key=key, dtype=mp_policy.param_dtype)
         # Correct LayerNorm shape to feature dimension only
         self.layernorm = eqx.nn.LayerNorm(shape=(embedding_size,), dtype=jnp.float32)
         key, freq_key = jax.random.split(key)
