@@ -38,7 +38,8 @@ from src.models import (
     VelocityFieldTwo,
     InvariantFeatureNet,
     EGNNWithLearnableNodeFeatures,
-    ParticleTransformerV2
+    ParticleTransformerV2,
+    ParticleTransformerV3
 )
 from src.training.config import (
     DensityConfig,
@@ -105,6 +106,7 @@ def main():
             "ifn",
             "egnn2",
             "transformer2",
+            "transformer3",
         ],
     )
 
@@ -126,6 +128,7 @@ def main():
         action="store_true",
         help="Whether to use control variate",
     )
+    parser.add_argument("--theta", type=float, default=10000.0)
     parser.add_argument(
         "--use-shortcut", action="store_true", help="Whether to use shortcut"
     )
@@ -242,7 +245,7 @@ def main():
     parser.add_argument("--with-rejection", action="store_true")
     parser.add_argument("--lambda-max", type=float, default=0.1, 
                        help="Maximum value for lambda factor in velocity field contribution")
-    parser.add_argument("--lambda-epochs", type=float, default=4000.0,
+    parser.add_argument("--lambda-epochs", type=float, default=1000.0,
                        help="Number of epochs over which lambda factor increases from 0 to lambda-max")
 
     # Integration configuration
@@ -421,6 +424,7 @@ def main():
         geonorm=args.geonorm,
         num_heads=args.num_heads,
         dropout=args.dropout,
+        theta=args.theta,
     )
 
     # Set up input dimensions and other target-specific parameters
@@ -829,6 +833,21 @@ def main():
             key=model_key,
             shortcut=config.training.use_shortcut,
             mp_policy=config.mp_policy,
+            theta=config.model.theta,
+        )
+    elif config.model.architecture == "transformer3":
+        v_theta = ParticleTransformerV3(
+            n_particles=config.density.n_particles,
+            n_spatial_dim=config.density.n_spatial_dim,
+            hidden_size=config.model.hidden_dim,
+            num_layers=config.model.num_layers,
+            num_heads=config.model.num_heads,
+            dropout_rate=config.model.dropout,
+            attn_dropout_rate=config.model.dropout,
+            key=model_key,
+            shortcut=config.training.use_shortcut,
+            mp_policy=config.mp_policy,
+            theta=config.model.theta,
         )
     elif config.model.architecture == "omlp":
         v_theta = OptimizedVelocityField(

@@ -84,6 +84,7 @@ class SimplifiedAttentionBlock(eqx.Module):
         attention_dropout_rate: float,
         key: jax.random.PRNGKey,
         mp_policy: jmp.Policy,
+        theta: float = 10000.0,
     ):
         self.mp_policy = mp_policy
         self.num_heads = num_heads
@@ -98,7 +99,7 @@ class SimplifiedAttentionBlock(eqx.Module):
         self.dropout = eqx.nn.Dropout(dropout_rate)
         self.rope_embeddings = eqx.nn.RotaryPositionalEmbedding(
             embedding_size=hidden_size // num_heads,
-            theta=10000.0,
+            theta=theta,
             dtype=mp_policy.param_dtype,
         )
 
@@ -192,7 +193,7 @@ class TransformerLayer(eqx.Module):
     ffn: EfficientFFN
     mp_policy: jmp.Policy = eqx.field(static=True)
 
-    def __init__(self, hidden_size, num_heads, dropout_rate, attn_dropout_rate, key, mp_policy: jmp.Policy):
+    def __init__(self, hidden_size, num_heads, dropout_rate, attn_dropout_rate, key, mp_policy: jmp.Policy, theta: float = 10000.0):
         self.mp_policy = mp_policy
         key1, key2 = jax.random.split(key)
         self.attn = SimplifiedAttentionBlock(
@@ -202,6 +203,7 @@ class TransformerLayer(eqx.Module):
             attention_dropout_rate=attn_dropout_rate,
             key=key1,
             mp_policy=mp_policy,
+            theta=theta,
         )
         self.ffn = EfficientFFN(
             hidden_size=hidden_size,
@@ -244,6 +246,7 @@ class ParticleTransformerV2(eqx.Module):
         key: jax.random.PRNGKey,
         mp_policy: jmp.Policy,
         shortcut: bool = False,
+        theta: float = 10000.0,
     ):
         self.shortcut = shortcut
         self.mp_policy = mp_policy
@@ -266,6 +269,7 @@ class ParticleTransformerV2(eqx.Module):
                 attn_dropout_rate=attn_dropout_rate,
                 key=k,
                 mp_policy=mp_policy,
+                theta=theta,
             )
             for k in jax.random.split(l_key, num_layers)
         ]
