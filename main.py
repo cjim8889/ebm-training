@@ -134,8 +134,10 @@ def main():
         "--use-shortcut", action="store_true", help="Whether to use shortcut"
     )
     parser.add_argument(
-        "--use-hutchinson",
-        action="store_true",
+        "--estimator",
+        type=str,
+        default="none",
+        choices=["hutchinson", "hutch++", "none"],
         help="Whether to use Hutchinson's trick",
     )
     parser.add_argument(
@@ -377,7 +379,7 @@ def main():
         time_batch_size=args.time_batch_size,
         use_shortcut=args.use_shortcut,
         shortcut_size=args.shortcut_size,
-        use_hutchinson=args.use_hutchinson,
+        estimator=args.estimator,
         n_probes=args.n_probes,
         every_k_schedule=args.every_k_schedule,
         use_schedule=args.use_schedule,

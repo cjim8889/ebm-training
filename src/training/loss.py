@@ -11,7 +11,7 @@ from src.utils.distributions import (
     hutchinson_divergence_velocity2,
     hutchinson_divergence_velocity_single_probe,
 )
-
+from src.utils.hutchpp import divergence_velocity_hutchpp
 
 class Particle(eqx.Module):
     x: chex.Array
@@ -125,6 +125,49 @@ batched_epsilon_with_hutchinson = jax.vmap(
 )
 
 
+@eqx.filter_jit
+def epsilon_with_hutchinson_Q(
+    v_theta: Callable[[chex.Array, float, float], chex.Array],
+    particle: Particle,
+    score_fn: Callable[[chex.Array, float], chex.Array],
+    time_derivative_log_density: Callable[[chex.Array, float], float],
+    n_probes: int = 4,
+    r: int = 4,
+    dropout_key: Optional[jax.random.PRNGKey] = None,
+):
+    """Computes the local error using Hutchinson's trace estimator."""
+    x, t, log_Z_t, d = particle.x, particle.t, particle.log_Z_t, particle.d
+    
+    # Calculate time derivative
+    dt_log_unormalised = time_derivative_log_density(x, t)
+    dt_log_density = dt_log_unormalised - log_Z_t
+
+    # Get score vector
+    score = score_fn(x, t)
+    
+    div_v, Q, primals = divergence_velocity_hutchpp(
+        v_theta,
+        x,
+        t,
+        r=r,
+        n_probes=n_probes,
+        d=d,
+        dropout_key=dropout_key,
+    )
+        
+    # Calculate dot product with better numerical stability
+    v_dot_score = jnp.sum(primals * score)  # element-wise multiply then sum is more stable
+    
+    # Calculate final result
+    result = div_v + v_dot_score + dt_log_density
+    
+    # Ensure no NaN or inf values propagate
+    return jnp.nan_to_num(result, nan=0.0, posinf=1.0, neginf=-1.0)
+
+batched_epsilon_with_hutchinson_Q = jax.vmap(
+    epsilon_with_hutchinson_Q, in_axes=(None, 0, None, None, None, None, 0)
+)
+
 def shortcut(
     v_theta: Callable[[chex.Array, float, float], chex.Array],
     x: chex.Array,
@@ -194,7 +237,7 @@ def loss_fn(
     time_derivative_log_density: Callable[[chex.Array, float], float],
     score_fn: Callable[[chex.Array, float], chex.Array],
     shift_fn: Callable[[chex.Array], chex.Array] = lambda x: x,
-    use_hutchinson: bool = False,
+    estimator: str = "hutchinson",
     key: Optional[jax.random.PRNGKey] = None,
     combined_loss: bool = False,
     n_probes: int = 5,
@@ -215,7 +258,7 @@ def loss_fn(
         float: Mean squared error in satisfying the Liouville equation
     """
     dropout_keys = jax.random.split(dropout_key, num=particles.x.shape[0]) if dropout_key is not None else None
-    if use_hutchinson:
+    if estimator == "hutchinson":
         if n_probes > 1:
             eps = jax.random.rademacher(
                 key,
@@ -246,11 +289,22 @@ def loss_fn(
                 True,
                 dropout_keys
             )
+    elif estimator == "hutch++":
+        epsilons = batched_epsilon_with_hutchinson_Q(
+            v_theta,
+            particles,
+            score_fn,
+            time_derivative_log_density,
+            n_probes,
+            4,
+            dropout_keys
+        )
     else:
         epsilons = batched_epsilon(
             v_theta, particles, score_fn, time_derivative_log_density
         )
 
+        
     if combined_loss:
         # Compute L1 and L2 loss for epsilons
         l1_loss = jnp.mean(jnp.abs(epsilons))  # L1 (MAE)

@@ -203,7 +203,7 @@ def train_velocity_field(
             path_distribution.time_derivative,
             path_distribution.score_fn,
             config.density.shift_fn,
-            config.training.use_hutchinson,
+            config.training.estimator,
             key=key,
             n_probes=config.training.n_probes,
             combined_loss=config.training.use_combined_loss,
