@@ -46,8 +46,9 @@ class TrainingConfig:
     shortcut_size: List[int] = field(default_factory=lambda: [16, 32, 64, 128])
     use_shortcut: bool = False
     random_alpha: bool = False
-    use_hutchinson: bool = False
+    estimator: str = "hutchinson"
     n_probes: int = 5
+    r: int = 4
     every_k_schedule: int = 1
     use_schedule: bool = False
     use_combined_loss: bool = False
