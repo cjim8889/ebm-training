@@ -136,7 +136,6 @@ def divergence_velocity_hutchpp(
     x: Float[Array, "D"], 
     t: Float[Array, ""], 
     *,
-    r: int = 4,
     n_probes: int = 4,
     d: Optional[Float[Array, ""]] = None,
     dropout_key: Optional[PRNGKeyArray] = None,
@@ -220,23 +219,23 @@ def divergence_velocity_hutchpp(
     rng = dropout_key if dropout_key is not None else jax.random.PRNGKey(0)
 
     # S shape [D, r]
-    S = random.normal(rng, (x.shape[0], r), dtype=x.dtype)
-    chex.assert_shape(S, (x.shape[0], r))
+    S = random.rademacher(rng, (x.shape[0], n_probes), dtype=x.dtype)
+    chex.assert_shape(S, (x.shape[0], n_probes))
 
     # A_S = J(x)*S => shape [D, r]
     A_S = jax.vmap(jvp_fn, in_axes=1, out_axes=1)(S)
-    chex.assert_shape(A_S, (x.shape[0], r))
+    chex.assert_shape(A_S, (x.shape[0], n_probes))
 
     # Factor => Q in [D, r]
     Q, _ = linalg.qr(A_S, mode="economic")
-    chex.assert_shape(Q, (x.shape[0], r))
+    chex.assert_shape(Q, (x.shape[0], n_probes))
 
     #----------------------------------------------#
     # 4) partial_trace = trace(Q^T * J_f(x) * Q )
     #----------------------------------------------#
     # We'll compute A_Q = J(x)*Q => [D, r], then do sum of diag(Q^T A_Q)
     A_Q = jax.vmap(jvp_fn, in_axes=1, out_axes=1)(Q)
-    chex.assert_shape(A_Q, (x.shape[0], r))
+    chex.assert_shape(A_Q, (x.shape[0], n_probes))
 
     partial_trace = jnp.einsum("dr,dr->", Q, A_Q)
     chex.assert_shape(partial_trace, ())
@@ -246,7 +245,7 @@ def divergence_velocity_hutchpp(
     #----------------------------------------------#
     # eps shape [n_probes, D]
     rng_eps = random.split(rng, 2)[-1]  # or any sub-key you like
-    eps = random.normal(rng_eps, (n_probes, x.shape[0]), dtype=x.dtype)
+    eps = random.rademacher(rng_eps, (n_probes, x.shape[0]), dtype=x.dtype)
     chex.assert_shape(eps, (n_probes, x.shape[0]))
 
     def residual_trace(e):
