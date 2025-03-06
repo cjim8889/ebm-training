@@ -227,7 +227,7 @@ def hutchinson_divergence_velocity2(
     eps: chex.Array,
     d: Optional[float] = None,
     dropout_key: Optional[jax.random.PRNGKey] = None,
-) -> chex.Array:
+) -> Tuple[chex.Array, chex.Array]:
     # Ensure eps has the same dtype as x
     eps = eps.astype(x.dtype)
     
@@ -236,7 +236,7 @@ def hutchinson_divergence_velocity2(
         v_fn = lambda x: v_theta(x, t, d, enable_dropout=True, key=dropout_key) if d is not None else v_theta(x, t, enable_dropout=True, key=dropout_key)
     else:
         v_fn = lambda x: v_theta(x, t, d) if d is not None else v_theta(x, t)
-    _, f_vjp = jax.vjp(v_fn, x)
+    primals, f_vjp = jax.vjp(v_fn, x)
 
     # Batched computation using vmap
     jvp_eps = jax.vmap(f_vjp)(eps)[0]  # [n_probes, ...]
@@ -244,7 +244,7 @@ def hutchinson_divergence_velocity2(
     # Efficient trace estimation using Einstein summation
     estimates = jnp.einsum("i...,i...->i", eps, jvp_eps)
 
-    return jnp.mean(estimates)
+    return jnp.mean(estimates), primals
 
 
 @eqx.filter_jit
@@ -255,7 +255,7 @@ def hutchinson_divergence_velocity_single_probe(
     eps: chex.Array,  # Probe vector now passed as argument
     d: Optional[float] = None,
     dropout_key: Optional[jax.random.PRNGKey] = None,
-) -> chex.Array:
+) -> Tuple[chex.Array, chex.Array]:
     """Compute divergence using single pre-defined probe vector."""
     # Validate probe vector shape
     chex.assert_shape(eps, x.shape)
@@ -269,7 +269,7 @@ def hutchinson_divergence_velocity_single_probe(
     else:
         v_fn = lambda x: v_theta(x, t, d) if d is not None else v_theta(x, t)
     
-    _, f_vjp = jax.vjp(v_fn, x)
+    primals, f_vjp = jax.vjp(v_fn, x)
 
     # Direct computation without vmap (single probe)
     jvp_eps = f_vjp(eps)[0]
@@ -277,7 +277,7 @@ def hutchinson_divergence_velocity_single_probe(
     # Simplified trace estimation for single probe
     trace_estimate = jnp.sum(eps * jvp_eps)
 
-    return trace_estimate
+    return trace_estimate, primals
 
 
 @eqx.filter_jit

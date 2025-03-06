@@ -78,15 +78,12 @@ def epsilon_with_hutchinson(
     dt_log_unormalised = time_derivative_log_density(x, t)
     dt_log_density = dt_log_unormalised - log_Z_t
 
-    # Split key for dropout if provided
-    hutchinson_key, dropout_key = jax.random.split(dropout_key) if dropout_key is not None else (None, None)
-
     # Get score vector
     score = score_fn(x, t)
     
     # Calculate divergence using Hutchinson's trick
     if single_probe:
-        div_v = hutchinson_divergence_velocity_single_probe(
+        div_v, primals = hutchinson_divergence_velocity_single_probe(
             v_theta,
             x,
             t,
@@ -95,7 +92,7 @@ def epsilon_with_hutchinson(
             dropout_key=dropout_key,
         )
     else:
-        div_v = hutchinson_divergence_velocity2(
+        div_v, primals = hutchinson_divergence_velocity2(
             v_theta,
             x,
             t,
@@ -104,14 +101,8 @@ def epsilon_with_hutchinson(
             dropout_key=dropout_key,
         )
         
-    # Get velocity vector
-    if d is not None:
-        v = v_theta(x, t, d) if hutchinson_key is None else v_theta(x, t, d, enable_dropout=True, key=hutchinson_key)
-    else:
-        v = v_theta(x, t) if hutchinson_key is None else v_theta(x, t, enable_dropout=True, key=hutchinson_key)
-
     # Calculate dot product with better numerical stability
-    v_dot_score = jnp.sum(v * score)  # element-wise multiply then sum is more stable
+    v_dot_score = jnp.sum(primals * score)  # element-wise multiply then sum is more stable
     
     # Calculate final result
     result = div_v + v_dot_score + dt_log_density
