@@ -126,7 +126,7 @@ def epsilon_with_hutchinson_Q(
     time_derivative_log_density: Callable[[chex.Array, float], float],
     n_probes: int = 4,
     dropout_key: Optional[jax.random.PRNGKey] = None,
-    mode: str = "hutch++",
+    mode: Optional[str] = "hutch++",
 ):
     """Computes the local error using Hutchinson's trace estimator."""
     x, t, log_Z_t, d = particle.x, particle.t, particle.log_Z_t, particle.d
@@ -300,7 +300,7 @@ def loss_fn(
             time_derivative_log_density,
             n_probes,
             dropout_keys,
-            mode=estimator,
+            estimator,
         )
     else:
         epsilons = batched_epsilon(

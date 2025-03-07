@@ -6,7 +6,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float, PRNGKeyArray
 
 
-# @eqx.filter_jit
+@eqx.filter_jit
 def divergence_velocity_xtrace(
     v_theta: Callable,
     x: Float[Array, "D"],
