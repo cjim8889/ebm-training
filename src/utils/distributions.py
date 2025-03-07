@@ -236,6 +236,7 @@ def hutchinson_divergence_velocity2(
         v_fn = lambda x: v_theta(x, t, d, enable_dropout=True, key=dropout_key) if d is not None else v_theta(x, t, enable_dropout=True, key=dropout_key)
     else:
         v_fn = lambda x: v_theta(x, t, d) if d is not None else v_theta(x, t)
+
     primals, f_vjp = jax.vjp(v_fn, x)
 
     # Batched computation using vmap
