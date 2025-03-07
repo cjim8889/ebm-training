@@ -12,6 +12,8 @@ from src.utils.distributions import (
     hutchinson_divergence_velocity_single_probe,
 )
 from src.utils.hutchpp import divergence_velocity_hutchpp
+from src.utils.xtrace import divergence_velocity_xtrace
+
 
 class Particle(eqx.Module):
     x: chex.Array
@@ -124,6 +126,7 @@ def epsilon_with_hutchinson_Q(
     time_derivative_log_density: Callable[[chex.Array, float], float],
     n_probes: int = 4,
     dropout_key: Optional[jax.random.PRNGKey] = None,
+    mode: str = "hutch++",
 ):
     """Computes the local error using Hutchinson's trace estimator."""
     x, t, log_Z_t, d = particle.x, particle.t, particle.log_Z_t, particle.d
@@ -135,14 +138,25 @@ def epsilon_with_hutchinson_Q(
     # Get score vector
     score = score_fn(x, t)
     
-    div_v, _, primals = divergence_velocity_hutchpp(
-        v_theta,
-        x,
-        t,
-        n_probes=n_probes,
-        d=d,
-        dropout_key=dropout_key,
-    )
+
+    if mode == "hutch++":
+        div_v, _, primals = divergence_velocity_hutchpp(
+            v_theta,
+            x,
+            t,
+            n_probes=n_probes,
+            d=d,
+            dropout_key=dropout_key,
+        )
+    elif mode == "xtrace":
+        div_v, primals = divergence_velocity_xtrace(
+            v_theta,
+            x,
+            t,
+            n_probes=n_probes,
+            d=d,
+            dropout_key=dropout_key,
+        )
         
     # Calculate dot product with better numerical stability
     v_dot_score = jnp.sum(primals * score)  # element-wise multiply then sum is more stable
@@ -154,7 +168,7 @@ def epsilon_with_hutchinson_Q(
     return jnp.nan_to_num(result, nan=0.0, posinf=1.0, neginf=-1.0)
 
 batched_epsilon_with_hutchinson_Q = jax.vmap(
-    epsilon_with_hutchinson_Q, in_axes=(None, 0, None, None, None, 0)
+    epsilon_with_hutchinson_Q, in_axes=(None, 0, None, None, None, 0, None)
 )
 
 def shortcut(
@@ -278,14 +292,15 @@ def loss_fn(
                 True,
                 dropout_keys
             )
-    elif estimator == "hutch++":
+    elif estimator == "hutch++" or estimator == "xtrace":
         epsilons = batched_epsilon_with_hutchinson_Q(
             v_theta,
             particles,
             score_fn,
             time_derivative_log_density,
             n_probes,
-            dropout_keys
+            dropout_keys,
+            mode=estimator,
         )
     else:
         epsilons = batched_epsilon(

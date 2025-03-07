@@ -137,7 +137,7 @@ def main():
         "--estimator",
         type=str,
         default="none",
-        choices=["hutchinson", "hutch++", "none"],
+        choices=["hutchinson", "hutch++", "xtrace", "none"],
         help="Whether to use Hutchinson's trick",
     )
     parser.add_argument(
