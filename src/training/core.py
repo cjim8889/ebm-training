@@ -87,6 +87,7 @@ def generate_samples_with_optional_mcmc(
 
     return samples
 
+jitted_loss_fn = eqx.filter_jit(loss_fn)
 
 def train_velocity_field(
     key: jax.random.PRNGKey,
@@ -348,9 +349,9 @@ def train_velocity_field(
         # We now calculate the validation loss
 
         key, dropout_key = jax.random.split(key)
-        val_loss = eqx.filter_jit(loss_fn)(
+        val_loss = jitted_loss_fn(
             v_theta,
-            particles,
+            training_particles,
             path_distribution.time_derivative,
             path_distribution.score_fn,
             config.density.shift_fn,
