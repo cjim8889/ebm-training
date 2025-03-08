@@ -345,10 +345,29 @@ def train_velocity_field(
                     print(f"Epoch {epoch}, Step {s}, Loss: {loss}, Learning Rate: {get_current_lr(epoch * config.training.steps_per_epoch + s)}")
 
         avg_loss = epoch_loss / config.training.steps_per_epoch
+        # We now calculate the validation loss
+
+        key, dropout_key = jax.random.split(key)
+        val_loss = eqx.filter_jit(loss_fn)(
+            v_theta,
+            particles,
+            path_distribution.time_derivative,
+            path_distribution.score_fn,
+            config.density.shift_fn,
+            "none",
+            key=key,
+            combined_loss=False,
+            shortcut_weight=config.training.shortcut_weight,
+            random_alpha=config.training.random_alpha,
+            dropout_key=dropout_key if config.model.dropout is not None else None,
+        )
+
         if not config.offline:
-            wandb.log({"epoch": epoch, "average_loss": avg_loss, "epoch_learning_rate": get_current_lr(epoch * config.training.steps_per_epoch)})
+            wandb.log({"epoch": epoch, "val_loss": val_loss, "average_loss": avg_loss, "epoch_learning_rate": get_current_lr(epoch * config.training.steps_per_epoch)})
         else:
             print(f"Epoch {epoch}, Average Loss: {avg_loss}, Learning Rate: {get_current_lr(epoch * config.training.steps_per_epoch)}")
+            print(f"Epoch {epoch}, Validation Loss: {val_loss}")
+
 
         if epoch % config.training.eval_frequency == 0:
             # Run multiple evaluations
