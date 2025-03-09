@@ -21,7 +21,7 @@ from src.utils.optimization import get_optimizer, inverse_power_schedule, power_
 
 from .config import TrainingExperimentConfig
 from .loss import Particle, loss_fn
-from .normalizing_constant import estimate_log_Z_t
+from .normalizing_constant import estimate_log_Z_t, estimate_log_Z_t_online
 
 
 def generate_samples_with_optional_mcmc(
@@ -221,6 +221,9 @@ def train_velocity_field(
         [2**e for e in range(int(jnp.floor(jnp.log2(128))) + 1)]
     )
 
+    prev_sum = None
+    prev_count = None
+
     for epoch in range(config.training.num_epochs):
         # Calculate current lambda_factor based on the epoch
         current_lambda = compute_lambda_factor(epoch * config.training.steps_per_epoch)
@@ -249,7 +252,7 @@ def train_velocity_field(
             
             if should_estimate_log_z:
                 key, subkey = jax.random.split(key)
-                log_Z_t = estimate_log_Z_t(
+                log_Z_t, prev_sum, prev_count = estimate_log_Z_t_online(
                     mcmc_samples["positions"],
                     mcmc_samples["weights"],
                     current_ts,
@@ -258,7 +261,8 @@ def train_velocity_field(
                     score_fn=path_distribution.score_fn,
                     use_control_variate=config.mcmc.use_control_variate,
                     use_shortcut=config.training.use_shortcut,
-                    mp_policy=config.mp_policy,
+                    prev_sum=prev_sum,
+                    prev_count=prev_count,
                 )
                 log_Z_t = jax.lax.stop_gradient(log_Z_t)
                 
