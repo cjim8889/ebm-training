@@ -136,7 +136,7 @@ def estimate_log_Z_t_online(
     score_fn: Optional[callable] = None,
     use_control_variate: bool = False,
     use_shortcut: bool = False,
-    prev_sum: Optional[chex.Array] = None,
+    prev_log_sum: Optional[chex.Array] = None,
     prev_count: Optional[int] = None,
 ) -> Tuple[chex.Array, chex.Array, int]:
     """
@@ -160,18 +160,17 @@ def estimate_log_Z_t_online(
         use_shortcut=use_shortcut,
     )
     
-    # Convert the log estimate to Z (the partition function).
-    batch_Z = jnp.exp(batch_log_Z)
-    
     # If no previous accumulator exists, initialize.
-    if prev_sum is None or prev_count is None:
-        new_sum = batch_Z
+    if prev_log_sum is None or prev_count is None:
+        new_log_sum = batch_log_Z
         new_count = 1
     else:
-        new_sum = prev_sum + batch_Z
+        # Combine the previous log sum with the new batch's log Z.
+        new_log_sum = jnp.logaddexp(prev_log_sum, batch_log_Z)
         new_count = prev_count + 1
     
-    # The combined estimator is the log of the average of Z estimates.
-    combined_log_Z = jnp.log(new_sum / new_count)
+    # The combined estimator is the log of the average:
+    # log(mean Z) = log_sum - log(count)
+    combined_log_Z = new_log_sum - jnp.log(new_count)
     
-    return combined_log_Z, new_sum, new_count
+    return combined_log_Z, new_log_sum, new_count
