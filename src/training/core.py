@@ -262,7 +262,7 @@ def train_velocity_field(
                     score_fn=path_distribution.score_fn,
                     use_control_variate=config.mcmc.use_control_variate,
                     use_shortcut=config.training.use_shortcut,
-                    prev_sum=prev_sum,
+                    prev_log_sum=prev_sum,
                     prev_count=prev_count,
                 )
                 log_Z_t = jax.lax.stop_gradient(log_Z_t)
