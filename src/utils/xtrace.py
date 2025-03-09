@@ -86,7 +86,8 @@ def divergence_velocity_xtrace(
     scale = _get_scale(W, SW_d, n, n_probes)
     
     # Combine to form the per-probe estimates, matching the first implementation:
-    estimates = jnp.trace(H) - SHS_d + (WHW_d - TW_d + term1 + term2 + term3) * scale
+    estimates = jnp.trace(H) * jnp.ones(m) - SHS_d + (WHW_d - TW_d + term1 + term2 + term3) * scale
+    # estimates = jnp.trace(H) - SHS_d + (WHW_d - TW_d + term1 + term2 + term3) * scale
     
     # Aggregate the estimates (mean and standard error)
     trace_est = jnp.mean(estimates)

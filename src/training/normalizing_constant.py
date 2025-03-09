@@ -1,4 +1,4 @@
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 import chex
 import equinox as eqx
@@ -88,7 +88,6 @@ def estimate_log_Z_t(
     score_fn: Callable[[chex.Array, float], chex.Array] = None,
     use_control_variate: bool = False,
     use_shortcut: bool = False,
-    mp_policy = None,
 ) -> chex.Array:
     """Estimate the log partition function using weighted samples.
 
@@ -125,3 +124,54 @@ def estimate_log_Z_t(
     result = jnp.sum(dt_log_unormalised_density * weights, axis=-1, keepdims=True)
     
     return jnp.nan_to_num(result, nan=0.0, posinf=1.0, neginf=-1.0)
+
+
+@eqx.filter_jit
+def estimate_log_Z_t_online(
+    xs: chex.Array,
+    weights: chex.Array,
+    ts: chex.Array,
+    time_derivative_log_density: callable,
+    v_theta: Optional[callable] = None,
+    score_fn: Optional[callable] = None,
+    use_control_variate: bool = False,
+    use_shortcut: bool = False,
+    prev_sum: Optional[chex.Array] = None,
+    prev_count: Optional[int] = None,
+) -> Tuple[chex.Array, chex.Array, int]:
+    """
+    Update an online estimate of log Z by combining the current batch estimate
+    with previous batches.
+    
+    Returns:
+        combined_log_Z: The updated log partition function estimate.
+        new_sum: Updated accumulator for sum of Z estimates.
+        new_count: Updated batch count.
+    """
+    # Compute the current batch's log Z estimate.
+    batch_log_Z = estimate_log_Z_t(
+        xs,
+        weights,
+        ts,
+        time_derivative_log_density,
+        v_theta=v_theta,
+        score_fn=score_fn,
+        use_control_variate=use_control_variate,
+        use_shortcut=use_shortcut,
+    )
+    
+    # Convert the log estimate to Z (the partition function).
+    batch_Z = jnp.exp(batch_log_Z)
+    
+    # If no previous accumulator exists, initialize.
+    if prev_sum is None or prev_count is None:
+        new_sum = batch_Z
+        new_count = 1
+    else:
+        new_sum = prev_sum + batch_Z
+        new_count = prev_count + 1
+    
+    # The combined estimator is the log of the average of Z estimates.
+    combined_log_Z = jnp.log(new_sum / new_count)
+    
+    return combined_log_Z, new_sum, new_count
