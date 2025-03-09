@@ -223,6 +223,7 @@ def train_velocity_field(
 
     prev_sum = None
     prev_count = None
+    mcmc_samples = None
 
     for epoch in range(config.training.num_epochs):
         # Calculate current lambda_factor based on the epoch
@@ -240,17 +241,17 @@ def train_velocity_field(
             current_ts = base_ts
 
         # Sample generation
-        if config.training.use_decoupled_loss:
-            key, subkey = jax.random.split(key)
-            mcmc_samples = generate_samples_with_optional_mcmc(
-                subkey, v_theta, current_ts, path_distribution, config, 
-                use_mcmc=True, force_finite=True, lambda_factor=current_lambda
-            )
-            
+        if config.training.use_decoupled_loss:            
             # Only estimate log_Z_t according to the configured frequency
             should_estimate_log_z = (epoch % config.training.log_z_estimation_frequency == 0) or (epoch == 0) or (log_Z_t_ref[0] is None)
             
             if should_estimate_log_z:
+                key, subkey = jax.random.split(key)
+                mcmc_samples = generate_samples_with_optional_mcmc(
+                    subkey, v_theta, current_ts, path_distribution, config, 
+                    use_mcmc=True, force_finite=True, lambda_factor=current_lambda
+                )
+
                 key, subkey = jax.random.split(key)
                 log_Z_t, prev_sum, prev_count = estimate_log_Z_t_online(
                     mcmc_samples["positions"],
