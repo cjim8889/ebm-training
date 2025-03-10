@@ -252,19 +252,31 @@ def train_velocity_field(
                     use_mcmc=True, force_finite=True, lambda_factor=current_lambda
                 )
 
-                key, subkey = jax.random.split(key)
-                log_Z_t, prev_sum, prev_count = estimate_log_Z_t_online(
-                    mcmc_samples["positions"],
-                    mcmc_samples["weights"],
-                    current_ts,
-                    path_distribution.time_derivative,
-                    v_theta=v_theta,
-                    score_fn=path_distribution.score_fn,
-                    use_control_variate=config.mcmc.use_control_variate,
-                    use_shortcut=config.training.use_shortcut,
-                    prev_log_sum=prev_sum,
-                    prev_count=prev_count,
-                )
+                if not config.integration.continuous_time:
+                    key, subkey = jax.random.split(key)
+                    log_Z_t, prev_sum, prev_count = estimate_log_Z_t_online(
+                        mcmc_samples["positions"],
+                        mcmc_samples["weights"],
+                        current_ts,
+                        path_distribution.time_derivative,
+                        v_theta=v_theta,
+                        score_fn=path_distribution.score_fn,
+                        use_control_variate=config.mcmc.use_control_variate,
+                        use_shortcut=config.training.use_shortcut,
+                        prev_log_sum=prev_sum,
+                        prev_count=prev_count,
+                    )
+                else:
+                    log_Z_t = estimate_log_Z_t(
+                        mcmc_samples["positions"],
+                        mcmc_samples["weights"],
+                        current_ts,
+                        path_distribution.time_derivative,
+                        v_theta=v_theta,
+                        score_fn=path_distribution.score_fn,
+                        use_control_variate=config.mcmc.use_control_variate,
+                        use_shortcut=config.training.use_shortcut,
+                    )
                 log_Z_t = jax.lax.stop_gradient(log_Z_t)
                 
                 # Update last_log_Z_t for future epochs
