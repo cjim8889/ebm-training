@@ -23,7 +23,6 @@ from .config import TrainingExperimentConfig
 from .loss import Particle, loss_fn
 from .normalizing_constant import estimate_log_Z_t, estimate_log_Z_t_online
 
-
 def generate_samples_with_optional_mcmc(
     key: jax.random.PRNGKey,
     v_theta: Callable,
@@ -240,63 +239,71 @@ def train_velocity_field(
         else:
             current_ts = base_ts
 
+        # Only estimate log_Z_t according to the configured frequency
+        should_estimate_log_z = (epoch % config.training.log_z_estimation_frequency == 0) or (epoch == 0) or (log_Z_t_ref[0] is None)
+        
+        if should_estimate_log_z:
+            key, subkey = jax.random.split(key)
+            mcmc_samples = generate_samples_with_optional_mcmc(
+                subkey, v_theta, current_ts, path_distribution, config, 
+                use_mcmc=True, force_finite=True, lambda_factor=current_lambda
+            )
+
+            if not config.integration.continuous_time:
+                key, subkey = jax.random.split(key)
+                log_Z_t, prev_sum, prev_count = estimate_log_Z_t_online(
+                    mcmc_samples["positions"],
+                    mcmc_samples["weights"],
+                    current_ts,
+                    path_distribution.time_derivative,
+                    v_theta=v_theta,
+                    score_fn=path_distribution.score_fn,
+                    use_control_variate=config.mcmc.use_control_variate,
+                    use_shortcut=config.training.use_shortcut,
+                    prev_log_sum=prev_sum,
+                    prev_count=prev_count,
+                )
+            else:
+                log_Z_t = estimate_log_Z_t(
+                    mcmc_samples["positions"],
+                    mcmc_samples["weights"],
+                    current_ts,
+                    path_distribution.time_derivative,
+                    v_theta=v_theta,
+                    score_fn=path_distribution.score_fn,
+                    use_control_variate=config.mcmc.use_control_variate,
+                    use_shortcut=config.training.use_shortcut,
+                )
+            log_Z_t = jax.lax.stop_gradient(log_Z_t)
+            
+            # Update last_log_Z_t for future epochs
+            log_Z_t_ref[0] = log_Z_t
+            
+            if not config.offline:
+                log_Z_t_to_log = jnp.nan_to_num(log_Z_t, nan=0.0, posinf=1.0, neginf=-1.0)
+                wandb.log({"log_Z_t": log_Z_t_to_log})
+                if "ess" in mcmc_samples:
+                    wandb.log({"ess": mcmc_samples["ess"]})
+            else:
+                print("Log Z: ", log_Z_t)
+                if "ess" in mcmc_samples:
+                    print("MCMC Samples ESS: ", mcmc_samples["ess"])
+        else:
+            # Reuse the log_Z_t from the previous estimation
+            log_Z_t = log_Z_t_ref[0]
+            if not config.offline:
+                wandb.log({"log_Z_t (reused)": jnp.nan_to_num(log_Z_t, nan=0.0, posinf=1.0, neginf=-1.0)})
+
+        epoch_loss = 0.0
+        key, subkey = jax.random.split(key)
+        num_particles = (
+            config.sampling.num_particles * 2
+            if config.training.use_decoupled_loss
+            else config.sampling.num_particles
+        )
+
         # Sample generation
         if config.training.use_decoupled_loss:            
-            # Only estimate log_Z_t according to the configured frequency
-            should_estimate_log_z = (epoch % config.training.log_z_estimation_frequency == 0) or (epoch == 0) or (log_Z_t_ref[0] is None)
-            
-            if should_estimate_log_z:
-                key, subkey = jax.random.split(key)
-                mcmc_samples = generate_samples_with_optional_mcmc(
-                    subkey, v_theta, current_ts, path_distribution, config, 
-                    use_mcmc=True, force_finite=True, lambda_factor=current_lambda
-                )
-
-                if not config.integration.continuous_time:
-                    key, subkey = jax.random.split(key)
-                    log_Z_t, prev_sum, prev_count = estimate_log_Z_t_online(
-                        mcmc_samples["positions"],
-                        mcmc_samples["weights"],
-                        current_ts,
-                        path_distribution.time_derivative,
-                        v_theta=v_theta,
-                        score_fn=path_distribution.score_fn,
-                        use_control_variate=config.mcmc.use_control_variate,
-                        use_shortcut=config.training.use_shortcut,
-                        prev_log_sum=prev_sum,
-                        prev_count=prev_count,
-                    )
-                else:
-                    log_Z_t = estimate_log_Z_t(
-                        mcmc_samples["positions"],
-                        mcmc_samples["weights"],
-                        current_ts,
-                        path_distribution.time_derivative,
-                        v_theta=v_theta,
-                        score_fn=path_distribution.score_fn,
-                        use_control_variate=config.mcmc.use_control_variate,
-                        use_shortcut=config.training.use_shortcut,
-                    )
-                log_Z_t = jax.lax.stop_gradient(log_Z_t)
-                
-                # Update last_log_Z_t for future epochs
-                log_Z_t_ref[0] = log_Z_t
-                
-                if not config.offline:
-                    log_Z_t_to_log = jnp.nan_to_num(log_Z_t, nan=0.0, posinf=1.0, neginf=-1.0)
-                    wandb.log({"log_Z_t": log_Z_t_to_log})
-                    if "ess" in mcmc_samples:
-                        wandb.log({"ess": mcmc_samples["ess"]})
-                else:
-                    print("Log Z: ", log_Z_t)
-                    if "ess" in mcmc_samples:
-                        print("MCMC Samples ESS: ", mcmc_samples["ess"])
-            else:
-                # Reuse the log_Z_t from the previous estimation
-                log_Z_t = log_Z_t_ref[0]
-                if not config.offline:
-                    wandb.log({"log_Z_t (reused)": jnp.nan_to_num(log_Z_t, nan=0.0, posinf=1.0, neginf=-1.0)})
-                
             key, subkey = jax.random.split(key)
             v_theta_samples = generate_samples_with_optional_mcmc(
                 subkey, v_theta, current_ts, path_distribution, config,
@@ -313,15 +320,7 @@ def train_velocity_field(
             )
             if isinstance(samples, dict):
                 samples = samples["positions"]
-            log_Z_t = None
 
-        epoch_loss = 0.0
-        key, subkey = jax.random.split(key)
-        num_particles = (
-            config.sampling.num_particles * 2
-            if config.training.use_decoupled_loss
-            else config.sampling.num_particles
-        )
         particles = Particle(
             x=samples.reshape(num_particles * current_ts.shape[0], -1),
             t=jnp.repeat(current_ts, num_particles),

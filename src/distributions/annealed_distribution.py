@@ -35,7 +35,7 @@ class AnnealedDistribution(Target):
         if self.method == "linear":
             beta = t
         elif self.method == "inverse_power":
-            beta = 1 - (1 - t) ** 0.5
+            beta = (1 - (1 - t) ** 0.5)
         else:
             beta = get_inverse_temperature(t, 250.0, 1.0)
 
