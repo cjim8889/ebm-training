@@ -213,7 +213,7 @@ def train_velocity_field(
             dropout_key=dropout_key if config.model.dropout is not None else None,
         )
             
-        updates, opt_state = optimizer.update(grads, opt_state, v_theta)
+        updates, opt_state = optimizer.update(grads, opt_state, eqx.filter(v_theta, eqx.is_array))
         v_theta = eqx.apply_updates(v_theta, updates)
         return v_theta, opt_state, loss
 
