@@ -274,6 +274,7 @@ def loss_fn(
         float: Mean squared error in satisfying the Liouville equation
     """
     dropout_keys = jax.random.split(dropout_key, num=particles.x.shape[0]) if dropout_key is not None else None
+    key, subkey = jax.random.split(key)
     if estimator == "hutchinson":
         if n_probes > 1:
             eps = jax.random.rademacher(
