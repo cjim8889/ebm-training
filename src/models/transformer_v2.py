@@ -33,7 +33,7 @@ class EmbedderBlock(eqx.Module):
             out_size=embedding_size,
             width_size=64,
             depth=3,
-            activation=eqx.nn.Lambda(jax.nn.silu),
+            activation=jax.nn.silu,
             use_bias=True,
             key=key,
             dtype=mp_policy.param_dtype,

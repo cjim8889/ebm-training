@@ -174,24 +174,22 @@ class QuadraticSmoothedLJ(Target):
         fig, axs = plt.subplots(1, 2, figsize=(12, 4))
         axs[0].hist(
             dist_samples.flatten(),
-            bins=1000,
+            bins=100,
             alpha=0.5,
             density=True,
             histtype="step",
-            linewidth=4,
+            linewidth=2,
         )
         axs[0].set_xlabel("Interatomic distance")
 
         axs[1].hist(
             energy_samples,
-            bins=1000,
+            bins=100,
             density=True,
             alpha=0.4,
             range=(energy_samples.min(), energy_samples.max()),
-            color="r",
             histtype="step",
-            linewidth=4,
-            label="Generated data",
+            linewidth=2,
         )
         axs[1].set_xlabel("Energy")
 
