@@ -95,10 +95,9 @@ def divergence_velocity_hutchpp(
     #--------------------------------------#
     # 3) Build Q from r random directions
     #--------------------------------------#
-    rng = dropout_key if dropout_key is not None else jax.random.PRNGKey(0)
-
+    key, subkey = random.split(key, 2)
     # S shape [D, r]
-    S = random.rademacher(rng, (x.shape[0], n_probes), dtype=x.dtype)
+    S = random.rademacher(subkey, (x.shape[0], n_probes), dtype=x.dtype)
     chex.assert_shape(S, (x.shape[0], n_probes))
 
     # A_S = J(x)*S => shape [D, r]
@@ -123,8 +122,7 @@ def divergence_velocity_hutchpp(
     # 5) residual trace with n_probes random vectors
     #----------------------------------------------#
     # eps shape [n_probes, D]
-    rng_eps = random.split(rng, 2)[-1]  # or any sub-key you like
-    eps = random.rademacher(rng_eps, (n_probes, x.shape[0]), dtype=x.dtype)
+    eps = random.rademacher(key, (n_probes, x.shape[0]), dtype=x.dtype)
     chex.assert_shape(eps, (n_probes, x.shape[0]))
 
     def residual_trace(e):

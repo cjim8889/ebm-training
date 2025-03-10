@@ -140,8 +140,18 @@ def epsilon_with_hutchinson_Q(
     score = score_fn(x, t)
     
 
-    if mode == "hutch++":
+    if mode == "hutch++2":
         div_v, _, primals = divergence_velocity_hutchpp2(
+            key,
+            v_theta,
+            x,
+            t,
+            n_probes=n_probes,
+            d=d,
+            dropout_key=dropout_key,
+        )
+    elif mode == "hutch++":
+        div_v, _, primals = divergence_velocity_hutchpp(
             key,
             v_theta,
             x,
@@ -295,7 +305,7 @@ def loss_fn(
                 True,
                 dropout_keys
             )
-    elif estimator == "hutch++" or estimator == "xtrace":
+    elif estimator == "hutch++" or estimator == "xtrace" or estimator == "hutch++2":
         key, subkey = jax.random.split(key)
         estimator_keys = jax.random.split(subkey, num=particles.x.shape[0])
         epsilons = batched_epsilon_with_hutchinson_Q(
