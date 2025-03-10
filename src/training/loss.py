@@ -11,7 +11,7 @@ from src.utils.distributions import (
     hutchinson_divergence_velocity2,
     hutchinson_divergence_velocity_single_probe,
 )
-from src.utils.hutchpp import divergence_velocity_hutchpp
+from src.utils.hutchpp import divergence_velocity_hutchpp, divergence_velocity_hutchpp2
 from src.utils.xtrace import divergence_velocity_xtrace
 
 
@@ -120,6 +120,7 @@ batched_epsilon_with_hutchinson = jax.vmap(
 
 @eqx.filter_jit
 def epsilon_with_hutchinson_Q(
+    key: chex.Array,
     v_theta: Callable[[chex.Array, float, float], chex.Array],
     particle: Particle,
     score_fn: Callable[[chex.Array, float], chex.Array],
@@ -140,7 +141,8 @@ def epsilon_with_hutchinson_Q(
     
 
     if mode == "hutch++":
-        div_v, _, primals = divergence_velocity_hutchpp(
+        div_v, _, primals = divergence_velocity_hutchpp2(
+            key,
             v_theta,
             x,
             t,
@@ -150,6 +152,7 @@ def epsilon_with_hutchinson_Q(
         )
     elif mode == "xtrace":
         div_v, primals = divergence_velocity_xtrace(
+            key,
             v_theta,
             x,
             t,
@@ -168,7 +171,7 @@ def epsilon_with_hutchinson_Q(
     return jnp.nan_to_num(result, nan=0.0, posinf=1.0, neginf=-1.0)
 
 batched_epsilon_with_hutchinson_Q = jax.vmap(
-    epsilon_with_hutchinson_Q, in_axes=(None, 0, None, None, None, 0, None)
+    epsilon_with_hutchinson_Q, in_axes=(0, None, 0, None, None, None, 0, None)
 )
 
 def shortcut(
@@ -264,7 +267,7 @@ def loss_fn(
     if estimator == "hutchinson":
         if n_probes > 1:
             eps = jax.random.rademacher(
-                key,
+                subkey,
                 shape=(particles.x.shape[0], n_probes, particles.x.shape[1]),
                 dtype=particles.x.dtype,
             )
@@ -279,7 +282,7 @@ def loss_fn(
             )
         else:
             eps = jax.random.rademacher(
-                key,
+                subkey,
                 shape=(particles.x.shape[0], particles.x.shape[1]),
                 dtype=particles.x.dtype,
             )
@@ -293,7 +296,10 @@ def loss_fn(
                 dropout_keys
             )
     elif estimator == "hutch++" or estimator == "xtrace":
+        key, subkey = jax.random.split(key)
+        estimator_keys = jax.random.split(subkey, num=particles.x.shape[0])
         epsilons = batched_epsilon_with_hutchinson_Q(
+            estimator_keys,
             v_theta,
             particles,
             score_fn,

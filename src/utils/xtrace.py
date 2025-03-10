@@ -12,6 +12,7 @@ def _get_scale(W: Array, D: Array, n: int, k: int) -> Array:
 
 @eqx.filter_jit
 def divergence_velocity_xtrace(
+    key: PRNGKeyArray,
     v_theta: Callable,
     x: Float[Array, "D"],
     t: Float[Array, ""],
@@ -45,12 +46,11 @@ def divergence_velocity_xtrace(
     def matvec(vec: Float[Array, "D"]) -> Float[Array, "D"]:
         return f_vjp(vec)[0]
     
-    key_rng = dropout_key if dropout_key is not None else jax.random.PRNGKey(0)
     n = x.shape[0]            # analogous to n in the estimator
     m = n_probes // 2         # number of probe pairs
     
     # Draw probe directions (satisfying zero-mean, unit-covariance)
-    Omega = jax.random.normal(key_rng, (n, m), dtype=x.dtype)
+    Omega = jax.random.normal(key, (n, m), dtype=x.dtype)
     Omega = jnp.sqrt(n) * (Omega / jnp.linalg.norm(Omega, axis=0))
     
     # Apply the linearized operator (via the VJP matvec) to Omega

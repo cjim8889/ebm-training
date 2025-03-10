@@ -10,7 +10,7 @@ from src.utils.distributions import (
     divergence_velocity_with_shortcut,
     hutchinson_divergence_velocity2,
 )
-from src.utils.hutchpp import divergence_velocity_hutchpp
+from src.utils.hutchpp import divergence_velocity_hutchpp2
 from src.utils.xtrace import divergence_velocity_xtrace
 
 # Set up policy and model
@@ -20,7 +20,7 @@ policy = jmp.Policy(
     output_dtype=jnp.float32,
 )
 
-key = jax.random.PRNGKey(12345)
+key = jax.random.PRNGKey(66)
 mlp = ParticleTransformerV3(
     n_particles=13,
     n_spatial_dim=3,
@@ -36,20 +36,20 @@ mlp = ParticleTransformerV3(
 
 # Parameters
 batch_size = 1024  # Total number of positions available
-B = 500  # Number of positions to use for comparison
-n_probes = 20
+B = 1000  # Number of positions to use for comparison
+n_probes = 12
 t = jnp.array(0.5)
 sigma = jnp.array(0.125)
 
 # Generate random positions (each of dimension 39)
 key, subkey = jax.random.split(key)
-pos_batch = jax.random.normal(subkey, (batch_size, 39))
+pos_batch = jax.random.normal(subkey, (batch_size, 39)) * 2
 positions = pos_batch[:B]  # Use first B positions
 
 # Vectorize the ground truth, X-Trace, and Hutchinson++ estimators:
 v_ground_truth = jax.vmap(lambda pos: divergence_velocity_with_shortcut(mlp, pos, t, d=sigma))
-v_xtrace = jax.vmap(lambda pos: divergence_velocity_xtrace(mlp, pos, t, n_probes=n_probes, d=sigma)[0])
-v_hutchpp = jax.vmap(lambda pos: divergence_velocity_hutchpp(mlp, pos, t, d=sigma, n_probes=n_probes)[0])
+v_xtrace = jax.vmap(lambda pos, key: divergence_velocity_xtrace(key, mlp, pos, t, n_probes=n_probes, d=sigma)[0])
+v_hutchpp = jax.vmap(lambda pos, key: divergence_velocity_hutchpp2(key, mlp, pos, t, d=sigma, n_probes=n_probes)[0])
 
 # For the Hutchinson estimator, we need to generate a new eps for each sample.
 def hutchinson_fn(pos, key):
@@ -63,8 +63,19 @@ v_hutchinson = jax.vmap(hutchinson_fn, in_axes=(0, 0))
 
 # Run the vectorized estimators over the B positions:
 ground_truths = v_ground_truth(positions)
-xtrace_estimates = v_xtrace(positions)
-hutchpp_estimates = v_hutchpp(positions)
+
+# For X-Trace and Hutchinson++, we need to pass the keys
+# to the vectorized function
+
+# Generate B keys for the X-Trace and Hutchinson++ estimators
+key, subkey = jax.random.split(key)
+xtrace_keys = jax.random.split(subkey, B)
+xtrace_estimates = v_xtrace(positions, xtrace_keys)
+
+key, subkey = jax.random.split(key)
+hutchpp_keys = jax.random.split(subkey, B)
+hutchpp_estimates = v_hutchpp(positions, hutchpp_keys)
+
 hutchinson_estimates = v_hutchinson(positions, hutchinson_keys)
 
 # Convert from JAX arrays to numpy arrays for statistics/plotting
