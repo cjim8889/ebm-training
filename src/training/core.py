@@ -251,6 +251,7 @@ def train_velocity_field(
 
             if config.mcmc.method == "asmc":
                 current_ts = mcmc_samples["ts"]
+                base_ts = mcmc_samples["ts"]
 
                 print("Using Adaptive SMC for log Z estimation as well as tempering schedule selection")
                 print("Current time steps: ", current_ts)
