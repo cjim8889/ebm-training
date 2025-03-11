@@ -221,9 +221,8 @@ def train_velocity_field(
         [2**e for e in range(int(jnp.floor(jnp.log2(128))) + 1)]
     )
 
-    prev_sum = None
-    prev_count = None
     mcmc_samples = None
+    current_ts = None
 
     for epoch in range(config.training.num_epochs):
         # Calculate current lambda_factor based on the epoch
