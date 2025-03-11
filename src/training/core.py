@@ -278,15 +278,14 @@ def train_velocity_field(
                     use_shortcut=config.training.use_shortcut,
                 )
 
+            log_Z_t = log_Z_t.flatten()
             log_Z_t = jax.lax.stop_gradient(log_Z_t)
-            
             # Update last_log_Z_t for future epochs
             log_Z_t_ref[0] = log_Z_t
             
             if not config.offline:
                 log_Z_t_to_log = jnp.nan_to_num(log_Z_t, nan=0.0, posinf=1.0, neginf=-1.0)
                 wandb.log({"log_Z_t": log_Z_t_to_log})
-                print("Log Z: ", log_Z_t_to_log)
                 if "ess" in mcmc_samples:
                     wandb.log({"ess": mcmc_samples["ess"]})
             else:
