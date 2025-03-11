@@ -7,17 +7,19 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float, PRNGKeyArray
 
 from src.mcmc.smc import generate_samples_with_smc
+from src.mcmc.adaptive_smc import generate_samples_with_adaptive_smc
 from src.ode import solve_neural_ode_diffrax, solve_neural_ode_euler
 
 from .hmc import propagate_with_hmc
 
 
-@eqx.filter_jit
+# @eqx.filter_jit
 def sample_with_mcmc(
     key: PRNGKeyArray,
     initial_samples: Float[Array, "num_samples dim"],
     v_theta: Optional[Callable[[Float[Array, "dim"], float], Float[Array, "dim"]]] = None,
     time_dependent_log_density: Optional[Callable[[Float[Array, "dim"], float], float]] = None,
+    incremental_log_delta: Optional[Callable[[Float[Array, "dim"], float], float]] = None,
     mcmc_method: str = "none",
     ts: Optional[Float[Array, "num_timesteps"]] = None,
     initial_log_probs: Optional[Float[Array, "num_samples"]] = None,
@@ -148,6 +150,34 @@ def sample_with_mcmc(
             use_shortcut=use_shortcut,
             lambda_factor=lambda_factor,
         )
+    elif mcmc_method == "asmc":
+        # Use SMC or VSMC
+        key, subkey = jax.random.split(key)
+
+        v_theta_smc = v_theta
+
+        samples = generate_samples_with_adaptive_smc(
+            key=subkey,
+            initial_samples=initial_samples,
+            time_dependent_log_density=time_dependent_log_density,
+            incremental_log_delta=incremental_log_delta,
+            t0=0.0,
+            max_steps=ts.shape[0],
+            mcmc_steps=num_steps,
+            integration_steps=integration_steps,
+            eta=eta,
+            ess_threshold=ess_threshold,
+            v_theta=v_theta_smc,
+            use_shortcut=use_shortcut,
+            lambda_factor=lambda_factor,
+        )
+
+        return {
+            "positions": samples["positions"],
+            "weights": samples["weights"],
+            "ts": samples["diagnostics"]["beta"],
+            "ess": samples["diagnostics"]["ess"],
+        }
     
     else:
         raise ValueError(f"Unknown MCMC method: {mcmc_method}") 

@@ -21,7 +21,7 @@ from src.utils.optimization import get_optimizer, inverse_power_schedule, power_
 
 from .config import TrainingExperimentConfig
 from .loss import Particle, loss_fn
-from .normalizing_constant import estimate_log_Z_t, estimate_log_Z_t_online
+from .normalizing_constant import estimate_log_Z_t, estimate_log_Z_t_online, estimate_log_Z_t_with_TI
 
 def generate_samples_with_optional_mcmc(
     key: jax.random.PRNGKey,
@@ -64,6 +64,7 @@ def generate_samples_with_optional_mcmc(
         initial_samples=initial_samples,
         v_theta=v_theta,
         time_dependent_log_density=path_distribution.time_dependent_log_prob,
+        incremental_log_delta=path_distribution.incremental_log_delta,
         mcmc_method=mcmc_method,
         ts=ts_compute,
         shift_fn=config.density.shift_fn,
@@ -82,7 +83,7 @@ def generate_samples_with_optional_mcmc(
             samples["positions"], nan=0.0, posinf=1.0, neginf=-1.0
         )
     chex.assert_type(samples["positions"], config.mp_policy.output_dtype)
-    chex.assert_shape(samples["positions"], (ts.shape[0], config.sampling.num_particles, None))
+    chex.assert_shape(samples["positions"], (None, config.sampling.num_particles, None))
 
     return samples
 
@@ -249,19 +250,21 @@ def train_velocity_field(
                 use_mcmc=True, force_finite=True, lambda_factor=current_lambda
             )
 
-            if not config.integration.continuous_time:
-                key, subkey = jax.random.split(key)
-                log_Z_t, prev_sum, prev_count = estimate_log_Z_t_online(
+            if config.mcmc.method == "asmc":
+                current_ts = mcmc_samples["ts"]
+
+                print("Using Adaptive SMC for log Z estimation as well as tempering schedule selection")
+                print("Current time steps: ", current_ts)
+
+
+            if config.training.use_TI:
+                # Use Thermodynamic Integration for log Z estimation
+                print("Using Thermodynamic Integration for log Z estimation (Does not support control variate)")
+                log_Z_t = estimate_log_Z_t_with_TI(
                     mcmc_samples["positions"],
                     mcmc_samples["weights"],
                     current_ts,
                     path_distribution.time_derivative,
-                    v_theta=v_theta,
-                    score_fn=path_distribution.score_fn,
-                    use_control_variate=config.mcmc.use_control_variate,
-                    use_shortcut=config.training.use_shortcut,
-                    prev_log_sum=prev_sum,
-                    prev_count=prev_count,
                 )
             else:
                 log_Z_t = estimate_log_Z_t(
@@ -274,6 +277,7 @@ def train_velocity_field(
                     use_control_variate=config.mcmc.use_control_variate,
                     use_shortcut=config.training.use_shortcut,
                 )
+
             log_Z_t = jax.lax.stop_gradient(log_Z_t)
             
             # Update last_log_Z_t for future epochs
@@ -398,6 +402,7 @@ def train_velocity_field(
                     path_distribution,
                     target_density,
                     current_end_time,
+                    current_ts=current_ts if config.mcmc.method == "asmc" else None,
                 )
                 all_eval_results.append(eval_metrics)
 
