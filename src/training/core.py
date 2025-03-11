@@ -72,7 +72,7 @@ def generate_samples_with_optional_mcmc(
         num_steps=config.mcmc.num_steps,
         integration_steps=config.mcmc.num_integration_steps,
         eta=config.mcmc.step_size,
-        ess_threshold=0.6,  # Default value
+        ess_threshold=config.mcmc.ess_threshold,  # Default value
         estimate_covariance=False,  # Default value
         solver=config.integration.method,
         lambda_factor=lambda_factor,
