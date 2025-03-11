@@ -1,7 +1,9 @@
-from .base import Target
-from src.utils.distributions import get_inverse_temperature
-import jax
 import chex
+import jax
+
+from src.utils.distributions import get_inverse_temperature
+
+from .base import Target
 
 
 class AnnealedDistribution(Target):
@@ -49,7 +51,9 @@ class AnnealedDistribution(Target):
         return initial_prob + target_prob
 
     def incremental_log_delta(self, xs: chex.Array, dt: float) -> chex.Array:
-        return -self.time_dependent_log_prob(xs, 1.0) * dt
+        return dt * (
+            self.target_density.log_prob(xs) - self.initial_density.log_prob(xs)
+        )
 
     def time_derivative(self, xs: chex.Array, t: float) -> chex.Array:
         return jax.grad(lambda t: self.time_dependent_log_prob(xs, t))(t)
