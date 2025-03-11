@@ -237,7 +237,7 @@ def train_velocity_field(
             key, subkey = jax.random.split(key)
             current_ts = sample_monotonic_uniform_ordered(subkey, base_ts, True)
         else:
-            current_ts = base_ts
+            current_ts = base_ts if current_ts is None else current_ts
 
         # Only estimate log_Z_t according to the configured frequency
         should_estimate_log_z = (epoch % config.training.log_z_estimation_frequency == 0) or (epoch == 0) or (log_Z_t_ref[0] is None)
