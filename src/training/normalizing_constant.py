@@ -1,9 +1,9 @@
 from typing import Callable, Optional, Tuple
 
-import chex
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+from jaxtyping import Array, Float, PRNGKeyArray
 
 from src.utils.distributions import (
     divergence_velocity,
@@ -13,15 +13,15 @@ from src.utils.distributions import (
 
 
 def control_variate_epsilon(
-    v_theta: Callable[[chex.Array, float], chex.Array],
-    x: chex.Array,
+    v_theta: Callable[[Float[Array, "dim"], float, Optional[float]], Float[Array, "dim"]],
+    x: Float[Array, "dim"],
     t: float,
-    score_fn: Callable[[chex.Array, float], chex.Array],
-    d: Optional[chex.Array] = None,
+    score_fn: Callable[[Float[Array, "dim"], float], Float[Array, "dim"]],
+    d: Optional[Float[Array, ""]] = None,
     use_hutchinson: bool = False,
-    key: Optional[jax.random.PRNGKey] = None,
+    key: Optional[PRNGKeyArray] = None,
     n_probes: int = 5,
-) -> float:
+) -> Float[Array, ""]:
     """Use control variate to reduce variance of the normalizing constant estimate.
 
     Args:
@@ -80,15 +80,15 @@ time_batched_control_variate_epsilon = eqx.filter_jit(
 
 @eqx.filter_jit
 def estimate_log_Z_t(
-    xs: chex.Array,
-    weights: chex.Array,
-    ts: chex.Array,
-    time_derivative_log_density: Callable[[chex.Array, float], float],
-    v_theta: Callable[[chex.Array, float], chex.Array] = None,
-    score_fn: Callable[[chex.Array, float], chex.Array] = None,
+    xs: Float[Array, "time num_particles dim"],
+    weights: Float[Array, "time num_particles"],
+    ts: Float[Array, "time"],
+    time_derivative_log_density: Callable[[Float[Array, "dim"], float], float],
+    v_theta: Optional[Callable[[Float[Array, "dim"], float, Optional[float]], Float[Array, "dim"]]] = None,
+    score_fn: Optional[Callable[[Float[Array, "dim"], float], Float[Array, "dim"]]] = None,
     use_control_variate: bool = False,
     use_shortcut: bool = False,
-) -> chex.Array:
+) -> Float[Array, "1"]:
     """Estimate the log partition function using weighted samples.
 
     Args:
@@ -100,7 +100,6 @@ def estimate_log_Z_t(
         score_fn: Score function
         use_control_variate: Whether to use control variate
         use_shortcut: Whether to use shortcut distance
-        mp_policy: JAX Mixed Precision policy
 
     Returns:
         Estimate of log partition function
@@ -128,21 +127,33 @@ def estimate_log_Z_t(
 
 @eqx.filter_jit
 def estimate_log_Z_t_online(
-    xs: chex.Array,
-    weights: chex.Array,
-    ts: chex.Array,
-    time_derivative_log_density: callable,
-    v_theta: Optional[callable] = None,
-    score_fn: Optional[callable] = None,
+    xs: Float[Array, "time num_particles dim"],
+    weights: Float[Array, "time num_particles"],
+    ts: Float[Array, "time"],
+    time_derivative_log_density: Callable[[Float[Array, "dim"], float], float],
+    v_theta: Optional[Callable[[Float[Array, "dim"], float, Optional[float]], Float[Array, "dim"]]] = None,
+    score_fn: Optional[Callable[[Float[Array, "dim"], float], Float[Array, "dim"]]] = None,
     use_control_variate: bool = False,
     use_shortcut: bool = False,
-    prev_log_sum: Optional[chex.Array] = None,
+    prev_log_sum: Optional[Float[Array, "1"]] = None,
     prev_count: Optional[int] = None,
-) -> Tuple[chex.Array, chex.Array, int]:
+) -> Tuple[Float[Array, "1"], Float[Array, "1"], int]:
     """
     Update an online estimate of log Z by combining the current batch estimate
     with previous batches.
     
+    Args:
+        xs: Samples from the distribution
+        weights: Importance weights for the samples
+        ts: Time points
+        time_derivative_log_density: Function computing time derivative of log density
+        v_theta: Velocity field function
+        score_fn: Score function
+        use_control_variate: Whether to use control variate
+        use_shortcut: Whether to use shortcut distance
+        prev_log_sum: Previous accumulated log sum
+        prev_count: Previous batch count
+        
     Returns:
         combined_log_Z: The updated log partition function estimate.
         new_sum: Updated accumulator for sum of Z estimates.
@@ -174,3 +185,56 @@ def estimate_log_Z_t_online(
     combined_log_Z = new_log_sum - jnp.log(new_count)
     
     return combined_log_Z, new_log_sum, new_count
+
+
+@eqx.filter_jit
+def estimate_log_Z_t_with_TI(
+    xs: jnp.ndarray,  # shape: (time, num_particles, dim)
+    weights: jnp.ndarray,  # shape: (time, num_particles)
+    ts: jnp.ndarray,  # shape: (time,)
+    time_derivative_log_density: Callable[[jnp.ndarray, float], float],
+) -> jnp.ndarray:
+    """
+    Estimate the log partition function using weighted samples and thermodynamic integration.
+    
+    The idea is to compute:
+    
+        log Z_t = log Z_0 + ∫_0^t E_{p_τ}[d/dτ log f_τ(x)] dτ,
+    
+    where the expectation is approximated via a weighted sum over particles.
+    
+    Args:
+        xs: Samples from the distribution with shape (time, num_particles, dim).
+        weights: Importance weights with shape (time, num_particles).
+        ts: Array of time points with shape (time,).
+        time_derivative_log_density: Function computing the time derivative of the log density.
+    
+    Returns:
+        A one-element jnp.ndarray containing the estimated log partition function.
+    """
+    # Compute the time derivative for each sample and time point.
+    # Here we use a nested jax.vmap so that for each time step (and its corresponding t),
+    # we compute the derivative for each particle in xs.
+    dt_log_unnormalised_density = jax.vmap(
+        lambda xs_t, t: jax.vmap(lambda x: time_derivative_log_density(x, t))(xs_t),
+        in_axes=(0, 0)
+    )(xs, ts)  # shape: (time, num_particles)
+    
+    # Compute the weighted expectation at each time point (summing over particles)
+    # This gives an approximation to E_{p_t}[d/dt log f_t(x)] at each t.
+    weighted_expectations = jnp.sum(dt_log_unnormalised_density * weights, axis=-1)  # shape: (time,)
+    
+    # Compute the increments using the trapezoidal rule.
+    # For each interval [t_i, t_{i+1}], the increment is:
+    # 0.5 * (f(t_i) + f(t_{i+1})) * (t_{i+1} - t_i)
+    dt = ts[1:] - ts[:-1]  # shape: (time - 1,)
+    increments = 0.5 * (weighted_expectations[:-1] + weighted_expectations[1:]) * dt  # shape: (time - 1,)
+
+    # Compute the cumulative integral.
+    # We assume log Z_0 = 0; then for each subsequent time point we sum the increments.
+    logZ_cumulative = jnp.concatenate([jnp.array([0.0]), jnp.cumsum(increments)])
+
+    # Ensure numerical stability by replacing NaN or infinite values.
+    logZ_cumulative = jnp.nan_to_num(logZ_cumulative, nan=0.0, posinf=1.0, neginf=-1.0)
+    
+    return logZ_cumulative
