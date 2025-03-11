@@ -1,69 +1,55 @@
-import os
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-
+import jmp
 import matplotlib.pyplot as plt
 
-import wandb
-from distributions import GMM, MultivariateGaussian
-from models.mlp import VelocityFieldTwo
-from utils.integration import (
-    generate_samples,
-    generate_samples_with_diffrax,
-    solve_neural_ode_diffrax,
-    euler_integrate,
-)
-
-run = wandb.init()
-artifact = run.use_artifact(
-    "iclac/liouville_workshop/velocity_field_model_iwik1qe2:v17", type="model"
-)
-
-artifact_dir = artifact.download()
+from src.distributions import GMM, MultivariateGaussian
+from src.models.transformer_v2 import ParticleTransformerV2
+from src.ode import solve_neural_ode_diffrax, solve_neural_ode_euler
 
 # Create a key for model initialization
 key = jax.random.PRNGKey(0)
 
-v_theta = VelocityFieldTwo(
-    key=key,
-    dim=2,
-    hidden_dim=128,
-    depth=4,
-    shortcut=True,
-)
-# Load the saved parameters into the model
-v_theta = eqx.tree_deserialise_leaves(f"{artifact_dir}/model.eqx", v_theta)
 
-initial_density = MultivariateGaussian(dim=2, sigma=25.0)
-target_density = GMM(key, dim=2)
+policy = jmp.Policy(
+    param_dtype=jnp.float32,
+    compute_dtype=jnp.float32,
+    output_dtype=jnp.float32,
+)
+v_theta = ParticleTransformerV2(
+    n_particles=2,
+    n_spatial_dim=3,
+    hidden_size=128,
+    num_layers=2,
+    num_heads=4,
+    dropout_rate=None,
+    attn_dropout_rate=None,
+    key=key,
+    mp_policy=policy,
+)
+
+initial_density = MultivariateGaussian(dim=6, sigma=2.0)
 
 key, sample_key = jax.random.split(key)
 
 ts = jnp.linspace(0, 1, 128)
-initial_samples = initial_density.sample(sample_key, (512,))
+initial_samples = initial_density.sample(sample_key, (128,))
 
-diffrax_euler_samples, _ = solve_neural_ode_diffrax(
+diffrax_result, _ =solve_neural_ode_diffrax(
     v_theta=v_theta,
     y0=initial_samples,
     ts=ts,
-    use_shortcut=True,
-    exact_logp=True,
+    use_shortcut=False,
 )
 
-euler_samples = euler_integrate(
-    v_theta=v_theta, initial_samples=initial_samples, ts=ts, use_shortcut=True
+euler_result, _ = solve_neural_ode_euler(
+    v_theta=v_theta,
+    y0=initial_samples,
+    ts=ts,
+    use_shortcut=False,
 )
-euler_samples = euler_samples[-1]
 
-diff_norms = jnp.linalg.norm(diffrax_euler_samples - euler_samples, axis=1)
-mean_diff = jnp.mean(diff_norms)
-
-print("Mean L2 distance between diffrax and Euler samples:", mean_diff)
-
-fig = target_density.visualise(diffrax_euler_samples)
-plt.show()
-
-fig = target_density.visualise(euler_samples)
-plt.show()
+allclose = jnp.allclose(diffrax_result, euler_result, atol=1e-5)
+print("All close:", allclose)
