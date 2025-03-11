@@ -348,6 +348,9 @@ def main():
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--every-k-schedule", type=int, default=1)
+    parser.add_argument("--ess-threshold", type=float, default=0.5)
+
+
     args = parser.parse_args()
 
     if args.debug:

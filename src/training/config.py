@@ -161,4 +161,5 @@ class TrainingExperimentConfig:
     debug: bool = False
     mixed_precision: bool = False
     resume_from: Optional[str] = None
+    ess_threshold: float = 0.5
     mp_policy: jmp.Policy = None  # Field to store the JMP mixed precision policy
