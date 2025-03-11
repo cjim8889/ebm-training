@@ -51,6 +51,9 @@ samples = generate_samples_with_adaptive_smc(
 print("Sampling done")
 print(f"ESS: {samples["diagnostics"]["ess"]}")
 print(f"Beta: {samples["diagnostics"]["beta"]}")
+
+print(samples["weights"].shape)
+
 fig = target_density.visualise(samples["positions"][-1])
 
 plt.show()

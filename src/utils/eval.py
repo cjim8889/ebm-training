@@ -4,6 +4,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
+from jaxtyping import Array, Float
 
 import wandb
 from src.distributions import AnnealedDistribution, Target
@@ -17,6 +18,7 @@ def evaluate_model(
     path_distribution: AnnealedDistribution,
     target_density: Target,
     current_end_time: int,
+    current_ts: Float[Array, "t"] = None,
 ) -> Dict[str, Any]:
     """Run a single evaluation pass and return metrics."""
     total_eval_metrics = {}
@@ -32,7 +34,7 @@ def evaluate_model(
             eval_metrics = target_density.evaluate(
                 eval_key,
                 use_shortcut=config.training.use_shortcut,
-                ts=eval_ts[i],
+                ts=eval_ts[i] if current_ts is None else current_ts,
                 v_theta=v_theta,
                 base_density=path_distribution.initial_density,
             )
@@ -48,7 +50,7 @@ def evaluate_model(
         eval_metrics = target_density.evaluate(
             eval_key,
             use_shortcut=config.training.use_shortcut,
-            ts=eval_ts,
+            ts=eval_ts if current_ts is None else current_ts,
             v_theta=v_theta,
             base_density=path_distribution.initial_density,
         )
