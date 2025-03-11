@@ -10,7 +10,7 @@ from src.utils.distributions import (
     divergence_velocity_with_shortcut,
     hutchinson_divergence_velocity2,
 )
-from src.utils.hutchpp import divergence_velocity_hutchpp2
+from src.utils.hutchpp import divergence_velocity_hutchpp2, divergence_velocity_hutchpp
 from src.utils.xtrace import divergence_velocity_xtrace
 
 # Set up policy and model
@@ -49,7 +49,8 @@ positions = pos_batch[:B]  # Use first B positions
 # Vectorize the ground truth, X-Trace, and Hutchinson++ estimators:
 v_ground_truth = jax.vmap(lambda pos: divergence_velocity_with_shortcut(mlp, pos, t, d=sigma))
 v_xtrace = jax.vmap(lambda pos, key: divergence_velocity_xtrace(key, mlp, pos, t, n_probes=n_probes, d=sigma)[0])
-v_hutchpp = jax.vmap(lambda pos, key: divergence_velocity_hutchpp2(key, mlp, pos, t, d=sigma, n_probes=n_probes)[0])
+v_hutchpp = jax.vmap(lambda pos, key: divergence_velocity_hutchpp(key, mlp, pos, t, d=sigma, n_probes=n_probes)[0])
+v_hutchpp2 = jax.vmap(lambda pos, key: divergence_velocity_hutchpp2(key, mlp, pos, t, d=sigma, n_probes=n_probes)[0])
 
 # For the Hutchinson estimator, we need to generate a new eps for each sample.
 def hutchinson_fn(pos, key):
@@ -76,34 +77,45 @@ key, subkey = jax.random.split(key)
 hutchpp_keys = jax.random.split(subkey, B)
 hutchpp_estimates = v_hutchpp(positions, hutchpp_keys)
 
+
+key, subkey = jax.random.split(key)
+hutchpp2_keys = jax.random.split(subkey, B)
+hutchpp2_estimates = v_hutchpp2(positions, hutchpp2_keys)
+
+
 hutchinson_estimates = v_hutchinson(positions, hutchinson_keys)
 
 # Convert from JAX arrays to numpy arrays for statistics/plotting
 ground_truths_np = np.array(ground_truths)
 xtrace_estimates_np = np.array(xtrace_estimates)
 hutchpp_estimates_np = np.array(hutchpp_estimates)
+hutchpp2_estimates_np = np.array(hutchpp2_estimates)
 hutchinson_estimates_np = np.array(hutchinson_estimates)
 
 # Calculate absolute errors
 xtrace_errors_np = np.abs(xtrace_estimates_np - ground_truths_np)
 hutchpp_errors_np = np.abs(hutchpp_estimates_np - ground_truths_np)
+hutchpp2_errors_np = np.abs(hutchpp2_estimates_np - ground_truths_np)
 hutchinson_errors_np = np.abs(hutchinson_estimates_np - ground_truths_np)
 
 # Calculate statistics for each estimator
-estimators = ["X-Trace", "Hutchinson++", "Hutchinson"]
+estimators = ["X-Trace", "Hutchinson++", "Hutchinson++2", "Hutchinson"]
 mean_errors = [
     np.mean(xtrace_errors_np),
     np.mean(hutchpp_errors_np),
+    np.mean(hutchpp2_errors_np),
     np.mean(hutchinson_errors_np)
 ]
 error_variances = [
     np.var(xtrace_errors_np),
     np.var(hutchpp_errors_np),
+    np.var(hutchpp2_errors_np),
     np.var(hutchinson_errors_np)
 ]
 estimate_variances = [
     np.var(xtrace_estimates_np),
     np.var(hutchpp_estimates_np),
+    np.var(hutchpp2_estimates_np),
     np.var(hutchinson_estimates_np)
 ]
 
@@ -140,7 +152,7 @@ plt.grid(axis='y', linestyle='--', alpha=0.7)
 
 # Plot 4: Error Distribution via Boxplot
 plt.subplot(2, 2, 4)
-plt.boxplot([xtrace_errors_np, hutchpp_errors_np, hutchinson_errors_np], labels=estimators)
+plt.boxplot([xtrace_errors_np, hutchpp_errors_np, hutchpp2_errors_np, hutchinson_errors_np], labels=estimators)
 plt.title('Error Distribution')
 plt.ylabel('Absolute Error')
 plt.grid(axis='y', linestyle='--', alpha=0.7)
