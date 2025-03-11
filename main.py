@@ -410,6 +410,7 @@ def main():
         use_control_variate=args.use_cv,
         lambda_max=args.lambda_max,
         lambda_epochs=args.lambda_epochs,
+        ess_threshold=args.ess_threshold,
     )
 
     integration_config = IntegrationConfig(

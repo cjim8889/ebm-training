@@ -46,7 +46,7 @@ samples = generate_samples_with_adaptive_smc(
     mcmc_steps=20,
     integration_steps=10,
     eta=0.02,
-    ess_threshold=0.5,
+    ess_threshold=0.6,
 )
 print("Sampling done")
 print(f"ESS: {samples["diagnostics"]["ess"]}")
