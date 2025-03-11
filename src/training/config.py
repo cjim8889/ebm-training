@@ -73,6 +73,7 @@ class MCMCConfig:
     use_control_variate: bool = False
     lambda_max: float = 0.1  # Maximum value for lambda factor
     lambda_epochs: float = 2000.0  # Number of epochs over which lambda increases
+    ess_threshold: float = 0.5
 
 
 @dataclass
@@ -161,5 +162,4 @@ class TrainingExperimentConfig:
     debug: bool = False
     mixed_precision: bool = False
     resume_from: Optional[str] = None
-    ess_threshold: float = 0.5
     mp_policy: jmp.Policy = None  # Field to store the JMP mixed precision policy
