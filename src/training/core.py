@@ -18,7 +18,7 @@ from src.utils.eval import (
     save_model_if_best,
 )
 from src.utils.optimization import get_optimizer, inverse_power_schedule, power_schedule
-
+from src.utils.schedule import constant_then_cyclic_cosine_schedule
 from .config import TrainingExperimentConfig
 from .loss import Particle, loss_fn
 from .normalizing_constant import estimate_log_Z_t, estimate_log_Z_t_online, estimate_log_Z_t_with_TI
@@ -157,13 +157,11 @@ def train_velocity_field(
 
     lr_schedule = config.training.learning_rate
     if config.training.use_schedule:
-        total_steps = config.training.num_epochs * config.training.steps_per_epoch
-
-        lr_schedule = optax.warmup_cosine_decay_schedule(
-            init_value=config.training.schedule_init_value,
+        lr_schedule = constant_then_cyclic_cosine_schedule(
+            constant_value=config.training.learning_rate,
+            initial_steps=config.training.schedule_warmup_steps,
+            cycle_steps=config.training.num_epochs * 5,
             peak_value=config.training.learning_rate,
-            warmup_steps=config.training.schedule_warmup_steps,
-            decay_steps=int(total_steps * config.training.schedule_decay_fraction),
             end_value=config.training.schedule_end_value,
         )
 
