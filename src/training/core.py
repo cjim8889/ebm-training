@@ -346,7 +346,9 @@ def train_velocity_field(
                 subkey,
                 particles.x.shape[0],
                 (config.training.time_batch_size * config.sampling.batch_size,),
+                replace=False,
             )
+
             training_particles = Particle(
                 x=particles.x[indices],
                 t=particles.t[indices],
