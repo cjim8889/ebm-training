@@ -56,7 +56,7 @@ class TrainingConfig:
     # Learning rate schedule parameters
     schedule_init_value: float = 1e-5  # Initial learning rate value for schedule
     schedule_warmup_steps: int = 10000  # Number of warmup steps
-    schedule_decay_fraction: float = 0.25  # Fraction of total steps used for decay
+    schedule_decay_epoch: int = 10  # Epoch at which to start decaying the learning rate
     schedule_end_value: float = 1e-7  # Final learning rate value after decay
     # Log Z estimation frequency (only used when use_decoupled_loss is True)
     log_z_estimation_frequency: int = 1  # How often to estimate log_Z_t (in epochs)
