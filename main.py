@@ -222,7 +222,7 @@ def main():
     parser.add_argument(
         "--schedule-warmup-steps", 
         type=int, 
-        default=10000, 
+        default=1000, 
         help="Number of warmup steps for learning rate schedule"
     )
     parser.add_argument(
@@ -234,7 +234,7 @@ def main():
     parser.add_argument(
         "--schedule-end-value", 
         type=float, 
-        default=1e-5, 
+        default=1e-7, 
         help="Final learning rate value after decay in schedule"
     )
 
