@@ -160,7 +160,7 @@ def train_velocity_field(
         lr_schedule = constant_then_cyclic_cosine_schedule(
             constant_value=config.training.learning_rate,
             initial_steps=config.training.schedule_warmup_steps,
-            cycle_steps=config.training.num_epochs * 5,
+            cycle_steps=config.training.steps_per_epoch * 5,
             peak_value=config.training.learning_rate,
             end_value=config.training.schedule_end_value,
         )
