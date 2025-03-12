@@ -226,9 +226,9 @@ def main():
         help="Number of warmup steps for learning rate schedule"
     )
     parser.add_argument(
-        "--schedule-decay-fraction", 
-        type=float, 
-        default=0.25, 
+        "--schedule-decay-epoch", 
+        type=int, 
+        default=10, 
         help="Fraction of total steps used for decay phase in learning rate schedule"
     )
     parser.add_argument(
@@ -395,7 +395,7 @@ def main():
         random_alpha=args.random_alpha,
         schedule_init_value=args.schedule_init_value,
         schedule_warmup_steps=args.schedule_warmup_steps,
-        schedule_decay_fraction=args.schedule_decay_fraction,
+        schedule_decay_epoch=args.schedule_decay_epoch,
         schedule_end_value=args.schedule_end_value,
         log_z_estimation_frequency=args.log_z_estimation_frequency,
         use_TI=args.use_ti,
