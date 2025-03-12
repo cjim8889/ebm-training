@@ -304,10 +304,14 @@ class ParticleTransformerV3(eqx.Module):
         predictor = self.mp_policy.cast_to_compute(self.predictor)
 
         xs = xs.reshape(-1, self.embedder.n_spatial_dim)
+        # Compute the initial embedding.
         x = self.embedder(xs, t, d=d if self.shortcut else None)
 
+        # For each transformer layer, add a skip connection from the input of the layer.
         for layer in self.layers:
+            residual = x
             x = layer(x, enable_dropout, key)
+            x = x + residual  # Skip connection between transformer layers
             if key is not None:
                 key, _ = jax.random.split(key)
 
