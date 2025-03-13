@@ -92,7 +92,7 @@ def generate_samples_with_optional_mcmc(
             samples["positions"], nan=0.0, posinf=1.0, neginf=-1.0
         )
     chex.assert_type(samples["positions"], config.mp_policy.output_dtype)
-    chex.assert_shape(samples["positions"], (None, num_samples, None))
+    chex.assert_shape(samples["positions"], (None, _num_samples, None))
 
     return samples
 
