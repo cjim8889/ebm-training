@@ -37,6 +37,7 @@ def generate_samples_with_optional_mcmc(
     config: TrainingExperimentConfig,
     mcmc_method: str = None,
     force_finite: bool = False,
+    num_samples: int = None,
     lambda_factor: Float[Array, ""] = 1.0,
 ):
     """
@@ -60,9 +61,11 @@ def generate_samples_with_optional_mcmc(
     
     # Determine MCMC method
     mcmc_method = config.mcmc.method if mcmc_method is None else mcmc_method
+
+    num_samples = config.sampling.num_particles if num_samples is not None else num_samples
     
     # Generate initial samples
-    initial_samples = path_distribution.sample_initial(key, (config.sampling.num_particles,)).astype(config.mp_policy.output_dtype)
+    initial_samples = path_distribution.sample_initial(key, (num_samples,)).astype(config.mp_policy.output_dtype)
 
     # Use unified MCMC interface
     samples = sample_with_mcmc(
@@ -89,7 +92,7 @@ def generate_samples_with_optional_mcmc(
             samples["positions"], nan=0.0, posinf=1.0, neginf=-1.0
         )
     chex.assert_type(samples["positions"], config.mp_policy.output_dtype)
-    chex.assert_shape(samples["positions"], (None, config.sampling.num_particles, None))
+    chex.assert_shape(samples["positions"], (None, num_samples, None))
 
     return samples
 
@@ -100,24 +103,49 @@ def calculate_validation_loss_and_plot(
     particles: Particle,
     path_distribution: AnnealedDistribution,
     ts: jnp.ndarray,
+    mini_batch: int = 10,
 ):
-    losses = batched_epsilon(
-        v_theta,
-        particles,
-        path_distribution.score_fn,
-        path_distribution.time_derivative,
-    ).reshape(
+    # Determine total number of samples from particles (assumed along first axis)
+    total_samples = particles.x.shape[0]
+    # Compute the size of each mini-batch (using ceiling to cover all samples)
+    batch_size = int(jnp.ceil(total_samples / mini_batch))
+    
+    losses_list = []
+    # Loop over mini-batches
+    for i in range(mini_batch):
+        start = i * batch_size
+        end = min((i + 1) * batch_size, total_samples)
+        
+        # Create a mini-batch of particles
+        batch_particles = Particle(
+            x=particles.x[start:end],
+            t=particles.t[start:end],
+            log_Z_t=particles.log_Z_t[start:end],
+            d=particles.d[start:end] if particles.d is not None else None,
+        )
+        
+        # Compute the loss for the mini-batch
+        losses_batch = batched_epsilon(
+            v_theta,
+            batch_particles,
+            path_distribution.score_fn,
+            path_distribution.time_derivative,
+        )
+        # Expected shape of losses_batch: (number_in_batch)
+        losses_list.append(losses_batch)
+    
+    # Concatenate the loss results along the batch dimension
+    losses = jnp.concatenate(losses_list, axis=0).reshape(
         ts.shape[0], -1
-    )
+    )  # Shape: (num_timesteps, num_samples)
+    
+    # Compute overall metrics
+    mean_loss = jnp.mean(losses)  # Scalar mean loss over all samples and time steps
+    loss_mean = jnp.mean(losses, axis=1)  # Mean loss per time step
+    loss_var = jnp.var(losses, axis=1)    # Variance per time step
+    loss_std = jnp.sqrt(loss_var)         # Standard deviation per time step
 
-    mean_loss = jnp.mean(losses)  # shape: (time,)
-
-
-    # Calculate the mean and variance for each time step (along the batch dimension)
-    loss_mean = jnp.mean(losses, axis=1)  # shape: (time,)
-    loss_var = jnp.var(losses, axis=1)    # shape: (time,)
-    loss_std = jnp.sqrt(loss_var)         # standard deviation
-
+    # Plotting the loss over time with mean and standard deviation
     fig = plt.figure(figsize=(10, 6))
     plt.plot(ts, loss_mean, label="Mean Loss", color="blue")
     plt.fill_between(ts, loss_mean - loss_std, loss_mean + loss_std, color="blue", alpha=0.3, label="Std Dev")
@@ -127,6 +155,7 @@ def calculate_validation_loss_and_plot(
     plt.legend()
 
     return mean_loss, fig
+
 
     
 
@@ -274,6 +303,7 @@ def train_velocity_field(
         config=config,
         mcmc_method="smc",
         force_finite=True,
+        num_samples=256,
     )
 
     validation_log_Z_t = estimate_log_Z_t(
@@ -285,8 +315,8 @@ def train_velocity_field(
 
     validation_particles = Particle(
         x=validation_set["positions"].reshape(-1, 39),
-        t=validation_ts.repeat(config.sampling.num_particles),
-        log_Z_t=validation_log_Z_t.repeat(config.sampling.num_particles),
+        t=validation_ts.repeat(256),
+        log_Z_t=validation_log_Z_t.repeat(256),
     )
 
     for epoch in range(config.training.num_epochs):
@@ -480,9 +510,10 @@ def train_velocity_field(
             # Calculate validation loss
             validation_loss, validation_plt = calculate_validation_loss_and_plot(
                 v_theta,
-                particles,
+                validation_particles,
                 path_distribution,
                 validation_ts,
+                mini_batch=128,
             )
             if not config.offline:
                 wandb.log({"validation_loss": validation_loss})
