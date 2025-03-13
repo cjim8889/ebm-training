@@ -20,6 +20,7 @@ class Particle(eqx.Module):
     t: chex.Array
     log_Z_t: chex.Array
     d: Optional[chex.Array] = None
+    loss_weight: Optional[chex.Array] = None
 
 
 @eqx.filter_jit
@@ -260,6 +261,7 @@ def loss_fn(
     shortcut_weight: float = 0.5,
     random_alpha: bool = False,
     dropout_key: Optional[jax.random.PRNGKey] = None,
+    reweighted: bool = False,
 ) -> float:
     """Computes the loss for training the velocity field.
 
@@ -324,6 +326,8 @@ def loss_fn(
             v_theta, particles, score_fn, time_derivative_log_density
         )
 
+    if particles.loss_weight is not None:
+        epsilons = eps * particles.loss_weight
 
     if combined_loss:
         # Compute L1 and L2 loss for epsilons

@@ -294,6 +294,7 @@ def train_velocity_field(
 
     mcmc_samples = None
     current_ts = None
+    loss_weights = jnp.clip((1. / (1 - base_ts + 1e-6)), min=0.0, max=1e2)
 
     key, subkey = jax.random.split(key)
     validation_ts = jnp.linspace(0, 1.0, current_end_time)
@@ -434,6 +435,7 @@ def train_velocity_field(
             )
             if config.training.use_shortcut
             else None,
+            loss_weight=jnp.repeat(loss_weights, num_particles) if config.training.reweight else None,
         )
 
         for s in range(config.training.steps_per_epoch):

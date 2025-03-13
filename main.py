@@ -349,7 +349,7 @@ def main():
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--every-k-schedule", type=int, default=1)
     parser.add_argument("--ess-threshold", type=float, default=0.5)
-
+    parser.add_argument("--reweight", action="store_true")
 
     args = parser.parse_args()
 
@@ -399,6 +399,7 @@ def main():
         schedule_end_value=args.schedule_end_value,
         log_z_estimation_frequency=args.log_z_estimation_frequency,
         use_TI=args.use_ti,
+        reweight=args.reweight,
     )
 
     mcmc_config = MCMCConfig(
