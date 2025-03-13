@@ -294,7 +294,6 @@ def train_velocity_field(
 
     mcmc_samples = None
     current_ts = None
-    loss_weights = jnp.clip(1 + inverse_power_schedule(T=current_end_time, gamma=0.25), min=0.0, max=2.)
 
     key, subkey = jax.random.split(key)
     validation_ts = jnp.linspace(0, 1.0, current_end_time)
@@ -321,6 +320,16 @@ def train_velocity_field(
         t=validation_ts.repeat(config.training.time_batch_size * config.sampling.batch_size),
         log_Z_t=validation_log_Z_t.repeat(config.training.time_batch_size * config.sampling.batch_size),
     )
+
+    N = config.sampling.num_timesteps * config.sampling.num_particles
+    weights = jnp.ones(N)
+    boundary = int(0.2 * N)
+    weights = weights.at[:boundary].set(1.5)
+    weights = weights.at[-boundary:].set(1.5)
+    if config.training.use_decoupled_loss:
+        weights = jnp.tile(weights, 2)
+
+    p = weights / jnp.sum(weights)
 
     for epoch in range(config.training.num_epochs):
         # Calculate current lambda_factor based on the epoch
@@ -435,7 +444,7 @@ def train_velocity_field(
             )
             if config.training.use_shortcut
             else None,
-            loss_weight=jnp.repeat(loss_weights, num_particles) if config.training.reweight else None,
+            # loss_weight=jnp.repeat(loss_weights, num_particles) if config.training.reweight else None,
         )
 
         for s in range(config.training.steps_per_epoch):
@@ -446,6 +455,7 @@ def train_velocity_field(
                 particles.x.shape[0],
                 (config.training.time_batch_size * config.sampling.batch_size,),
                 replace=False,
+                p=p if config.training.reweight else None,
             )
 
             training_particles = Particle(
@@ -453,7 +463,7 @@ def train_velocity_field(
                 t=particles.t[indices],
                 log_Z_t=particles.log_Z_t[indices],
                 d=particles.d[indices] if particles.d is not None else None,
-                loss_weight=particles.loss_weight[indices] if particles.loss_weight is not None else None,
+                # loss_weight=particles.loss_weight[indices] if particles.loss_weight is not None else None,
             )
 
             key, subkey = jax.random.split(key)
