@@ -327,7 +327,7 @@ def loss_fn(
         )
 
     if particles.loss_weight is not None:
-        epsilons = eps * particles.loss_weight
+        epsilons = epsilons * particles.loss_weight
 
     if combined_loss:
         # Compute L1 and L2 loss for epsilons
