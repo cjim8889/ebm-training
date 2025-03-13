@@ -103,18 +103,20 @@ def calculate_validation_loss_and_plot(
     particles: Particle,
     path_distribution: AnnealedDistribution,
     ts: jnp.ndarray,
-    mini_batch: int = 10,
+    time_batch_size: int = 8,
+    batch_size: int = 128,
 ):
     # Determine total number of samples from particles (assumed along first axis)
     total_samples = particles.x.shape[0]
     # Compute the size of each mini-batch (using ceiling to cover all samples)
-    batch_size = int(jnp.ceil(total_samples / mini_batch))
+    mini_batch_size = time_batch_size * batch_size
+    mini_batch = int(jnp.ceil(total_samples / mini_batch_size))
     
     losses_list = []
     # Loop over mini-batches
     for i in range(mini_batch):
-        start = i * batch_size
-        end = min((i + 1) * batch_size, total_samples)
+        start = i * mini_batch_size
+        end = min((i + 1) * mini_batch_size, total_samples)
         
         # Create a mini-batch of particles
         batch_particles = Particle(
@@ -303,7 +305,7 @@ def train_velocity_field(
         config=config,
         mcmc_method="smc",
         force_finite=True,
-        num_samples=256,
+        num_samples=config.training.time_batch_size * config.sampling.batch_size,
     )
 
     validation_log_Z_t = estimate_log_Z_t(
@@ -315,8 +317,8 @@ def train_velocity_field(
 
     validation_particles = Particle(
         x=validation_set["positions"].reshape(-1, 39),
-        t=validation_ts.repeat(256),
-        log_Z_t=validation_log_Z_t.repeat(256),
+        t=validation_ts.repeat(config.training.time_batch_size * config.sampling.batch_size),
+        log_Z_t=validation_log_Z_t.repeat(config.training.time_batch_size * config.sampling.batch_size),
     )
 
     for epoch in range(config.training.num_epochs):
@@ -513,8 +515,10 @@ def train_velocity_field(
                 validation_particles,
                 path_distribution,
                 validation_ts,
-                mini_batch=128,
+                time_batch_size=config.training.time_batch_size,
+                batch_size=config.sampling.batch_size,
             )
+
             if not config.offline:
                 wandb.log({"validation_loss": validation_loss})
                 wandb.log({"validation_loss_plot": wandb.Image(validation_plt)})
