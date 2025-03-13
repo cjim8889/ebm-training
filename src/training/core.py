@@ -62,10 +62,10 @@ def generate_samples_with_optional_mcmc(
     # Determine MCMC method
     mcmc_method = config.mcmc.method if mcmc_method is None else mcmc_method
 
-    num_samples = config.sampling.num_particles if num_samples is not None else num_samples
+    _num_samples = config.sampling.num_particles if num_samples is not None else num_samples
     
     # Generate initial samples
-    initial_samples = path_distribution.sample_initial(key, (num_samples,)).astype(config.mp_policy.output_dtype)
+    initial_samples = path_distribution.sample_initial(key, (_num_samples,)).astype(config.mp_policy.output_dtype)
 
     # Use unified MCMC interface
     samples = sample_with_mcmc(
