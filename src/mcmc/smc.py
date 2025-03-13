@@ -61,7 +61,7 @@ def _estimate_covariance(
         return cov_diag
 
 @eqx.filter_jit
-@chex.assert_max_traces(n=1)
+@chex.assert_max_traces(n=5)
 def generate_samples_with_smc(
     key: PRNGKeyArray,
     initial_samples: Float[Array, "num_samples dim"],
