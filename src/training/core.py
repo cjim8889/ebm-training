@@ -438,7 +438,6 @@ def train_velocity_field(
             loss_weight=jnp.repeat(loss_weights, num_particles) if config.training.reweight else None,
         )
 
-        print(loss_weights.shape)
         for s in range(config.training.steps_per_epoch):
             # Update lambda factor for each step within the epoch
             key, subkey = jax.random.split(key)
