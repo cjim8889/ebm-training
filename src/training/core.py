@@ -294,7 +294,7 @@ def train_velocity_field(
 
     mcmc_samples = None
     current_ts = None
-    loss_weights = jnp.clip((1. / (1 - base_ts + 1e-6)), min=0.0, max=1e2)
+    loss_weights = jnp.clip(1 + inverse_power_schedule(T=current_end_time, gamma=0.25), min=0.0, max=2.)
 
     key, subkey = jax.random.split(key)
     validation_ts = jnp.linspace(0, 1.0, current_end_time)
@@ -438,6 +438,7 @@ def train_velocity_field(
             loss_weight=jnp.repeat(loss_weights, num_particles) if config.training.reweight else None,
         )
 
+        print(loss_weights.shape)
         for s in range(config.training.steps_per_epoch):
             # Update lambda factor for each step within the epoch
             key, subkey = jax.random.split(key)

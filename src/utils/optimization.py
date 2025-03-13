@@ -2,7 +2,7 @@ import jax.numpy as jnp
 import optax
 
 
-def inverse_power_schedule(T=64, end_time=1.0, gamma=0.5):
+def inverse_power_schedule(T=64, end_time=1.0, gamma=0.25):
     x_pow = jnp.linspace(0, end_time, T)
     t_pow = 1 - x_pow**gamma
     return jnp.flip(t_pow)
