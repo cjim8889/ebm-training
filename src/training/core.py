@@ -4,6 +4,7 @@ import chex
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
 import optax
 from jaxtyping import Array, Float
 
@@ -19,9 +20,14 @@ from src.utils.eval import (
 )
 from src.utils.optimization import get_optimizer, inverse_power_schedule, power_schedule
 from src.utils.schedule import constant_then_cyclic_cosine_schedule
+
 from .config import TrainingExperimentConfig
-from .loss import Particle, loss_fn
-from .normalizing_constant import estimate_log_Z_t, estimate_log_Z_t_online, estimate_log_Z_t_with_TI
+from .loss import Particle, batched_epsilon, loss_fn
+from .normalizing_constant import (
+    estimate_log_Z_t,
+    estimate_log_Z_t_with_TI,
+)
+
 
 def generate_samples_with_optional_mcmc(
     key: jax.random.PRNGKey,
@@ -29,7 +35,7 @@ def generate_samples_with_optional_mcmc(
     ts: jnp.ndarray,
     path_distribution: AnnealedDistribution,
     config: TrainingExperimentConfig,
-    use_mcmc: bool = False,
+    mcmc_method: str = None,
     force_finite: bool = False,
     lambda_factor: Float[Array, ""] = 1.0,
 ):
@@ -42,7 +48,7 @@ def generate_samples_with_optional_mcmc(
         ts: Time steps
         path_distribution: Annealed distribution
         config: Training experiment configuration
-        use_mcmc: Whether to use MCMC correction
+        mcmc_method: MCMC method to use (e.g., "smc", "hmc")
         force_finite: Whether to replace non-finite values with finite ones
         lambda_factor: Factor controlling the contribution of the velocity field
         
@@ -53,7 +59,7 @@ def generate_samples_with_optional_mcmc(
     ts_compute = config.mp_policy.cast_to_output(ts)
     
     # Determine MCMC method
-    mcmc_method = config.mcmc.method if use_mcmc else "none"
+    mcmc_method = config.mcmc.method if mcmc_method is None else mcmc_method
     
     # Generate initial samples
     initial_samples = path_distribution.sample_initial(key, (config.sampling.num_particles,)).astype(config.mp_policy.output_dtype)
@@ -89,6 +95,41 @@ def generate_samples_with_optional_mcmc(
 
 jitted_loss_fn = eqx.filter_jit(loss_fn)
 
+def calculate_validation_loss_and_plot(
+    v_theta: Callable,
+    particles: Particle,
+    path_distribution: AnnealedDistribution,
+    ts: jnp.ndarray,
+):
+    losses = batched_epsilon(
+        v_theta,
+        particles,
+        path_distribution.score_fn,
+        path_distribution.time_derivative,
+    ).reshape(
+        ts.shape[0], -1
+    )
+
+    mean_loss = jnp.mean(losses)  # shape: (time,)
+
+
+    # Calculate the mean and variance for each time step (along the batch dimension)
+    loss_mean = jnp.mean(losses, axis=1)  # shape: (time,)
+    loss_var = jnp.var(losses, axis=1)    # shape: (time,)
+    loss_std = jnp.sqrt(loss_var)         # standard deviation
+
+    fig = plt.figure(figsize=(10, 6))
+    plt.plot(ts, loss_mean, label="Mean Loss", color="blue")
+    plt.fill_between(ts, loss_mean - loss_std, loss_mean + loss_std, color="blue", alpha=0.3, label="Std Dev")
+    plt.xlabel("Time")
+    plt.ylabel("Loss")
+    plt.title("Loss over Time with Batch Statistics")
+    plt.legend()
+
+    return mean_loss, fig
+
+    
+
 def train_velocity_field(
     key: jax.random.PRNGKey,
     initial_density: Target,
@@ -99,6 +140,7 @@ def train_velocity_field(
     """Train a velocity field using either standard or decoupled loss function."""
     best_metrics = []
     model_version = 0
+    base_ts = None
 
     path_distribution = AnnealedDistribution(
         initial_density=initial_density,
@@ -136,7 +178,7 @@ def train_velocity_field(
         base_ts = power_schedule(
             current_end_time,
             end_time=1.0,
-            gamma=0.25,
+            gamma=0.15,
         )
     else:
         raise ValueError(f"Unknown schedule {config.integration.schedule}")
@@ -222,6 +264,31 @@ def train_velocity_field(
     mcmc_samples = None
     current_ts = None
 
+    key, subkey = jax.random.split(key)
+    validation_ts = jnp.linspace(0, 1.0, current_end_time)
+    validation_set = generate_samples_with_optional_mcmc(
+        key=subkey,
+        v_theta=v_theta,
+        ts=validation_ts,
+        path_distribution=path_distribution,
+        config=config,
+        mcmc_method="smc",
+        force_finite=True,
+    )
+
+    validation_log_Z_t = estimate_log_Z_t(
+        xs=validation_set["positions"],
+        weights=validation_set["weights"],
+        ts=validation_ts,
+        time_derivative_log_density=path_distribution.time_derivative,
+    ).flatten()
+
+    validation_particles = Particle(
+        x=validation_set["positions"].reshape(-1, 39),
+        t=validation_ts.repeat(config.sampling.num_particles),
+        log_Z_t=validation_log_Z_t.repeat(config.sampling.num_particles),
+    )
+
     for epoch in range(config.training.num_epochs):
         # Calculate current lambda_factor based on the epoch
         current_lambda = compute_lambda_factor(epoch * config.training.steps_per_epoch)
@@ -244,7 +311,7 @@ def train_velocity_field(
             key, subkey = jax.random.split(key)
             mcmc_samples = generate_samples_with_optional_mcmc(
                 subkey, v_theta, current_ts, path_distribution, config, 
-                use_mcmc=True, force_finite=True, lambda_factor=current_lambda
+                mcmc_method=config.mcmc.method, force_finite=True, lambda_factor=current_lambda
             )
 
             if config.mcmc.method == "asmc":
@@ -309,7 +376,7 @@ def train_velocity_field(
             key, subkey = jax.random.split(key)
             v_theta_samples = generate_samples_with_optional_mcmc(
                 subkey, v_theta, current_ts, path_distribution, config,
-                use_mcmc=False, force_finite=True, lambda_factor=current_lambda
+                mcmc_method="none", force_finite=True, lambda_factor=current_lambda
             )
             samples = jnp.concatenate(
                 [mcmc_samples["positions"], v_theta_samples["positions"]], axis=1
@@ -318,7 +385,7 @@ def train_velocity_field(
             key, subkey = jax.random.split(key)
             samples = generate_samples_with_optional_mcmc(
                 key, v_theta, current_ts, path_distribution, config,
-                use_mcmc=True, force_finite=True, lambda_factor=current_lambda
+                mcmc_method=config.mcmc.method, force_finite=True, lambda_factor=current_lambda
             )
             if isinstance(samples, dict):
                 samples = samples["positions"]
@@ -393,7 +460,7 @@ def train_velocity_field(
         if epoch % config.training.eval_frequency == 0:
             # Run multiple evaluations
             all_eval_results = []
-            for _ in range(3):
+            for _ in range(1):
                 key, subkey = jax.random.split(key)
                 eval_metrics = evaluate_model(
                     subkey,
@@ -410,8 +477,17 @@ def train_velocity_field(
             aggregated_metrics = aggregate_eval_metrics(all_eval_results)
             log_metrics(aggregated_metrics, config)
 
-            # Handle model saving
+            # Calculate validation loss
+            validation_loss, validation_plt = calculate_validation_loss_and_plot(
+                v_theta,
+                particles,
+                path_distribution,
+                validation_ts,
+            )
             if not config.offline:
+                wandb.log({"validation_loss": validation_loss})
+                wandb.log({"validation_loss_plot": wandb.Image(validation_plt)})
+                
                 best_metrics, model_version = save_model_if_best(
                     v_theta,
                     aggregated_metrics,
@@ -419,6 +495,11 @@ def train_velocity_field(
                     model_version,
                     target_density,
                 )
+            else:
+                print(f"Validation Loss: {validation_loss}")
+                plt.show()
+
+            plt.close(validation_plt)
 
     # Save final model state
     if not config.offline and len(best_metrics) > 0:
