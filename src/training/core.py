@@ -453,6 +453,7 @@ def train_velocity_field(
                 t=particles.t[indices],
                 log_Z_t=particles.log_Z_t[indices],
                 d=particles.d[indices] if particles.d is not None else None,
+                loss_weight=particles.loss_weight[indices] if particles.loss_weight is not None else None,
             )
 
             key, subkey = jax.random.split(key)
