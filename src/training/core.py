@@ -141,6 +141,7 @@ def calculate_validation_loss_and_plot(
         ts.shape[0], -1
     )  # Shape: (num_timesteps, num_samples)
     
+    losses = losses ** 2  # Square the losses
     # Compute overall metrics
     mean_loss = jnp.mean(losses)  # Scalar mean loss over all samples and time steps
     loss_mean = jnp.mean(losses, axis=1)  # Mean loss per time step
@@ -152,8 +153,9 @@ def calculate_validation_loss_and_plot(
     plt.plot(ts, loss_mean, label="Mean Loss", color="blue")
     plt.fill_between(ts, loss_mean - loss_std, loss_mean + loss_std, color="blue", alpha=0.3, label="Std Dev")
     plt.xlabel("Time")
-    plt.ylabel("Loss")
-    plt.title("Loss over Time with Batch Statistics")
+    plt.ylabel("Loss^2")
+    plt.yscale("log")
+    plt.title("Loss^2 over Time with Batch Statistics")
     plt.legend()
 
     return mean_loss, fig
