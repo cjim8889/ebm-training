@@ -6,62 +6,105 @@ import jax.numpy as jnp
 import jmp
 from jaxtyping import Array, Float
 
+def remove_center_of_mass(xs: jnp.ndarray) -> jnp.ndarray:
+    """
+    Subtracts the center of mass from each particle coordinate array.
+    xs shape: (num_particles, spatial_dim)
+    Returns shape: (num_particles, spatial_dim)
+    """
+    com = jnp.mean(xs, axis=0, keepdims=True)
+    return xs - com
 
-class EmbedderBlock(eqx.Module):
-    particle_embedder: eqx.nn.Linear
+def compute_pairwise_distances(xs: jnp.ndarray) -> jnp.ndarray:
+    """
+    Computes pairwise distances for a set of particles.
+    xs shape: (num_particles, spatial_dim)
+    Returns shape: (num_particles, num_particles) with distance(i,j).
+    """
+    diff = xs[None, :, :] - xs[:, None, :]   # shape: (num_particles, num_particles, spatial_dim)
+    dist = jnp.sqrt(jnp.sum(diff**2, axis=-1) + 1e-8)
+    return dist
+
+
+class SymmetricEmbedder(eqx.Module):
+    """
+    Embedder that enforces some translation invariance and optionally
+    injects pairwise distance features to help with rotational invariance.
+    """
+    particle_embedder: eqx.nn.MLP
     layernorm: eqx.nn.LayerNorm
-    n_particles: int
     n_spatial_dim: int
-    shortcut: bool = eqx.field(static=True)
     mp_policy: jmp.Policy = eqx.field(static=True)
+    use_dist_features: bool = eqx.field(static=True)
 
     def __init__(
         self,
-        n_particles: int,
         n_spatial_dim: int,
         embedding_size: int,
         key: jax.random.PRNGKey,
         mp_policy: jmp.Policy,
-        shortcut: bool = False,
+        use_dist_features: bool = True,
     ):
-        self.shortcut = shortcut
+        self.n_spatial_dim = n_spatial_dim
         self.mp_policy = mp_policy
-        in_dim = n_spatial_dim + 2 if shortcut else n_spatial_dim + 1
+        self.use_dist_features = use_dist_features
 
-        self.particle_embedder = eqx.nn.Linear(
-            in_features=in_dim,
-            out_features=embedding_size,
-            dtype=mp_policy.param_dtype,
+        # If we add a couple of distance-based features per particle,
+        # e.g., min dist, max dist, local density, that is 3 extra features:
+        dist_feature_dim = 3 if use_dist_features else 0
+        in_dim = n_spatial_dim + 1 + dist_feature_dim  # +1 for time t
+
+        self.particle_embedder = eqx.nn.MLP(
+            in_size=in_dim,
+            out_size=embedding_size,
+            width_size=64,
+            depth=3,
+            activation=jax.nn.silu,
+            use_bias=True,
             key=key,
+            dtype=mp_policy.param_dtype,
         )
-
-        # Correct LayerNorm shape to feature dimension only
+        # LN over the last dimension (embedding_size)
         self.layernorm = eqx.nn.LayerNorm(shape=(embedding_size,), dtype=jnp.float32)
 
-        self.n_particles = n_particles
-        self.n_spatial_dim = n_spatial_dim
-
     def __call__(
-        self, 
+        self,
         xs: Float[Array, "num_particles spatial_dim"],
         t: Float[Array, ""],
-        d: Optional[Float[Array, ""]] = None
+        d: Optional[Float[Array, ""]] = None,  # unused here, but left for interface
     ) -> Float[Array, "num_particles embedding_dim"]:
-        if self.shortcut:
-            d = jnp.broadcast_to(d, (xs.shape[0], 1))
-            t = jnp.broadcast_to(t, (xs.shape[0], 1))
-            input = jnp.concatenate([xs, t, d], axis=-1)
-        else:
-            t = jnp.broadcast_to(t, (xs.shape[0], 1))
-            input = jnp.concatenate([xs, t], axis=-1)
+        """
+        1) Remove CoM to ensure translation invariance.
+        2) Optionally compute distance-based features to reduce rotational burden.
+        3) Append time t as an extra scalar.
+        """
+        # xs shape: (num_particles, n_spatial_dim)
+        xs = remove_center_of_mass(xs)  # shift so CoM is at origin
 
-        input = self.mp_policy.cast_to_compute(input)
+        if self.use_dist_features:
+            # compute min, max, mean distances for each particle
+            dist_mat = compute_pairwise_distances(xs)  # shape: (N, N)
+            min_d = jnp.min(dist_mat, axis=-1, keepdims=True)
+            max_d = jnp.max(dist_mat, axis=-1, keepdims=True)
+            mean_d = jnp.mean(dist_mat, axis=-1, keepdims=True)
+            dist_feats = jnp.concatenate([min_d, max_d, mean_d], axis=-1)  # shape: (N, 3)
+        else:
+            dist_feats = jnp.zeros((xs.shape[0], 0), dtype=xs.dtype)
+
+        # Broadcast time t to each particle
+        t_broadcast = jnp.broadcast_to(t, (xs.shape[0], 1))
+
+        # Final input = [CoM-shifted coords, time, dist-based feats]
+        input_feats = jnp.concatenate([xs, t_broadcast, dist_feats], axis=-1)
+
+        input_feats = self.mp_policy.cast_to_compute(input_feats)
         embedder = self.mp_policy.cast_to_compute(self.particle_embedder)
 
-        embedded = jax.vmap(embedder)(input)
-        # Apply LayerNorm with vmap per-particle using fp32
-        return self.mp_policy.cast_to_output(jax.vmap(self.layernorm)(embedded.astype(jnp.float32)))
-
+        # Per-particle MLP
+        embedded = jax.vmap(embedder)(input_feats)
+        # LN across features
+        embedded = jax.vmap(self.layernorm)(embedded.astype(jnp.float32))
+        return self.mp_policy.cast_to_output(embedded)
 
 class SimplifiedAttentionBlock(eqx.Module):
     """Optimized attention block without positional embeddings."""
@@ -69,11 +112,8 @@ class SimplifiedAttentionBlock(eqx.Module):
     attention: eqx.nn.MultiheadAttention
     layernorm: eqx.nn.LayerNorm
     dropout: eqx.nn.Dropout
-    relative_q: jnp.ndarray
-    relative_k: jnp.ndarray
     mp_policy: jmp.Policy = eqx.field(static=True)
     num_heads: int = eqx.field(static=True)
-    max_seq_len: int = eqx.field(static=True)
 
     def __init__(
         self,
@@ -83,29 +123,18 @@ class SimplifiedAttentionBlock(eqx.Module):
         attention_dropout_rate: float,
         key: jax.random.PRNGKey,
         mp_policy: jmp.Policy,
-        max_seq_len: int = 13,
     ):
         self.mp_policy = mp_policy
         self.num_heads = num_heads
-
-        key_attn, key_rq, key_rk = jax.random.split(key, 3)
         self.attention = eqx.nn.MultiheadAttention(
             num_heads=num_heads,
             query_size=hidden_size,
             dropout_p=attention_dropout_rate,
-            key=key_attn,
+            key=key,
             dtype=mp_policy.param_dtype,
         )
         self.layernorm = eqx.nn.LayerNorm(hidden_size, dtype=jnp.float32)
         self.dropout = eqx.nn.Dropout(dropout_rate)
-
-
-        self.max_seq_len = max_seq_len
-        # Initialize relative positional embeddings (learnable parameters)
-        head_dim = hidden_size // num_heads
-        self.relative_q = jax.random.normal(key_rq, (max_seq_len, head_dim))
-        self.relative_k = jax.random.normal(key_rk, (max_seq_len, head_dim))
-
 
     def __call__(
         self, 
@@ -113,29 +142,6 @@ class SimplifiedAttentionBlock(eqx.Module):
         enable_dropout: bool = False, 
         key: Optional[jax.random.PRNGKey] = None
     ) -> Float[Array, "num_particles hidden_size"]:
-        def process_heads(
-            query_heads: Float[Array, "num_particles num_heads qk_size"],
-            key_heads: Float[Array, "num_particles num_heads qk_size"],
-            value_heads: Float[Array, "num_particles num_heads vo_size"]
-        ) -> tuple[
-            Float[Array, "num_particles num_heads qk_size"],
-            Float[Array, "num_particles num_heads qk_size"],
-            Float[Array, "num_particles num_heads vo_size"]
-        ]:
-            seq_len = query_heads.shape[0]
-            # Extract the relative position embeddings for the current sequence length.
-            # Here, for token position i, we add a learned bias from self.relative_q and self.relative_k.
-            rel_q = self.relative_q[:seq_len]  # shape (seq_len, qk_size)
-            rel_k = self.relative_k[:seq_len]  # shape (seq_len, qk_size)
-            # Expand dims for broadcasting over the num_heads dimension.
-            rel_q = rel_q[:, None, :]  # now shape (seq_len, 1, qk_size)
-            rel_k = rel_k[:, None, :]  # now shape (seq_len, 1, qk_size)
-            # Add the position bias so that when computing dot products, the differences induce a relative bias.
-            query_heads = query_heads + rel_q
-            key_heads = key_heads + rel_k
-            return query_heads, key_heads, value_heads
-        
-
         attn_key, dropout_key = (
             jax.random.split(key) if key is not None else (None, None)
         )
@@ -149,7 +155,6 @@ class SimplifiedAttentionBlock(eqx.Module):
             value=inputs,
             inference=not enable_dropout,
             key=attn_key,
-            process_heads=process_heads,
         )
         attn_out = self.dropout(attn_out, key=dropout_key, inference=not enable_dropout)
         attn_out = inputs + attn_out
@@ -201,7 +206,7 @@ class TransformerLayer(eqx.Module):
     ffn: EfficientFFN
     mp_policy: jmp.Policy = eqx.field(static=True)
 
-    def __init__(self, max_seq_len, hidden_size, num_heads, dropout_rate, attn_dropout_rate, key, mp_policy: jmp.Policy):
+    def __init__(self, hidden_size, num_heads, dropout_rate, attn_dropout_rate, key, mp_policy: jmp.Policy, theta: float = 10000.0):
         self.mp_policy = mp_policy
         key1, key2 = jax.random.split(key)
         self.attn = SimplifiedAttentionBlock(
@@ -211,7 +216,6 @@ class TransformerLayer(eqx.Module):
             attention_dropout_rate=attn_dropout_rate,
             key=key1,
             mp_policy=mp_policy,
-            max_seq_len=max_seq_len,
         )
         self.ffn = EfficientFFN(
             hidden_size=hidden_size,
@@ -236,7 +240,7 @@ class TransformerLayer(eqx.Module):
 class ParticleTransformerV3(eqx.Module):
     """Efficient transformer with optional d-conditioning."""
 
-    embedder: EmbedderBlock
+    embedder: SymmetricEmbedder
     layers: List[TransformerLayer]
     predictor: eqx.nn.Linear
     shortcut: bool = eqx.field(static=True)
@@ -260,24 +264,24 @@ class ParticleTransformerV3(eqx.Module):
         self.mp_policy = mp_policy
         e_key, l_key, p_key = jax.random.split(key, 3)
 
-        self.embedder = EmbedderBlock(
-            n_particles=n_particles,
+        self.embedder = SymmetricEmbedder(
+            # n_particles=n_particles,
             n_spatial_dim=n_spatial_dim,
             embedding_size=hidden_size,
             key=e_key,
-            shortcut=shortcut,
+            # shortcut=shortcut,
             mp_policy=mp_policy,
         )
 
         self.layers = [
             TransformerLayer(
-                max_seq_len=n_particles,
                 hidden_size=hidden_size,
                 num_heads=num_heads,
                 dropout_rate=dropout_rate,
                 attn_dropout_rate=attn_dropout_rate,
                 key=k,
                 mp_policy=mp_policy,
+                theta=theta,
             )
             for k in jax.random.split(l_key, num_layers)
         ]
@@ -304,14 +308,10 @@ class ParticleTransformerV3(eqx.Module):
         predictor = self.mp_policy.cast_to_compute(self.predictor)
 
         xs = xs.reshape(-1, self.embedder.n_spatial_dim)
-        # Compute the initial embedding.
         x = self.embedder(xs, t, d=d if self.shortcut else None)
 
-        # For each transformer layer, add a skip connection from the input of the layer.
         for layer in self.layers:
-            residual = x
             x = layer(x, enable_dropout, key)
-            x = x + residual  # Skip connection between transformer layers
             if key is not None:
                 key, _ = jax.random.split(key)
 
