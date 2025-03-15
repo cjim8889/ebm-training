@@ -409,12 +409,12 @@ def train_velocity_field(
 
         epoch_loss = 0.0
         key, subkey = jax.random.split(key)
-        num_particles = (
-            config.sampling.num_particles * 2
-            if config.training.use_decoupled_loss
-            else config.sampling.num_particles
-        )
-
+        # num_particles = (
+        #     config.sampling.num_particles * 2
+        #     if config.training.use_decoupled_loss
+        #     else config.sampling.num_particles
+        # )
+        num_particles = config.sampling.num_particles
         # Sample generation
         # if config.training.use_decoupled_loss:            
         #     # key, subkey = jax.random.split(key)
