@@ -39,6 +39,7 @@ class SymmetricEmbedder(eqx.Module):
 
     def __init__(
         self,
+        n_particles: int,
         n_spatial_dim: int,
         embedding_size: int,
         key: jax.random.PRNGKey,
@@ -51,7 +52,7 @@ class SymmetricEmbedder(eqx.Module):
 
         # If we add a couple of distance-based features per particle,
         # e.g., min dist, max dist, local density, that is 3 extra features:
-        dist_feature_dim = 3 if use_dist_features else 0
+        dist_feature_dim = n_particles if use_dist_features else 0
         in_dim = n_spatial_dim + 1 + dist_feature_dim  # +1 for time t
 
         self.particle_embedder = eqx.nn.MLP(
@@ -83,11 +84,7 @@ class SymmetricEmbedder(eqx.Module):
 
         if self.use_dist_features:
             # compute min, max, mean distances for each particle
-            dist_mat = compute_pairwise_distances(xs)  # shape: (N, N)
-            min_d = jnp.min(dist_mat, axis=-1, keepdims=True)
-            max_d = jnp.max(dist_mat, axis=-1, keepdims=True)
-            mean_d = jnp.mean(dist_mat, axis=-1, keepdims=True)
-            dist_feats = jnp.concatenate([min_d, max_d, mean_d], axis=-1)  # shape: (N, 3)
+            dist_feats = compute_pairwise_distances(xs)  # shape: (N, N)
         else:
             dist_feats = jnp.zeros((xs.shape[0], 0), dtype=xs.dtype)
 
@@ -265,7 +262,7 @@ class ParticleTransformerV3(eqx.Module):
         e_key, l_key, p_key = jax.random.split(key, 3)
 
         self.embedder = SymmetricEmbedder(
-            # n_particles=n_particles,
+            n_particles=n_particles,
             n_spatial_dim=n_spatial_dim,
             embedding_size=hidden_size,
             key=e_key,
