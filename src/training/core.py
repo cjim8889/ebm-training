@@ -416,23 +416,26 @@ def train_velocity_field(
         )
 
         # Sample generation
-        if config.training.use_decoupled_loss:            
-            key, subkey = jax.random.split(key)
-            v_theta_samples = generate_samples_with_optional_mcmc(
-                subkey, v_theta, current_ts, path_distribution, config,
-                mcmc_method="none", force_finite=True, lambda_factor=current_lambda
-            )
-            samples = jnp.concatenate(
-                [mcmc_samples["positions"], v_theta_samples["positions"]], axis=1
-            )
-        else:
-            key, subkey = jax.random.split(key)
-            samples = generate_samples_with_optional_mcmc(
-                key, v_theta, current_ts, path_distribution, config,
-                mcmc_method=config.mcmc.method, force_finite=True, lambda_factor=current_lambda
-            )
-            if isinstance(samples, dict):
-                samples = samples["positions"]
+        # if config.training.use_decoupled_loss:            
+        #     # key, subkey = jax.random.split(key)
+        #     # v_theta_samples = generate_samples_with_optional_mcmc(
+        #     #     subkey, v_theta, current_ts, path_distribution, config,
+        #     #     mcmc_method="none", force_finite=True, lambda_factor=current_lambda
+        #     # )
+        #     # samples = jnp.concatenate(
+        #     #     [mcmc_samples["positions"], v_theta_samples["positions"]], axis=1
+        #     # )
+        #     samples = mcmc_samples["positions"]
+        # else:
+        #     key, subkey = jax.random.split(key)
+        #     samples = generate_samples_with_optional_mcmc(
+        #         key, v_theta, current_ts, path_distribution, config,
+        #         mcmc_method=config.mcmc.method, force_finite=True, lambda_factor=current_lambda
+        #     )
+        #     if isinstance(samples, dict):
+        #         samples = samples["positions"]
+
+        samples = mcmc_samples["positions"]
 
         particles = Particle(
             x=samples.reshape(num_particles * current_ts.shape[0], -1),
