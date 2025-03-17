@@ -409,33 +409,25 @@ def train_velocity_field(
 
         epoch_loss = 0.0
         key, subkey = jax.random.split(key)
-        # num_particles = (
-        #     config.sampling.num_particles * 2
-        #     if config.training.use_decoupled_loss
-        #     else config.sampling.num_particles
-        # )
-        num_particles = config.sampling.num_particles
+        num_particles = (
+            config.sampling.num_particles * 2
+            if config.training.use_decoupled_loss
+            else config.sampling.num_particles
+        )
+        # num_particles = config.sampling.num_particles
         # Sample generation
-        # if config.training.use_decoupled_loss:            
-        #     # key, subkey = jax.random.split(key)
-        #     # v_theta_samples = generate_samples_with_optional_mcmc(
-        #     #     subkey, v_theta, current_ts, path_distribution, config,
-        #     #     mcmc_method="none", force_finite=True, lambda_factor=current_lambda
-        #     # )
-        #     # samples = jnp.concatenate(
-        #     #     [mcmc_samples["positions"], v_theta_samples["positions"]], axis=1
-        #     # )
-        #     samples = mcmc_samples["positions"]
-        # else:
-        #     key, subkey = jax.random.split(key)
-        #     samples = generate_samples_with_optional_mcmc(
-        #         key, v_theta, current_ts, path_distribution, config,
-        #         mcmc_method=config.mcmc.method, force_finite=True, lambda_factor=current_lambda
-        #     )
-        #     if isinstance(samples, dict):
-        #         samples = samples["positions"]
+        if config.training.use_decoupled_loss:            
+            key, subkey = jax.random.split(key)
+            v_theta_samples = generate_samples_with_optional_mcmc(
+                subkey, v_theta, current_ts, path_distribution, config,
+                mcmc_method="none", force_finite=True, lambda_factor=current_lambda
+            )
+            samples = jnp.concatenate(
+                [mcmc_samples["positions"], v_theta_samples["positions"]], axis=1
+            )
+        else:
+            samples = mcmc_samples["positions"]
 
-        samples = mcmc_samples["positions"]
 
         particles = Particle(
             x=samples.reshape(num_particles * current_ts.shape[0], -1),
