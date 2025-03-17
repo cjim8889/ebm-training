@@ -239,7 +239,8 @@ class TransformerLayer(eqx.Module):
         x = self.mp_policy.cast_to_compute(x)
         x = self.attn(x, enable_dropout, attn_key)
         x = self.ffn(x, enable_dropout, ffn_key)
-        return self.mp_policy.cast_to_output(x[1:]) # Exclude time embedding from output
+        output = self.mp_policy.cast_to_compute(x)
+        return output[1:], output[:1]  # Exclude time embedding from output
 
 
 class ParticleTransformerV3(eqx.Module):
@@ -316,7 +317,7 @@ class ParticleTransformerV3(eqx.Module):
         x, time = self.embedder(xs, t, d=d if self.shortcut else None)
 
         for layer in self.layers:
-            x = layer(x, time, enable_dropout, key)
+            x, time = layer(x, time, enable_dropout, key)
             if key is not None:
                 key, _ = jax.random.split(key)
 
