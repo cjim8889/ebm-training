@@ -32,7 +32,7 @@ class EmbedderBlock(eqx.Module):
         self.particle_embedder = eqx.nn.MLP(
             in_size=n_spatial_dim,
             out_size=embedding_size,
-            width_size=64,
+            width_size=128,
             depth=3,
             activation=jax.nn.silu,
             use_bias=True,
@@ -43,7 +43,7 @@ class EmbedderBlock(eqx.Module):
         self.time_embedder = eqx.nn.MLP(
             in_size=1 if not shortcut else 2,
             out_size=embedding_size,
-            width_size=64,
+            width_size=128,
             depth=3,
             activation=jax.nn.silu,
             use_bias=True,
@@ -240,7 +240,8 @@ class TransformerLayer(eqx.Module):
         x = self.attn(x, enable_dropout, attn_key)
         x = self.ffn(x, enable_dropout, ffn_key)
         output = self.mp_policy.cast_to_compute(x)
-        return output[1:], output[:1]  # Exclude time embedding from output
+        # return output[1:], output[:1]  # Exclude time embedding from output
+        return output[1:]
 
 
 class ParticleTransformerV3(eqx.Module):
@@ -317,7 +318,7 @@ class ParticleTransformerV3(eqx.Module):
         x, time = self.embedder(xs, t, d=d if self.shortcut else None)
 
         for layer in self.layers:
-            x, time = layer(x, time, enable_dropout, key)
+            x = layer(x, time, enable_dropout, key)
             if key is not None:
                 key, _ = jax.random.split(key)
 
