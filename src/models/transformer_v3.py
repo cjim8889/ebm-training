@@ -66,9 +66,9 @@ class EmbedderBlock(eqx.Module):
         Float[Array, "1 embedding_size"]
     ]:
         if self.shortcut:
-            time_input = jnp.concatenate([t .reshape(1), d.reshape(1)], axis=-1).reshape(1, 2)
+            time_input = jnp.concatenate([jnp.array(t).reshape(1), jnp.array(t).reshape(1)], axis=-1).reshape(1, 2)
         else:
-            time_input = t.reshape(1, 1)
+            time_input = jnp.array(t).reshape(1, 1)
 
         time_input = self.mp_policy.cast_to_compute(time_input)
         xs_input = self.mp_policy.cast_to_compute(xs)
