@@ -86,7 +86,7 @@ class SimplifiedAttentionBlock(eqx.Module):
     attention: eqx.nn.MultiheadAttention
     layernorm: eqx.nn.LayerNorm
     dropout: eqx.nn.Dropout
-    # rope_embeddings: eqx.nn.RotaryPositionalEmbedding
+    rope_embeddings: eqx.nn.RotaryPositionalEmbedding
     mp_policy: jmp.Policy = eqx.field(static=True)
     num_heads: int = eqx.field(static=True)
 
@@ -111,11 +111,11 @@ class SimplifiedAttentionBlock(eqx.Module):
         )
         self.layernorm = eqx.nn.LayerNorm(hidden_size, dtype=jnp.float32)
         self.dropout = eqx.nn.Dropout(dropout_rate)
-        # self.rope_embeddings = eqx.nn.RotaryPositionalEmbedding(
-        #     embedding_size=hidden_size // num_heads,
-        #     theta=theta,
-        #     dtype=mp_policy.param_dtype,
-        # )
+        self.rope_embeddings = eqx.nn.RotaryPositionalEmbedding(
+            embedding_size=hidden_size // num_heads,
+            theta=theta,
+            dtype=mp_policy.param_dtype,
+        )
 
     def __call__(
         self, 
@@ -123,23 +123,23 @@ class SimplifiedAttentionBlock(eqx.Module):
         enable_dropout: bool = False, 
         key: Optional[jax.random.PRNGKey] = None
     ) -> Float[Array, "num_particles hidden_size"]:
-        # def process_heads(
-        #     query_heads: Float[Array, "num_particles num_heads qk_size"],
-        #     key_heads: Float[Array, "num_particles num_heads qk_size"],
-        #     value_heads: Float[Array, "num_particles num_heads vo_size"]
-        # ) -> tuple[
-        #     Float[Array, "num_particles num_heads qk_size"],
-        #     Float[Array, "num_particles num_heads qk_size"],
-        #     Float[Array, "num_particles num_heads vo_size"]
-        # ]:
-        #     query_heads = jax.vmap(self.rope_embeddings,
-        #                            in_axes=1,
-        #                            out_axes=1)(query_heads)
-        #     key_heads = jax.vmap(self.rope_embeddings,
-        #                          in_axes=1,
-        #                          out_axes=1)(key_heads)
+        def process_heads(
+            query_heads: Float[Array, "num_particles num_heads qk_size"],
+            key_heads: Float[Array, "num_particles num_heads qk_size"],
+            value_heads: Float[Array, "num_particles num_heads vo_size"]
+        ) -> tuple[
+            Float[Array, "num_particles num_heads qk_size"],
+            Float[Array, "num_particles num_heads qk_size"],
+            Float[Array, "num_particles num_heads vo_size"]
+        ]:
+            query_heads = jax.vmap(self.rope_embeddings,
+                                   in_axes=1,
+                                   out_axes=1)(query_heads)
+            key_heads = jax.vmap(self.rope_embeddings,
+                                 in_axes=1,
+                                 out_axes=1)(key_heads)
 
-        #     return query_heads, key_heads, value_heads
+            return query_heads, key_heads, value_heads
         
 
         attn_key, dropout_key = (
@@ -155,7 +155,7 @@ class SimplifiedAttentionBlock(eqx.Module):
             value=inputs,
             inference=not enable_dropout,
             key=attn_key,
-            # process_heads=process_heads,
+            process_heads=process_heads,
         )
         attn_out = self.dropout(attn_out, key=dropout_key, inference=not enable_dropout)
         attn_out = inputs + attn_out
