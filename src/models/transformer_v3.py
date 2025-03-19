@@ -8,8 +8,7 @@ from jaxtyping import Array, Float
 
 
 class EmbedderBlock(eqx.Module):
-    particle_embedder: eqx.nn.MLP
-    time_embedder: eqx.nn.MLP
+    particle_embedder: eqx.nn.Linear
     layernorm: eqx.nn.LayerNorm
     n_particles: int
     n_spatial_dim: int
@@ -27,27 +26,16 @@ class EmbedderBlock(eqx.Module):
     ):
         self.shortcut = shortcut
         self.mp_policy = mp_policy
+        in_dim = n_spatial_dim + 2 if shortcut else n_spatial_dim + 1
 
-        particle_key, time_key = jax.random.split(key)
         self.particle_embedder = eqx.nn.MLP(
-            in_size=n_spatial_dim,
+            in_size=in_dim,
             out_size=embedding_size,
             width_size=128,
-            depth=4,
+            depth=5,
             activation=jax.nn.silu,
             use_bias=True,
-            key=particle_key,
-            dtype=mp_policy.param_dtype,
-        )
-
-        self.time_embedder = eqx.nn.MLP(
-            in_size=1 if not shortcut else 2,
-            out_size=embedding_size,
-            width_size=128,
-            depth=4,
-            activation=jax.nn.silu,
-            use_bias=True,
-            key=time_key,
+            key=key,
             dtype=mp_policy.param_dtype,
         )
         # Correct LayerNorm shape to feature dimension only
@@ -61,23 +49,21 @@ class EmbedderBlock(eqx.Module):
         xs: Float[Array, "num_particles spatial_dim"],
         t: Float[Array, ""],
         d: Optional[Float[Array, ""]] = None
-    ) -> tuple[
-        Float[Array, "num_particles embedding_size"],
-        Float[Array, "1 embedding_size"]
-    ]:
+    ) -> Float[Array, "num_particles embedding_dim"]:
         if self.shortcut:
-            time_input = jnp.concatenate([jnp.array(t).reshape(1), jnp.array(t).reshape(1)], axis=-1).reshape(1, 2)
+            d = jnp.broadcast_to(d, (xs.shape[0], 1))
+            t = jnp.broadcast_to(t, (xs.shape[0], 1))
+            input = jnp.concatenate([xs, t, d], axis=-1)
         else:
-            time_input = jnp.array(t).reshape(1, 1)
+            t = jnp.broadcast_to(t, (xs.shape[0], 1))
+            input = jnp.concatenate([xs, t], axis=-1)
 
-        time_input = self.mp_policy.cast_to_compute(time_input)
-        xs_input = self.mp_policy.cast_to_compute(xs)
+        input = self.mp_policy.cast_to_compute(input)
         embedder = self.mp_policy.cast_to_compute(self.particle_embedder)
 
-        embedded_xs = jax.vmap(embedder)(xs_input)
-        embedded_t = jax.vmap(self.time_embedder)(time_input).reshape(1, -1)
+        embedded = jax.vmap(embedder)(input)
         # Apply LayerNorm with vmap per-particle using fp32
-        return self.mp_policy.cast_to_output(jax.vmap(self.layernorm)(embedded_xs.astype(jnp.float32))), embedded_t
+        return self.mp_policy.cast_to_output(jax.vmap(self.layernorm)(embedded.astype(jnp.float32)))
 
 
 class SimplifiedAttentionBlock(eqx.Module):
@@ -194,7 +180,7 @@ class EfficientFFN(eqx.Module):
         # Apply vmap to linear layers to process each particle
         x = jax.vmap(linear1)(x)
         # Cast to FP32 before GELU activation for improved numerical stability
-        x = jax.nn.silu(x.astype(jnp.float32))
+        x = jax.nn.gelu(x.astype(jnp.float32))
         x = self.dropout(x, key=key, inference=not enable_dropout)
         x = jax.vmap(linear2)(x) + residual
         return self.mp_policy.cast_to_output(jax.vmap(layernorm)(x.astype(jnp.float32)))
@@ -229,19 +215,14 @@ class TransformerLayer(eqx.Module):
     def __call__(
         self, 
         x: Float[Array, "num_particles hidden_size"],
-        time_emb: Optional[Float[Array, "1 hidden_size"]] = None,
         enable_dropout: bool = False, 
         key: Optional[jax.random.PRNGKey] = None
     ) -> Float[Array, "num_particles hidden_size"]:
         attn_key, ffn_key = jax.random.split(key) if key is not None else (None, None)
 
-        x = jnp.concatenate([x, time_emb], axis=0)
         x = self.mp_policy.cast_to_compute(x)
         x = self.attn(x, enable_dropout, attn_key)
-        x = self.ffn(x, enable_dropout, ffn_key)
-        output = self.mp_policy.cast_to_compute(x)
-        return output[1:], output[:1]  # Exclude time embedding from output
-        # return output[1:]
+        return self.mp_policy.cast_to_output(self.ffn(x, enable_dropout, ffn_key))
 
 
 class ParticleTransformerV3(eqx.Module):
@@ -315,10 +296,10 @@ class ParticleTransformerV3(eqx.Module):
         predictor = self.mp_policy.cast_to_compute(self.predictor)
 
         xs = xs.reshape(-1, self.embedder.n_spatial_dim)
-        x, time = self.embedder(xs, t, d=d if self.shortcut else None)
+        x = self.embedder(xs, t, d=d if self.shortcut else None)
 
         for layer in self.layers:
-            x, time = layer(x, time, enable_dropout, key)
+            x = layer(x, enable_dropout, key)
             if key is not None:
                 key, _ = jax.random.split(key)
 
