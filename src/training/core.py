@@ -428,38 +428,27 @@ def train_velocity_field(
         else:
             samples = mcmc_samples["positions"]
 
-
-        particles = Particle(
-            x=samples.reshape(num_particles * current_ts.shape[0], -1),
-            t=jnp.repeat(current_ts, num_particles),
-            log_Z_t=jnp.repeat(log_Z_t, num_particles),
-            d=jax.random.choice(
-                subkey,
-                shortcut_size_d,
-                (num_particles * current_ts.shape[0],),
-                replace=True,
-            )
-            if config.training.use_shortcut
-            else None,
-            # loss_weight=jnp.repeat(loss_weights, num_particles) if config.training.reweight else None,
-        )
+        time_steps, num_particles, d = samples.shape
 
         for s in range(config.training.steps_per_epoch):
             # Update lambda factor for each step within the epoch
             key, subkey = jax.random.split(key)
-            indices = jax.random.choice(
-                subkey,
-                particles.x.shape[0],
-                (config.training.time_batch_size * config.sampling.batch_size,),
-                replace=False,
-                p=p if config.training.reweight else None,
-            )
 
+            chain_indices = jax.random.choice(
+                subkey, num_particles, shape=(config.training.time_batch_size,), replace=False
+            )
+            selected_chains = samples[:, chain_indices, :].reshape(
+                time_steps * config.training.time_batch_size, -1
+            )
+            selected_t = jnp.repeat(current_ts, config.training.time_batch_size)
+            selected_log_Z_t = jnp.repeat(log_Z_t, config.training.time_batch_size)
+  
             training_particles = Particle(
-                x=particles.x[indices],
-                t=particles.t[indices],
-                log_Z_t=particles.log_Z_t[indices],
-                d=particles.d[indices] if particles.d is not None else None,
+                x=selected_chains,
+                t=selected_t,
+                log_Z_t=selected_log_Z_t,
+                d=None,
+                # d=particles.d[indices] if particles.d is not None else None,
                 # loss_weight=particles.loss_weight[indices] if particles.loss_weight is not None else None,
             )
 
