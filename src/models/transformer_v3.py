@@ -63,7 +63,8 @@ class EmbedderBlock(eqx.Module):
 
         embedded = jax.vmap(embedder)(input)
         # Apply LayerNorm with vmap per-particle using fp32
-        return self.mp_policy.cast_to_output(jax.vmap(self.layernorm)(embedded.astype(jnp.float32)))
+        return self.mp_policy.cast_to_output(embedded)
+        # return self.mp_policy.cast_to_output(jax.vmap(self.layernorm)(embedded.astype(jnp.float32)))
 
 
 class SimplifiedAttentionBlock(eqx.Module):
@@ -95,7 +96,7 @@ class SimplifiedAttentionBlock(eqx.Module):
             key=key,
             dtype=mp_policy.param_dtype,
         )
-        self.layernorm = eqx.nn.LayerNorm(hidden_size, dtype=jnp.float32)
+        self.layernorm = eqx.nn.RMSNorm(hidden_size, dtype=jnp.float32)
         self.dropout = eqx.nn.Dropout(dropout_rate)
         self.rope_embeddings = eqx.nn.RotaryPositionalEmbedding(
             embedding_size=hidden_size // num_heads,
@@ -174,16 +175,17 @@ class EfficientFFN(eqx.Module):
         x = self.mp_policy.cast_to_compute(x)
         linear1 = self.mp_policy.cast_to_compute(self.linear1)
         linear2 = self.mp_policy.cast_to_compute(self.linear2)
-        layernorm = self.mp_policy.cast_to_compute(self.layernorm)
+        # layernorm = self.mp_policy.cast_to_compute(self.layernorm)
 
         residual = x
         # Apply vmap to linear layers to process each particle
         x = jax.vmap(linear1)(x)
         # Cast to FP32 before GELU activation for improved numerical stability
-        x = jax.nn.gelu(x.astype(jnp.float32))
+        x = jax.nn.silu(x.astype(jnp.float32))
         x = self.dropout(x, key=key, inference=not enable_dropout)
         x = jax.vmap(linear2)(x) + residual
-        return self.mp_policy.cast_to_output(jax.vmap(layernorm)(x.astype(jnp.float32)))
+        return self.mp_policy.cast_to_compute(x)
+        # return self.mp_policy.cast_to_output(jax.vmap(layernorm)(x.astype(jnp.float32)))
 
 
 class TransformerLayer(eqx.Module):
