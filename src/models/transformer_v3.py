@@ -6,6 +6,8 @@ import jax.numpy as jnp
 import jmp
 from jaxtyping import Array, Float
 
+from src.utils.models import init_linear_weights, xavier_init
+
 
 class EmbedderBlock(eqx.Module):
     particle_embedder: eqx.nn.Linear
@@ -252,7 +254,7 @@ class ParticleTransformerV3(eqx.Module):
     ):
         self.shortcut = shortcut
         self.mp_policy = mp_policy
-        e_key, l_key, p_key = jax.random.split(key, 3)
+        e_key, l_key, p_key, init_key = jax.random.split(key, 4)
 
         self.embedder = EmbedderBlock(
             n_particles=n_particles,
@@ -277,6 +279,12 @@ class ParticleTransformerV3(eqx.Module):
         ]
 
         self.predictor = eqx.nn.Linear(hidden_size, n_spatial_dim, key=p_key, dtype=mp_policy.param_dtype)
+
+
+        key_1, key_2, key_3 = jax.random.split(init_key, 3)
+        self.embedder = init_linear_weights(self.embedder, xavier_init, key_1, scale=0.1)
+        self.layers = init_linear_weights(self.layers, xavier_init, key_2, scale=0.1)
+        self.predictor = init_linear_weights(self.predictor, xavier_init, key_3, scale=0.1)
 
     def __call__(
         self,
