@@ -392,7 +392,7 @@ def calculate_validation_loss_and_plot(
         )
         # Expected shape of losses_batch: (number_in_batch)
         losses_list.append(losses_batch)
-        print(f"Batch {i + 1}/{mini_batch} processed. Loss shape: {losses_batch.shape}")
+        # print(f"Batch {i + 1}/{mini_batch} processed. Loss shape: {losses_batch.shape}")
     
     # Concatenate the loss results along the batch dimension
     losses = jnp.concatenate(losses_list, axis=0).reshape(
