@@ -18,11 +18,11 @@ from src.utils.eval import (
     log_metrics,
     save_model_if_best,
 )
-from src.utils.optimization import get_optimizer, inverse_power_schedule, power_schedule
+from src.utils.optimization import get_optimizer, inverse_power_schedule, power_schedule, focus_schedule
 from src.utils.schedule import constant_then_cyclic_cosine_schedule
 
 from .config import TrainingExperimentConfig
-from .loss import Particle, batched_epsilon, loss_fn
+from .loss import Particle, loss_fn, calculate_validation_loss_and_plot
 from .normalizing_constant import (
     estimate_log_Z_t,
     estimate_log_Z_t_with_TI,
@@ -96,72 +96,7 @@ def generate_samples_with_optional_mcmc(
 
     return samples
 
-jitted_loss_fn = eqx.filter_jit(loss_fn)
-
-def calculate_validation_loss_and_plot(
-    v_theta: Callable,
-    particles: Particle,
-    path_distribution: AnnealedDistribution,
-    ts: jnp.ndarray,
-    time_batch_size: int = 8,
-    batch_size: int = 128,
-):
-    # Determine total number of samples from particles (assumed along first axis)
-    total_samples = particles.x.shape[0]
-    # Compute the size of each mini-batch (using ceiling to cover all samples)
-    mini_batch_size = time_batch_size * batch_size
-    mini_batch = int(jnp.ceil(total_samples / mini_batch_size))
-    
-    losses_list = []
-    # Loop over mini-batches
-    for i in range(mini_batch):
-        start = i * mini_batch_size
-        end = min((i + 1) * mini_batch_size, total_samples)
-        
-        # Create a mini-batch of particles
-        batch_particles = Particle(
-            x=particles.x[start:end],
-            t=particles.t[start:end],
-            log_Z_t=particles.log_Z_t[start:end],
-            d=particles.d[start:end] if particles.d is not None else None,
-        )
-        
-        # Compute the loss for the mini-batch
-        losses_batch = batched_epsilon(
-            v_theta,
-            batch_particles,
-            path_distribution.score_fn,
-            path_distribution.time_derivative,
-        )
-        # Expected shape of losses_batch: (number_in_batch)
-        losses_list.append(losses_batch)
-    
-    # Concatenate the loss results along the batch dimension
-    losses = jnp.concatenate(losses_list, axis=0).reshape(
-        ts.shape[0], -1
-    )  # Shape: (num_timesteps, num_samples)
-    
-    losses = losses ** 2  # Square the losses
-    # Compute overall metrics
-    mean_loss = jnp.mean(losses)  # Scalar mean loss over all samples and time steps
-    loss_mean = jnp.mean(losses, axis=1)  # Mean loss per time step
-    loss_var = jnp.var(losses, axis=1)    # Variance per time step
-    loss_std = jnp.sqrt(loss_var)         # Standard deviation per time step
-
-    # Plotting the loss over time with mean and standard deviation
-    fig = plt.figure(figsize=(10, 6))
-    plt.plot(ts, loss_mean, label="Mean Loss", color="blue")
-    plt.fill_between(ts, loss_mean - loss_std, loss_mean + loss_std, color="blue", alpha=0.3, label="Std Dev")
-    plt.xlabel("Time")
-    plt.ylabel("Loss^2")
-    plt.yscale("log")
-    plt.title("Loss^2 over Time with Batch Statistics")
-    plt.legend()
-
-    return mean_loss, fig
-
-
-    
+jitted_loss_fn = eqx.filter_jit(loss_fn)    
 
 def train_velocity_field(
     key: jax.random.PRNGKey,
@@ -212,6 +147,12 @@ def train_velocity_field(
             current_end_time,
             end_time=1.0,
             gamma=0.15,
+        )
+    elif config.integration.schedule == "focus":
+        base_ts = focus_schedule(
+            current_end_time,
+            end_time=1.0,
+            gamma=0.7,
         )
     else:
         raise ValueError(f"Unknown schedule {config.integration.schedule}")
