@@ -262,7 +262,7 @@ def main():
     parser.add_argument(
         "--schedule",
         type=str,
-        choices=["linear", "inverse_power", "power"],
+        choices=["linear", "inverse_power", "power", "focus"],
         default="linear",
     )
     parser.add_argument("--continuous-time", action="store_true")
