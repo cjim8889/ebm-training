@@ -6,14 +6,14 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
 import wandb
-from distributions import (
+from src.distributions import (
     AnnealedDistribution,
     MultiDoubleWellEnergy,
     MultivariateGaussian,
 )
-from models.mlp import TimeVelocityFieldWithPairwiseFeature
-from training.config import TrainingConfig, TrainingExperimentConfig
-from utils.integration import generate_samples
+from src.models.mlp import TimeVelocityFieldWithPairwiseFeature
+from src.ode import generate_samples
+from src.training.config import TrainingConfig, TrainingExperimentConfig
 
 jax.config.update("jax_debug_nans", True)
 
