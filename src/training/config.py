@@ -64,6 +64,8 @@ class TrainingConfig:
     reweight: bool = False  # Whether to use reweighting for log Z estimation
     perturb: bool = False
     perturbation_scale: float = 1.
+    augment: bool = False  # Whether to use augmentations
+    translation_scale: float = 2.  # Scale for translation augmentation
 
 @dataclass
 class MCMCConfig:

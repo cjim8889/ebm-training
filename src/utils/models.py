@@ -15,6 +15,11 @@ def xavier_init(
         key, shape=(out, in_), minval=-bound, maxval=bound
     )
 
+def zero_init(
+    weight: jnp.ndarray, key: jax.random.PRNGKey, scale: float = 1.0
+) -> jnp.ndarray:
+    """Zero initialization."""
+    return jnp.zeros_like(weight)
 
 def kaiming_init(
     weight: jnp.ndarray,

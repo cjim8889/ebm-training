@@ -41,6 +41,7 @@ from src.models import (
     VelocityFieldFour,
     VelocityFieldThree,
     VelocityFieldTwo,
+    ParticleTransformerV4,
 )
 from src.training.config import (
     DensityConfig,
@@ -108,6 +109,7 @@ def main():
             "egnn2",
             "transformer2",
             "transformer3",
+            "transformer4",
         ],
     )
 
@@ -352,7 +354,8 @@ def main():
     parser.add_argument("--reweight", action="store_true")
     parser.add_argument("--perturbation-scale", type=float, default=0.0)
     parser.add_argument("--perturb", action="store_true")
-
+    parser.add_argument("--augment", action="store_true")
+    parser.add_argument("--translation-scale", type=float, default=2.)
     args = parser.parse_args()
 
     if args.debug:
@@ -404,6 +407,8 @@ def main():
         reweight=args.reweight,
         perturb=args.perturb,
         perturbation_scale=args.perturbation_scale,
+        augment=args.augment,
+        translation_scale=args.translation_scale,
     )
 
     mcmc_config = MCMCConfig(
@@ -865,6 +870,17 @@ def main():
             shortcut=config.training.use_shortcut,
             mp_policy=config.mp_policy,
             theta=config.model.theta,
+        )
+    elif config.model.architecture == "transformer4":
+        v_theta = ParticleTransformerV4(
+            n_particles=config.density.n_particles,
+            n_spatial_dim=config.density.n_spatial_dim,
+            hidden_size=config.model.hidden_dim,
+            num_layers=config.model.num_layers,
+            num_heads=config.model.num_heads,
+            key=model_key,
+            shortcut=config.training.use_shortcut,
+            mp_policy=config.mp_policy,
         )
     elif config.model.architecture == "omlp":
         v_theta = OptimizedVelocityField(
