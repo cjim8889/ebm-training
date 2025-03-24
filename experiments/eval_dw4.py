@@ -9,10 +9,9 @@ from distributions import (
     MultiDoubleWellEnergy,
     MultivariateGaussian,
 )
-from models.mlp import TimeVelocityFieldWithPairwiseFeature
-from training.config import TrainingConfig, TrainingExperimentConfig
-from utils.eval import aggregate_eval_metrics, evaluate_model, log_metrics
-
+from src.models.mlp import TimeVelocityFieldWithPairwiseFeature
+from src.training.config import TrainingConfig, TrainingExperimentConfig
+from src.utils.eval import aggregate_eval_metrics, evaluate_model, log_metrics
 
 jax.config.update("jax_debug_nans", True)
 
