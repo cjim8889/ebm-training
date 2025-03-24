@@ -383,8 +383,9 @@ def train_velocity_field(
             )
 
             if config.training.perturb:
+                key, subkey = jax.random.split(key)
                 selected_chains = selected_chains + jax.random.normal(
-                    key, selected_chains.shape, dtype=config.mp_policy.output_dtype
+                    subkey, selected_chains.shape, dtype=config.mp_policy.output_dtype
                 ) * config.training.perturbation_scale
 
 
