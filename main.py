@@ -350,6 +350,8 @@ def main():
     parser.add_argument("--every-k-schedule", type=int, default=1)
     parser.add_argument("--ess-threshold", type=float, default=0.5)
     parser.add_argument("--reweight", action="store_true")
+    parser.add_argument("--perturbation_scale", type=float, default=0.0)
+    parser.add_argument("--perturb", action="store_true")
 
     args = parser.parse_args()
 
@@ -400,6 +402,8 @@ def main():
         log_z_estimation_frequency=args.log_z_estimation_frequency,
         use_TI=args.use_ti,
         reweight=args.reweight,
+        perturb=args.perturb,
+        perturbation_scale=args.perturbation_scale,
     )
 
     mcmc_config = MCMCConfig(

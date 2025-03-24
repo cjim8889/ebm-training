@@ -381,6 +381,13 @@ def train_velocity_field(
             selected_chains = samples[:, chain_indices, :].reshape(
                 time_steps * config.training.time_batch_size, -1
             )
+
+            if config.training.perturb:
+                selected_chains = selected_chains + jax.random.normal(
+                    key, selected_chains.shape, dtype=config.mp_policy.output_dtype
+                ) * config.training.perturbation_scale
+
+
             selected_t = jnp.repeat(current_ts, config.training.time_batch_size)
             selected_log_Z_t = jnp.repeat(log_Z_t, config.training.time_batch_size)
   
