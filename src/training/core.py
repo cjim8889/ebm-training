@@ -28,6 +28,7 @@ from .normalizing_constant import (
     estimate_log_Z_t_with_TI,
 )
 
+@eqx.filter_jit
 def random_rotation_3d(key):
     key_angle, key_axis = jax.random.split(key)
     angle = jax.random.uniform(key_angle, shape=(), minval=0.0, maxval=2 * jnp.pi)
@@ -43,6 +44,7 @@ def random_rotation_3d(key):
     R = I + jnp.sin(angle) * K + (1 - jnp.cos(angle)) * (K @ K)
     return R
 
+@eqx.filter_jit
 def augment_chain(chain, key, translation_scale, num_particles):
     # Reshape the chain into (num_particles, 3)
     chain = chain.reshape((num_particles, 3))
@@ -63,6 +65,8 @@ def augment_chain(chain, key, translation_scale, num_particles):
     chain_aug = chain_rot + translation
     # Flatten back to a 1D array (num_particles * 3)
     return chain_aug.reshape(-1)
+
+batch_augment_chain = jax.vmap(augment_chain, in_axes=(0, 0, None, None))
 
 def generate_samples_with_optional_mcmc(
     key: jax.random.PRNGKey,
@@ -424,8 +428,9 @@ def train_velocity_field(
                 # Generate a unique key for each datapoint in the batch.
                 keys_aug = jax.random.split(key, batch_size)
                 # Vectorize the augmentation over the batch dimension.
-                selected_chains = jax.vmap(lambda x, key: augment_chain(x, key, config.training.translation_scale, config.density.n_particles))(selected_chains, keys_aug)
+                selected_chains = batch_augment_chain(selected_chains, keys_aug, config.training.translation_scale, config.density.n_particles)
 
+            # Apply translation augmentation
             if config.training.perturb:
                 key, subkey = jax.random.split(key)
                 selected_chains = selected_chains + jax.random.normal(
