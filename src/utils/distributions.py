@@ -230,7 +230,7 @@ def hutchinson_divergence_velocity2(
 ) -> Tuple[chex.Array, chex.Array]:
     # Ensure eps has the same dtype as x
     eps = eps.astype(x.dtype)
-    
+
     # Compute VJP once and reuse for all probes
     if dropout_key is not None:
         v_fn = lambda x: v_theta(x, t, d, enable_dropout=True, key=dropout_key) if d is not None else v_theta(x, t, enable_dropout=True, key=dropout_key)
@@ -260,7 +260,7 @@ def hutchinson_divergence_velocity_single_probe(
     """Compute divergence using single pre-defined probe vector."""
     # Validate probe vector shape
     chex.assert_shape(eps, x.shape)
-    
+
     # Ensure eps has the same dtype as x
     eps = eps.astype(x.dtype)
 
@@ -269,7 +269,7 @@ def hutchinson_divergence_velocity_single_probe(
         v_fn = lambda x: v_theta(x, t, d, enable_dropout=True, key=dropout_key) if d is not None else v_theta(x, t, enable_dropout=True, key=dropout_key)
     else:
         v_fn = lambda x: v_theta(x, t, d) if d is not None else v_theta(x, t)
-    
+
     primals, f_vjp = jax.vjp(v_fn, x)
 
     # Direct computation without vmap (single probe)
@@ -279,29 +279,6 @@ def hutchinson_divergence_velocity_single_probe(
     trace_estimate = jnp.sum(eps * jvp_eps)
 
     return trace_estimate, primals
-
-
-@eqx.filter_jit
-def sample_monotonic_uniform_ordered(
-    key: jax.random.PRNGKey, bounds: chex.Array, include_endpoints: bool = True
-) -> chex.Array:
-    def step(carry, info):
-        t_prev = carry
-        t_current = info
-
-        return t_current, jnp.array([t_prev, t_current])
-
-    _, ordered_pairs = jax.lax.scan(step, bounds[0], bounds[1:])
-
-    if include_endpoints:
-        ordered_pairs = jnp.concatenate(
-            [ordered_pairs, jnp.array([[1.0, 1.0]])], axis=0
-        )
-
-    samples = jax.random.uniform(
-        key, bounds.shape, minval=ordered_pairs[:, 0], maxval=ordered_pairs[:, 1]
-    )
-    return samples
 
 
 @eqx.filter_jit

@@ -1,6 +1,6 @@
 # Refactored src/training/core.py
 
-from typing import Any, Callable, Dict, List, Tuple, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import chex
 import equinox as eqx
@@ -13,18 +13,19 @@ from jaxtyping import Array, Float, PyTree
 import wandb
 from src.distributions import AnnealedDistribution, Target
 from src.mcmc.sampling import sample_with_mcmc
-from src.utils.distributions import sample_monotonic_uniform_ordered
 from src.utils.eval import (
     aggregate_eval_metrics,
     evaluate_model,
     log_metrics,
     save_model_if_best,
 )
-from src.utils.optimization import get_optimizer, inverse_power_schedule, power_schedule, focus_schedule
+from src.utils.optimization import get_optimizer  # Keep get_optimizer
 from src.utils.schedule import constant_then_cyclic_cosine_schedule
 
+# Added: Import new time utils
+from . import time_utils
 from .config import TrainingExperimentConfig
-from .loss import Particle, loss_fn, calculate_validation_loss_and_plot
+from .loss import Particle, calculate_validation_loss_and_plot, loss_fn
 from .normalizing_constant import (
     estimate_log_Z_t,
 )
@@ -221,24 +222,6 @@ def _setup_optimizer(config: TrainingExperimentConfig) -> Tuple[optax.GradientTr
 
     return optimizer, lr_schedule_fn # Return schedule_fn as well for logging
 
-def _setup_time_steps(config: TrainingExperimentConfig) -> Float[Array, " time"]:
-    """Sets up the base time steps for integration."""
-    num_timesteps = config.sampling.num_timesteps
-    schedule = config.integration.schedule
-    end_time = 1.0 # Assuming time runs from 0 to 1
-
-    if schedule == "linear":
-        base_ts = jnp.linspace(0, end_time, num_timesteps)
-    elif schedule == "inverse_power":
-        # Gamma values might need tuning or configuration
-        base_ts = inverse_power_schedule(num_timesteps, end_time=end_time, gamma=config.integration.get('gamma', 0.5))
-    elif schedule == "power":
-        base_ts = power_schedule(num_timesteps, end_time=end_time, gamma=config.integration.get('gamma', 0.15))
-    elif schedule == "focus":
-        base_ts = focus_schedule(num_timesteps, end_time=end_time, gamma=config.integration.get('gamma', 0.7))
-    else:
-        raise ValueError(f"Unknown schedule {schedule}")
-    return base_ts
 
 def _setup_path_distribution(
     initial_density: Target,
@@ -460,7 +443,8 @@ def _maybe_estimate_log_z(
         # Handle time steps for estimation (especially if continuous)
         if config.integration.continuous_time:
              # Resample time steps for estimation if continuous
-             ts_for_estimation = sample_monotonic_uniform_ordered(subkey_time, base_ts, True)
+             # Changed: Use time_utils.sample_continuous_time
+             ts_for_estimation = time_utils.sample_continuous_time(subkey_time, base_ts)
              print(f"Epoch {epoch}: Resampled continuous time for Log Z estimation.")
 
         mcmc_samples = generate_samples_with_optional_mcmc(
@@ -829,7 +813,8 @@ def _run_training_loop(
         # Note: Previously, ASMC handled time step updates within _maybe_estimate_log_z.
         if config.integration.continuous_time: # Removed redundant 'and config.mcmc.method != "asmc"'
             subkey_epoch, subkey_time = jax.random.split(subkey_epoch)
-            current_ts = sample_monotonic_uniform_ordered(subkey_time, base_ts, True)
+            # Changed: Use time_utils.sample_continuous_time
+            current_ts = time_utils.sample_continuous_time(subkey_time, base_ts)
             print(f"Epoch {epoch}: Sampled new continuous time steps.")
 
         # 3. Estimate Log Z (if needed) - This might update current_ts if ASMC is used
@@ -933,7 +918,12 @@ def train_velocity_field(
     log_Z_t_ref: List[Optional[Float[Array, " time"]]] = [None] # Mutable reference for log Z
 
     optimizer, lr_schedule_fn = _setup_optimizer(config)
-    base_ts = _setup_time_steps(config)
+    # Changed: Use time_utils.setup_time_schedule
+    base_ts = time_utils.setup_time_schedule(
+        schedule=config.integration.schedule,
+        num_timesteps=config.sampling.num_timesteps,
+        gamma=config.integration.get('gamma', None) # Pass gamma if needed
+    )
     path_distribution = _setup_path_distribution(initial_density, target_density, config)
     opt_state = optimizer.init(eqx.filter(v_theta, eqx.is_inexact_array))
 
