@@ -654,7 +654,7 @@ def _maybe_evaluate_and_save(
 
         # Process and log metrics
         aggregated_metrics = aggregate_eval_metrics(all_eval_results)
-        log_metrics(aggregated_metrics, config, epoch=epoch) # Pass epoch for logging
+        log_metrics(aggregated_metrics, config) # Pass epoch for logging
 
         # Calculate and plot validation loss curve
         print("  Calculating validation loss curve...")
@@ -665,7 +665,7 @@ def _maybe_evaluate_and_save(
             path_distribution,
             validation_ts, # Use the ts corresponding to validation_particles
             time_batch_size=config.training.time_batch_size, # Reuse config params
-            batch_size=config.sampling.batch_size,
+            batch_size=config.sampling.num_timesteps,
             # Pass other relevant config if needed by the function
         )
         # validation_loss_curve is the mean loss per time step
