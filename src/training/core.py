@@ -582,6 +582,7 @@ def _calculate_and_log_epoch_metrics(
 
     # Calculate validation loss using the dedicated validation set
     # Use settings consistent with how validation should be performed (e.g., no dropout, specific estimator)
+
     val_loss = jitted_loss_fn(
         v_theta,
         validation_particles, # Use the dedicated validation set
@@ -637,7 +638,7 @@ def _maybe_evaluate_and_save(
         print(f"--- Epoch {epoch}: Running Evaluation ---")
         # Run multiple evaluations (original code had loop for 1 iteration)
         all_eval_results = []
-        num_eval_runs = config.training.get("num_eval_runs", 1) # Make configurable
+        num_eval_runs = 1 # Make configurable
         for i in range(num_eval_runs):
             key, subkey = jax.random.split(key)
             print(f"  Evaluation Run {i+1}/{num_eval_runs}...")
@@ -782,8 +783,14 @@ def _run_training_loop(
         )
 
         # 6. Calculate and Log Epoch Metrics (Validation Loss)
+        val_size = config.training.time_batch_size * config.sampling.num_timesteps
+        _validation_particles = Particle(
+            x=validation_particles.x[:val_size],
+            t=validation_particles.t[:val_size],
+            log_Z_t=validation_particles.log_Z_t[:val_size],
+        )
         subkey_epoch, _ = _calculate_and_log_epoch_metrics( # val_loss not needed here
-            subkey_epoch, epoch, avg_epoch_loss, v_theta, validation_particles,
+            subkey_epoch, epoch, avg_epoch_loss, v_theta, _validation_particles,
             path_distribution, config, lr_schedule_fn
         )
 
