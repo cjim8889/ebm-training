@@ -8,12 +8,12 @@ import matplotlib.pyplot as plt
 
 import wandb
 from src.distributions import MultivariateGaussian, QuadraticSmoothedLJ
-from src.models.transformer_v2 import ParticleTransformerV2
+from src.models.transformer_v4 import ParticleTransformerV4
 from src.ode import generate_samples
 
 run = wandb.init()
 artifact = run.use_artifact(
-    "iclac/liouville_workshop_corrected/velocity_field_model_pi9i11pv:v2", type="model"
+    "iclac/liouville_workshop_corrected/velocity_field_model_n2ljw1rs:v1", type="model"
 )
 
 artifact_dir = artifact.download()
@@ -27,14 +27,12 @@ mp_policy = jmp.Policy(
     output_dtype=jnp.float32,
 )
 
-v_theta = ParticleTransformerV2(
+v_theta = ParticleTransformerV4(
     n_particles=13,
     n_spatial_dim=3,
     hidden_size=128,
     num_layers=6,
     num_heads=4,
-    dropout_rate=None,
-    attn_dropout_rate=None,
     key=key,
     mp_policy=mp_policy
 )
