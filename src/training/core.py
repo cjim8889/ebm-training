@@ -11,6 +11,7 @@ import optax
 from jaxtyping import Array, Float, PyTree
 
 import wandb
+import logfire # Added logfire import
 from src.distributions import AnnealedDistribution, Target
 from src.mcmc.sampling import sample_with_mcmc
 from src.utils.eval import (
@@ -33,6 +34,7 @@ from .augmentation import batch_augment_chain # Added for refactoring
 
 # === Sample Generation (Unchanged, added type hints) ===
 
+@logfire.instrument('Executing {__qualname__}')
 def generate_samples_with_optional_mcmc(
     key: jax.random.PRNGKey,
     v_theta: Callable,
@@ -108,6 +110,7 @@ jitted_loss_fn = eqx.filter_jit(loss_fn)
 
 # --- Initialization Helpers ---
 
+@logfire.instrument('Executing {__qualname__}')
 def _setup_optimizer(config: TrainingExperimentConfig) -> Tuple[optax.GradientTransformation, Callable]:
     """Sets up the optimizer and learning rate schedule based on the configuration."""
     if config.training.gradient_clip_norm is not None:
@@ -156,6 +159,7 @@ def _setup_optimizer(config: TrainingExperimentConfig) -> Tuple[optax.GradientTr
     return optimizer, lr_schedule_fn # Return schedule_fn as well for logging
 
 
+@logfire.instrument('Executing {__qualname__}')
 def _setup_path_distribution(
     initial_density: Target,
     target_density: Target,
@@ -168,6 +172,7 @@ def _setup_path_distribution(
         method=config.density.annealing_path,
     )
 
+@logfire.instrument('Executing {__qualname__}')
 def _generate_initial_validation_set(
     key: jax.random.PRNGKey,
     v_theta: Callable, # Should be PyTree
@@ -264,6 +269,7 @@ def _execute_jitted_step(
     return v_theta, opt_state, loss
 
 
+@logfire.instrument('Executing {__qualname__}')
 def _prepare_step_batch(
     key: jax.random.PRNGKey,
     samples: Float[Array, "time batch dim"],
@@ -307,6 +313,7 @@ def _prepare_step_batch(
     # Return selected_chains before augmentation for the augmentation function
     return key, training_particles, selected_chains
 
+@logfire.instrument('Executing {__qualname__}')
 def _apply_augmentations(
     key: jax.random.PRNGKey,
     selected_chains: Float[Array, "batch_size dim"],
@@ -315,26 +322,29 @@ def _apply_augmentations(
     """Applies configured augmentations to the selected chains."""
     augmented_chains = selected_chains
     if config.training.augment:
-        key, subkey = jax.random.split(key)
-        batch_size = augmented_chains.shape[0]
-        keys_aug = jax.random.split(subkey, batch_size)
-        # Pass n_particles from density config, assuming it matches the structure
-        augmented_chains = batch_augment_chain(
-            augmented_chains, keys_aug, config.training.translation_scale, config.density.n_particles
-        )
+        with logfire.span('Augmenting chains'):
+            key, subkey = jax.random.split(key)
+            batch_size = augmented_chains.shape[0]
+            keys_aug = jax.random.split(subkey, batch_size)
+            # Pass n_particles from density config, assuming it matches the structure
+            augmented_chains = batch_augment_chain(
+                augmented_chains, keys_aug, config.training.translation_scale, config.density.n_particles
+            )
 
     if config.training.perturb:
-        key, subkey = jax.random.split(key)
-        noise = jax.random.normal(
-            subkey, augmented_chains.shape, dtype=config.mp_policy.output_dtype
-        ) * config.training.perturbation_scale
-        augmented_chains = augmented_chains + noise
+        with logfire.span('Adding noise to chains'):
+            key, subkey = jax.random.split(key)
+            noise = jax.random.normal(
+                subkey, augmented_chains.shape, dtype=config.mp_policy.output_dtype
+            ) * config.training.perturbation_scale
+            augmented_chains = augmented_chains + noise
 
     return key, augmented_chains
 
 
 # --- Epoch Logic Helpers ---
 
+@logfire.instrument('Executing {__qualname__}')
 def _compute_lambda_factor(
     global_step: int,
     lambda_total_steps: int,
@@ -347,6 +357,7 @@ def _compute_lambda_factor(
     return jnp.array(lambda_max * (1.0 - jnp.exp(-5.0 * progress_ratio)), dtype=jnp.float32)
 
 
+@logfire.instrument('Executing {__qualname__}')
 def _maybe_estimate_log_z(
     key: jax.random.PRNGKey,
     epoch: int,
@@ -429,6 +440,7 @@ def _maybe_estimate_log_z(
     return key, log_Z_t, current_ts, mcmc_samples
 
 
+@logfire.instrument('Executing {__qualname__}')
 def _prepare_epoch_samples(
     key: jax.random.PRNGKey,
     v_theta: PyTree,
@@ -481,6 +493,7 @@ def _prepare_epoch_samples(
     return key, samples
 
 
+@logfire.instrument('Executing {__qualname__}')
 def _run_steps_for_epoch(
     key: jax.random.PRNGKey,
     v_theta: PyTree,
@@ -548,6 +561,7 @@ def _run_steps_for_epoch(
     return key, v_theta, opt_state, avg_epoch_loss
 
 
+@logfire.instrument('Executing {__qualname__}')
 def _calculate_and_log_epoch_metrics(
     key: jax.random.PRNGKey,
     epoch: int,
@@ -601,6 +615,7 @@ def _calculate_and_log_epoch_metrics(
     return key, val_loss # Return validation loss for potential use in saving
 
 
+@logfire.instrument('Executing {__qualname__}')
 def _maybe_evaluate_and_save(
     key: jax.random.PRNGKey,
     epoch: int,
@@ -698,6 +713,7 @@ def _maybe_evaluate_and_save(
 
 # --- Main Training Loop ---
 
+@logfire.instrument('Executing {__qualname__}')
 def _run_training_loop(
     key: jax.random.PRNGKey,
     v_theta: PyTree,
@@ -780,6 +796,7 @@ def _run_training_loop(
 
 # --- Finalization Helper ---
 
+@logfire.instrument('Executing {__qualname__}')
 def _finalize_training(
     config: TrainingExperimentConfig,
     best_metrics: List[Tuple[float, int]]
@@ -815,6 +832,7 @@ def _finalize_training(
 
 # --- Main Entry Point ---
 
+@logfire.instrument('Executing {__qualname__}')
 def train_velocity_field(
     key: jax.random.PRNGKey,
     initial_density: Target,
