@@ -242,7 +242,7 @@ def main():
 
     # MCMC configuration
     parser.add_argument(
-        "--mcmc-method", type=str, default="hmc", choices=["hmc", "smc", "esmc", "vsmc", "asmc"]
+        "--mcmc-method", type=str, default="hmc", choices=["hmc", "smc", "esmc", "vsmc"] # Removed "asmc"
     )
     parser.add_argument("--mcmc-steps", type=int, default=5)
     parser.add_argument("--mcmc-integration-steps", type=int, default=3)
@@ -258,9 +258,6 @@ def main():
         "--integration-method", type=str, choices=["Euler", "Tsit5"], default="Euler"
     )
 
-    parser.add_argument(
-        "--use-ti", action="store_true", help="Whether to use the Thermodynamic Integration to estimate log Z"
-    )
     parser.add_argument(
         "--schedule",
         type=str,
@@ -403,7 +400,6 @@ def main():
         schedule_decay_epoch=args.schedule_decay_epoch,
         schedule_end_value=args.schedule_end_value,
         log_z_estimation_frequency=args.log_z_estimation_frequency,
-        use_TI=args.use_ti,
         reweight=args.reweight,
         perturb=args.perturb,
         perturbation_scale=args.perturbation_scale,
