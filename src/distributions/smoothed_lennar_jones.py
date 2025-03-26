@@ -187,7 +187,7 @@ class QuadraticSmoothedLJ(Target):
             bins=100,
             density=True,
             alpha=0.4,
-            range=(energy_samples.min(), energy_samples.max()),
+            range=(-60, 0),
             histtype="step",
             linewidth=2,
         )
