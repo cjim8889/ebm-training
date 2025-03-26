@@ -24,10 +24,8 @@ def focus_schedule(T: int = 64, end_time: float = 1.0, gamma: float = 0.6) -> Fl
     # Note: Original implementation returns 2*T points. Consider if this is intended.
     # If T points are desired, adjust the linspace counts or slice the output.
     # For now, keeping original behavior.
-    num_points_part1 = T // 2 # Example adjustment for T points total
-    num_points_part2 = T - num_points_part1
-    x_1 = jnp.linspace(0, gamma, num_points_part1)
-    x_2 = jnp.linspace(gamma, end_time, num_points_part2)[1:] # Avoid duplicating gamma if T is even
+    x_1 = jnp.linspace(0, gamma, T)
+    x_2 = jnp.linspace(gamma, end_time, T)
     # Original implementation:
     # x_1 = jnp.linspace(0, gamma, T)
     # x_2 = jnp.linspace(gamma, end_time, T)
