@@ -546,10 +546,12 @@ def _run_steps_for_epoch(
             log_Z_t=training_particles_pre_aug.log_Z_t,
         )
 
+
         # 3. Execute Training Step (using the JITted function)
-        v_theta, opt_state, loss = _execute_jitted_step(
-            subkey_step, v_theta, opt_state, training_particles, *static_args
-        )
+        with logfire.span('Training step'):
+            v_theta, opt_state, loss = _execute_jitted_step(
+                subkey_step, v_theta, opt_state, training_particles, *static_args
+            )
         epoch_loss += loss
 
         # 4. Log Step Loss (periodically)

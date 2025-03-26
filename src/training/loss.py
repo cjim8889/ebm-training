@@ -365,76 +365,50 @@ def calculate_validation_loss_and_plot(
     time_batch_size: int = 8,
     batch_size: int = 128,
 ):
-    # 1. Pre-computation
+    # Determine total number of samples from particles (assumed along first axis)
     total_samples = particles.x.shape[0]
-    dim = particles.x.shape[1] # Get dimension for slicing x
+    # Compute the size of each mini-batch (using ceiling to cover all samples)
     mini_batch_size = time_batch_size * batch_size
-    # Use jnp.ceil and ensure integer type for JAX compatibility
-    mini_batch = jnp.ceil(total_samples / mini_batch_size).astype(jnp.int32)
-    dtype = particles.x.dtype
-
-    # 2. State Initialization
-    initial_losses = jnp.zeros((total_samples,), dtype=dtype)
-
-    # 3. Define Loop Body Function (closure captures necessary variables)
-    def loop_body(i, current_losses_state):
+    mini_batch = int(jnp.ceil(total_samples / mini_batch_size))
+    
+    losses_list = []
+    # Loop over mini-batches
+    for i in range(mini_batch):
         start = i * mini_batch_size
-        # Calculate actual size for this batch, handling the last partial batch
-        current_batch_actual_size = jnp.minimum(mini_batch_size, total_samples - start)
-
-        # Use dynamic_slice for JAX compatibility within loops/jit
-        batch_x = jax.lax.dynamic_slice(
-            particles.x, (start, 0), (current_batch_actual_size, dim)
+        end = min((i + 1) * mini_batch_size, total_samples)
+        
+        # Create a mini-batch of particles
+        batch_particles = Particle(
+            x=particles.x[start:end],
+            t=particles.t[start:end],
+            log_Z_t=particles.log_Z_t[start:end],
+            d=particles.d[start:end] if particles.d is not None else None,
         )
-        batch_t = jax.lax.dynamic_slice(
-            particles.t, (start,), (current_batch_actual_size,)
-        )
-        batch_log_Z_t = jax.lax.dynamic_slice(
-            particles.log_Z_t, (start,), (current_batch_actual_size,)
-        )
-
-        # Handle optional 'd' field
-        batch_d = None
-        if particles.d is not None:
-             batch_d = jax.lax.dynamic_slice(
-                 particles.d, (start,), (current_batch_actual_size,)
-             )
-
-        batch_particles = Particle(x=batch_x, t=batch_t, log_Z_t=batch_log_Z_t, d=batch_d)
-
-        # Compute loss for the mini-batch
+        
+        # Compute the loss for the mini-batch
         losses_batch = batched_epsilon(
             v_theta,
             batch_particles,
             path_distribution.score_fn,
             path_distribution.time_derivative,
-        ) # Shape: (current_batch_actual_size,)
-
-        # Update the state array with computed losses
-        updated_losses_state = jax.lax.dynamic_update_slice(
-            current_losses_state, losses_batch, (start,)
         )
-        return updated_losses_state
-
-    # 4. Execute fori_loop
-    all_losses = jax.lax.fori_loop(0, mini_batch, loop_body, initial_losses)
-    # all_losses shape: (total_samples,)
-
-    # 5. Post-processing
-    # Reshape based on the number of time steps and inferred samples per time step
-    num_timesteps = ts.shape[0]
-    samples_per_t = total_samples // num_timesteps # Assumes total_samples is divisible by num_timesteps
-    losses = all_losses.reshape(num_timesteps, samples_per_t) # Shape: (num_timesteps, samples_per_t)
-
+        # Expected shape of losses_batch: (number_in_batch)
+        losses_list.append(losses_batch)
+        # print(f"Batch {i + 1}/{mini_batch} processed. Loss shape: {losses_batch.shape}")
+    
+    # Concatenate the loss results along the batch dimension
+    losses = jnp.concatenate(losses_list, axis=0).reshape(
+        ts.shape[0], -1
+    )  # Shape: (num_timesteps, num_samples)
+    
     losses = losses ** 2  # Square the losses
-
     # Compute overall metrics
-    mean_loss = jnp.mean(losses)  # Scalar mean loss
+    mean_loss = jnp.mean(losses)  # Scalar mean loss over all samples and time steps
     loss_mean = jnp.mean(losses, axis=1)  # Mean loss per time step
     loss_var = jnp.var(losses, axis=1)    # Variance per time step
     loss_std = jnp.sqrt(loss_var)         # Standard deviation per time step
 
-    # 6. Plotting (remains the same, outside JAX computation graph)
+    # Plotting the loss over time with mean and standard deviation
     fig = plt.figure(figsize=(10, 6))
     plt.plot(ts, loss_mean, label="Mean Loss", color="blue")
     plt.fill_between(ts, loss_mean - loss_std, loss_mean + loss_std, color="blue", alpha=0.3, label="Std Dev")
