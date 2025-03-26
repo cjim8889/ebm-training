@@ -245,12 +245,9 @@ def _generate_initial_validation_set(
     """Generates the initial set of particles for validation."""
     key, subkey = jax.random.split(key)
     # Use separate config or decide on validation set size
-    num_val_samples = config.training.get("validation_set_size", config.sampling.num_particles)
-    # Ensure reasonable size, maybe link to time_batch_size * batch_size?
-    # Original: config.training.time_batch_size * config.sampling.batch_size
-    num_val_samples_orig = config.training.time_batch_size * config.sampling.batch_size
+    num_val_samples = config.density.n_samples_eval
 
-    print(f"Generating validation set with {num_val_samples_orig} samples...")
+    print(f"Generating validation set with {num_val_samples} samples...")
 
     validation_samples_dict = generate_samples_with_optional_mcmc(
         key=subkey,
@@ -260,7 +257,7 @@ def _generate_initial_validation_set(
         config=config,
         mcmc_method="smc", # Use SMC for validation set generation
         force_finite=True,
-        num_samples=num_val_samples_orig,
+        num_samples=num_val_samples,
     )
 
     # Estimate Log Z for the validation set times
@@ -277,8 +274,8 @@ def _generate_initial_validation_set(
     reshaped_positions = validation_samples_dict["positions"].reshape(-1, dim)
 
     # Repeat ts and log_Z_t to match particles
-    repeated_t = jnp.repeat(validation_ts, num_val_samples_orig)
-    repeated_log_Z_t = jnp.repeat(validation_log_Z_t, num_val_samples_orig)
+    repeated_t = jnp.repeat(validation_ts, num_val_samples)
+    repeated_log_Z_t = jnp.repeat(validation_log_Z_t, num_val_samples)
 
     validation_particles = Particle(
         x=reshaped_positions,
@@ -514,7 +511,7 @@ def _prepare_epoch_samples(
     if mcmc_samples_from_logz is None:
         # This happens if log Z wasn't estimated this epoch. Need to generate base samples.
         # Use the standard MCMC method defined in config for generating training samples.
-        print(f"Epoch: Generating base MCMC samples as none were provided (log Z reused).")
+        print("Epoch: Generating base MCMC samples as none were provided (log Z reused).")
         key, subkey = jax.random.split(key)
         base_mcmc_samples = generate_samples_with_optional_mcmc(
             subkey, v_theta, current_ts, path_distribution, config,
@@ -522,7 +519,7 @@ def _prepare_epoch_samples(
         )
     else:
         # Reuse samples generated during log Z estimation
-        print(f"Epoch: Reusing MCMC samples generated during log Z estimation.")
+        print("Epoch: Reusing MCMC samples generated during log Z estimation.")
         base_mcmc_samples = mcmc_samples_from_logz
 
     base_positions = base_mcmc_samples["positions"] # Shape (time, num_particles, dim)
@@ -661,12 +658,12 @@ def _calculate_and_log_epoch_metrics(
 
     if not config.offline:
         wandb.log(epoch_metrics)
-    else:
-        print(f"--- Epoch {epoch} Summary ---")
-        print(f"  Avg Train Loss: {avg_train_loss:.4f}")
-        print(f"  Validation Loss: {val_loss:.4f}")
-        print(f"  Learning Rate at Epoch Start: {epoch_lr:.6f}")
-        print("----------------------")
+    
+    print(f"--- Epoch {epoch} Summary ---")
+    print(f"  Avg Train Loss: {avg_train_loss:.4f}")
+    print(f"  Validation Loss: {val_loss:.4f}")
+    print(f"  Learning Rate at Epoch Start: {epoch_lr:.6f}")
+    print("----------------------")
 
     return key, val_loss # Return validation loss for potential use in saving
 
@@ -678,7 +675,6 @@ def _maybe_evaluate_and_save(
     config: TrainingExperimentConfig,
     path_distribution: AnnealedDistribution,
     target_density: Target,
-    current_ts: Float[Array, " time"], # Pass current_ts for ASMC evaluation
     validation_particles: Particle, # For plotting validation loss curve
     validation_ts: Float[Array, " time"], # For plotting validation loss curve
     best_metrics: List[Tuple[float, int]], # List of (metric_value, version)
@@ -700,7 +696,6 @@ def _maybe_evaluate_and_save(
                 path_distribution,
                 target_density,
                 config.sampling.num_timesteps, # Pass num_timesteps from config
-                current_ts=None, # Removed ASMC conditional logic
             )
             all_eval_results.append(eval_metrics)
 
@@ -842,7 +837,7 @@ def _run_training_loop(
         # 7. Evaluate and Save Model (Periodically)
         subkey_epoch, best_metrics, model_version = _maybe_evaluate_and_save(
             subkey_epoch, epoch, v_theta, config, path_distribution, target_density,
-            current_ts, validation_particles, validation_ts, best_metrics, model_version
+            validation_particles, validation_ts, best_metrics, model_version
         )
 
         print(f"=== Finished Epoch {epoch} ===")
