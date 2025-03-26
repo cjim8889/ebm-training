@@ -684,22 +684,13 @@ def _maybe_evaluate_and_save(
 
             # Save model if best based on aggregated metrics (e.g., W2)
             # Make the primary metric configurable
-            primary_metric_key = config.training.get('primary_eval_metric', 'wasserstein2_mean')
-            if primary_metric_key in aggregated_metrics:
-                 current_metric_value = aggregated_metrics[primary_metric_key]
-                 print(f"  Checking if model is best based on {primary_metric_key}: {current_metric_value:.4f}")
-                 # save_model_if_best needs the metric value, not the whole dict
-                 best_metrics, model_version = save_model_if_best(
-                     v_theta,
-                     current_metric_value, # Pass the specific metric value
-                     best_metrics,
-                     model_version,
-                     target_density, # Pass target density for saving context
-                     # metric_key=primary_metric_key, # Function likely uses the passed value directly
-                 )
-            else:
-                 print(f"  Warning: Primary metric '{primary_metric_key}' not found in evaluation results {list(aggregated_metrics.keys())}. Skipping save_model_if_best.")
-
+            best_metrics, model_version = save_model_if_best(
+                v_theta,
+                aggregated_metrics, # Pass the specific metric value
+                best_metrics,
+                model_version,
+                target_density, # Pass target density for saving context
+            )
         else:
             # Show plot locally if offline
             print(f"  Validation Loss Curve (Mean): {jnp.mean(validation_loss_curve):.4f}")
