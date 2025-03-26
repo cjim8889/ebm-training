@@ -2,24 +2,6 @@ import jax.numpy as jnp
 import optax
 
 
-def inverse_power_schedule(T=64, end_time=1.0, gamma=0.25):
-    x_pow = jnp.linspace(0, end_time, T)
-    t_pow = 1 - x_pow**gamma
-    return jnp.flip(t_pow)
-
-
-def power_schedule(T=64, end_time=1.0, gamma=0.25):
-    x_pow = jnp.linspace(0, end_time, T)
-    t_pow = x_pow**gamma
-    return t_pow
-
-def focus_schedule(T=64, end_time=1.0, gamma=0.6):
-    x_1 = jnp.linspace(0, gamma, T)
-    x_2 = jnp.linspace(gamma, end_time, T)
-
-    return jnp.concatenate((x_1, x_2))
-
-
 def soft_clip(x, min_val, max_val, alpha=10.0):
     return min_val + (max_val - min_val) / (1 + jnp.exp(-alpha * (x - min_val)))
 

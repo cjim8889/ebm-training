@@ -82,7 +82,7 @@ class MCMCConfig:
 @dataclass
 class IntegrationConfig:
     method: Literal["Euler", "Tsit5"] = "Euler"
-    schedule: Literal["linear", "inverse_power", "power"] = "linear"
+    schedule: Literal["linear", "inverse_power", "power", "focus"] = "linear" # Added "focus"
     continuous_time: bool = False
     dt_clip: Optional[float] = None
 
