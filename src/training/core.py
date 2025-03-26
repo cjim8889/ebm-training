@@ -886,8 +886,8 @@ def train_velocity_field(
     path_distribution = _setup_path_distribution(initial_density, target_density, config)
     opt_state = optimizer.init(eqx.filter(v_theta, eqx.is_inexact_array))
 
-    # Generate validation set using a fixed linear schedule for consistency
-    validation_ts_init = jnp.linspace(0, 1.0, config.sampling.num_timesteps)
+    # Generate validation set using the base time steps
+    validation_ts_init = jnp.array(base_ts)
     subkey_init_val, validation_particles = _generate_initial_validation_set(
         subkey_init_val, v_theta, validation_ts_init, path_distribution, config
     )
