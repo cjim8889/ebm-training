@@ -85,6 +85,7 @@ class IntegrationConfig:
     schedule: Literal["linear", "inverse_power", "power", "focus"] = "linear" # Added "focus"
     continuous_time: bool = False
     dt_clip: Optional[float] = None
+    gamma: Optional[float] = 0.25  # Gamma for inverse power and power schedules
 
 
 @dataclass

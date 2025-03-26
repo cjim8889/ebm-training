@@ -10,6 +10,7 @@ import argparse
 import jax
 import jax.numpy as jnp
 import jmp
+import logfire
 
 import wandb
 from src.distributions import (
@@ -34,6 +35,7 @@ from src.models import (
     ParticleTransformer,
     ParticleTransformerV2,
     ParticleTransformerV3,
+    ParticleTransformerV4,
     TimeVelocityField,
     TimeVelocityFieldWithPairwiseFeature,
     TimeVelocityFieldWithPairwiseFeatureThree,
@@ -41,7 +43,6 @@ from src.models import (
     VelocityFieldFour,
     VelocityFieldThree,
     VelocityFieldTwo,
-    ParticleTransformerV4,
 )
 from src.training.config import (
     DensityConfig,
@@ -358,6 +359,10 @@ def main():
     if args.debug:
         jax.config.update("jax_debug_nans", True)
         jax.config.update("jax_debug_infs", True)
+
+    # Set up logging
+    # if args.api_key is not None:
+    logfire.configure()
 
     # Set random seed
     key = jax.random.PRNGKey(args.seed)
