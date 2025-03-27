@@ -13,7 +13,7 @@ from src.ode import generate_samples
 
 run = wandb.init()
 artifact = run.use_artifact(
-    "iclac/liouville_workshop_corrected/velocity_field_model_zghxbhqo:v3", type="model"
+    "iclac/liouville_workshop_corrected/velocity_field_model_29dspg8j:v1", type="model"
 )
 
 
