@@ -362,7 +362,7 @@ def main():
 
     # Set up logging
     # if args.api_key is not None:
-    logfire.configure()
+    logfire.configure(sampling=logfire.SamplingOptions(head=0.1))
 
     # Set random seed
     key = jax.random.PRNGKey(args.seed)
