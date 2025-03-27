@@ -14,7 +14,7 @@ target_density = QuadraticSmoothedLJ(
 # Load the three types of samples
 gt_samples = jnp.load("data/gt_lj13_samples.npz")["positions"]
 idem_samples = jnp.load("data/idem_lj13_samples.npz")["positions"]
-nfs_samples = jnp.load("data/lj13q_samples_128_steps.npz")["positions"]
+nfs_samples = jnp.load("data/lj13q_samples_128_steps_trajectory.npz")["positions"][-1]
 
 # Calculate interatomic distances for all sample types
 dist_gt = target_density.interatomic_dist(gt_samples)

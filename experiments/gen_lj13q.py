@@ -13,8 +13,9 @@ from src.ode import generate_samples
 
 run = wandb.init()
 artifact = run.use_artifact(
-    "iclac/liouville_workshop_corrected/velocity_field_model_n2ljw1rs:v1", type="model"
+    "iclac/liouville_workshop_corrected/velocity_field_model_zghxbhqo:v3", type="model"
 )
+
 
 artifact_dir = artifact.download()
 
@@ -60,12 +61,12 @@ for step in [128]:
     )
 
     # Save the samples to a local file
-    save_path = f"data/lj13q_samples_{step}_steps.npz"
+    save_path = f"data/lj13q_samples_{step}_steps_trajectory.npz"
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     print(samples["positions"][-1].shape)
     jnp.savez(
         save_path,
-        positions=samples["positions"][-1],
+        positions=samples["positions"],
         times=ts,
     )
     print(f"Samples saved to {save_path}")
