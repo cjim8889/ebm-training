@@ -10,7 +10,6 @@ import argparse
 import jax
 import jax.numpy as jnp
 import jmp
-import logfire
 
 import wandb
 from src.distributions import (
@@ -364,7 +363,7 @@ def main():
 
     # Set up logging
     # if args.api_key is not None:
-    logfire.configure(sampling=logfire.SamplingOptions(head=0.1))
+    # logfire.configure(sampling=logfire.SamplingOptions(head=0.1))
 
     # Set random seed
     key = jax.random.PRNGKey(args.seed)
