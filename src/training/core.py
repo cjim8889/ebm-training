@@ -219,6 +219,7 @@ def _generate_initial_validation_set(
         x=reshaped_positions,
         t=repeated_t,
         log_Z_t=repeated_log_Z_t,
+        d=jnp.ones(repeated_log_Z_t.shape, dtype=jnp.float32) / config.sampling.num_timesteps if config.training.use_shortcut else None, # Assuming d is not used in validation
     )
     return key, validation_particles
 
