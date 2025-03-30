@@ -15,16 +15,29 @@ def modulate(x: Float[Array, " ... "], shift: Float[Array, " ... "], scale: Floa
 
 
 class TimeEmbedding(eqx.Module):
-    net: eqx.nn.Sequential
+    net: eqx.nn.MLP
     frequency_embedding_size: int = eqx.field(static=True)
 
-    def __init__(self, hidden_size: int, frequency_embedding_size: int, key: jax.random.PRNGKey):
-        key1, key2 = jax.random.split(key)
-        self.net = eqx.nn.Sequential([
-            eqx.nn.Linear(frequency_embedding_size, hidden_size, key=key1),
-            eqx.nn.Identity(jax.nn.silu),
-            eqx.nn.Linear(hidden_size, hidden_size, key=key2),
-        ])
+    def __init__(self, 
+            hidden_size: int, 
+            frequency_embedding_size: int, 
+            key: jax.random.PRNGKey, 
+            embedder_width: int = 128, 
+            embedder_depth: int = 3,
+            shortcut: bool = False,
+        ):
+
+
+        self.net = eqx.nn.MLP(
+            in_size=frequency_embedding_size * 2 if shortcut else frequency_embedding_size,
+            out_size=hidden_size,
+            width_size=embedder_width,
+            depth=embedder_depth,
+            activation=jax.nn.silu,
+            use_bias=True,
+            key=key,
+        )
+
         self.frequency_embedding_size = frequency_embedding_size
 
     @staticmethod
@@ -59,9 +72,15 @@ class TimeEmbedding(eqx.Module):
             embedding = jnp.concatenate([embedding, jnp.zeros_like(embedding[..., :1])], axis=-1)
         return embedding
     
-    def __call__(self, t: Float[Array, ""]) -> Float[Array, "hidden_size"]:
+    def __call__(self, t: Float[Array, ""], d: Optional[Float[Array, ""]] = None,) -> Float[Array, "hidden_size"]:
         # Compute the sinusoidal embeddings.
         t_freq = TimeEmbedding.timestep_embedding(t, self.frequency_embedding_size)
+
+        # If d is provided, concatenate it with the embeddings.
+        if d is not None:
+            d_freq = TimeEmbedding.timestep_embedding(d, self.frequency_embedding_size)
+            t_freq = jnp.concatenate([t_freq, d_freq], axis=-1)
+        
         # Pass the embeddings through the MLP.
         t_emb = self.net(t_freq)
         return t_emb
@@ -280,7 +299,7 @@ class EmbedderBlock(eqx.Module):
 ###############################################################################
 #                ParticleTransformerV4 using DiT-style layers                  #
 ###############################################################################
-class ParticleTransformerV4(eqx.Module):
+class ParticleTransformerV5(eqx.Module):
     """
     Efficient transformer with DiT-style adaptive layer norm conditioning.
     """
@@ -291,7 +310,7 @@ class ParticleTransformerV4(eqx.Module):
     shortcut: bool = eqx.field(static=True)
     mp_policy: jmp.Policy = eqx.field(static=True)
     n_spatial_dim: int = eqx.field(static=True)
-
+    
     def __init__(
         self,
         n_particles: int,
@@ -301,6 +320,7 @@ class ParticleTransformerV4(eqx.Module):
         num_heads: int,
         key: jax.random.PRNGKey,
         mp_policy: jmp.Policy,
+        frequency_embedding_size: int = 256,
         shortcut: bool = False,
     ):
         self.shortcut = shortcut
@@ -319,8 +339,9 @@ class ParticleTransformerV4(eqx.Module):
 
         self.time_embedder = TimeEmbedding(
             hidden_size=hidden_size,
-            frequency_embedding_size=256,
+            frequency_embedding_size=frequency_embedding_size,
             key=t_key,
+            shortcut=shortcut,
         )
 
         self.layers = [
@@ -356,7 +377,7 @@ class ParticleTransformerV4(eqx.Module):
 
         xs = xs.reshape(-1, self.n_spatial_dim)
         x = self.embedder(xs)
-        c = self.time_embedder(t)
+        c = self.time_embedder(t, d)
 
         for layer in self.layers:
             x = layer(x, c)

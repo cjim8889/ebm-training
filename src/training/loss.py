@@ -26,7 +26,7 @@ class Particle(eqx.Module):
 
 
 @eqx.filter_jit
-@chex.assert_max_traces(1)
+@chex.assert_max_traces(2)
 def epsilon(
     v_theta: Callable[[chex.Array, float, float], chex.Array]
     | Callable[[chex.Array, float], chex.Array],
