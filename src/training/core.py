@@ -302,12 +302,13 @@ def _prepare_step_batch(
     selected_t = jnp.repeat(current_ts, num_chains_per_step)
     selected_log_Z_t = jnp.repeat(log_Z_t, num_chains_per_step)
 
+    key, subkey = jax.random.split(key)
     training_particles = Particle(
         x=selected_chains, # Will be potentially augmented later
         t=selected_t,
         log_Z_t=selected_log_Z_t,
         # d and loss_weight are not used in the original code snippet for training_particles
-        d=None,
+        d=jax.random.uniform(subkey, selected_log_Z_t.shape) if config.training.use_shortcut else None,
         loss_weight=None,
     )
     # Return selected_chains before augmentation for the augmentation function
@@ -493,7 +494,6 @@ def _prepare_epoch_samples(
     return key, samples
 
 
-@logfire.instrument('Executing _run_steps_for_epoch')
 def _run_steps_for_epoch(
     key: jax.random.PRNGKey,
     v_theta: PyTree,
@@ -544,6 +544,7 @@ def _run_steps_for_epoch(
             x=augmented_chains,
             t=training_particles_pre_aug.t,
             log_Z_t=training_particles_pre_aug.log_Z_t,
+            d=training_particles_pre_aug.d,
         )
 
 
@@ -711,7 +712,6 @@ def _maybe_evaluate_and_save(
 
 # --- Main Training Loop ---
 
-@logfire.instrument('Executing training loop')
 def _run_training_loop(
     key: jax.random.PRNGKey,
     v_theta: PyTree,
@@ -781,6 +781,7 @@ def _run_training_loop(
             x=validation_particles.x[:val_size],
             t=validation_particles.t[:val_size],
             log_Z_t=validation_particles.log_Z_t[:val_size],
+            d=jnp.ones((val_size,), dtype=jnp.float32) / config.sampling.num_timesteps if config.training.use_shortcut else None, # Assuming d is 1 for validation
         )
         subkey_epoch, _ = _calculate_and_log_epoch_metrics( # val_loss not needed here
             subkey_epoch, epoch, avg_epoch_loss, v_theta, _validation_particles,
