@@ -15,34 +15,38 @@ source activate py12
 
 python main.py \
   --num-samples 2560 \
-  --depth 4 \
-  --hidden-dim 256 \
-  --network pdn \
+  --depth 6 \
+  --hidden-dim 128 \
+  --network transformer5 \
   --num-epochs 20000 \
-  --steps-per-epoch 300 \
+  --steps-per-epoch 1000 \
   --mcmc-method vsmc \
-  --mcmc-step-size 0.1 \
-  --mcmc-steps 10 \
+  --mcmc-step-size 0.02 \
+  --mcmc-steps 15 \
   --mcmc-integration-steps 10 \
   --initial-sigma 2. \
   --with-rejection \
-  --target sclj13 \
+  --target smlj13q \
   --seed 12345 \
   --use-decoupled-loss \
   --batch-size 128 \
-  --learning-rate 5e-04 \
-  --gradient-clip 1. \
+  --learning-rate 1e-04 \
+  --gradient-norm 1. \
   --optimizer adamw \
-  --weight-decay 1e-03 \
-  --time-batch-size 64 \
+  --weight-decay 1e-06 \
+  --time-batch-size 4 \
   --n-samples-eval 1024 \
-  --use-cv \
-  --eval-frequency 60 \
-  --use-shortcut \
+  --eval-frequency 10 \
   --shortcut-weight 0.1 \
-  --use-hutchinson \
-  --every-k-schedule 1 \
-  --mixed-precision \
-  --use-combined-loss \
-  --include-harmonic
+  --include-harmonic \
+  --estimator none \
+  --r-min 0.8 \
+  --num-heads 4 \
+  --lambda-epochs 100 \
+  --ess-threshold 0.5 \
+  --perturb --perturbation-scale 1.0 \
+  --log-z-estimation-frequency 1 \
+  --augment --translation-scale 10. --continuous-time \
+  --use-shortcut 
+
 
