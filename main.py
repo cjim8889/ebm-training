@@ -295,6 +295,7 @@ def main():
             "sclj13t",
             "lj13ct",
             "smlj13q",
+            "smlj55q",
         ],
     )
     parser.add_argument("--initial-sigma", type=float, default=20.0)
@@ -468,6 +469,10 @@ def main():
         input_dim = 8
         n_particles = 4
         n_spatial_dim = 2
+    elif args.target == "smlj55q":
+        input_dim = 55 * 3
+        n_particles = 55
+        n_spatial_dim = 3
     else:  # LJ variants
         input_dim = 39
         n_particles = 13
@@ -727,6 +732,24 @@ def main():
             log_prob_clip_max=config.density.log_prob_clip_max,
         )
     elif config.density.target_type == "smlj13q":
+        initial_density = MultivariateGaussian(
+            dim=config.density.input_dim,
+            mean=jnp.zeros(config.density.input_dim),
+            sigma=config.density.initial_sigma,
+        )
+        target_density = QuadraticSmoothedLJ(
+            dim=config.density.input_dim,
+            n_particles=config.density.n_particles,
+            sigma=1.0,
+            min_dr=config.density.min_dr,
+            c=config.density.c,
+            r_min=config.density.r_min,
+            include_harmonic=config.density.include_harmonic,
+            log_prob_clip=config.density.log_prob_clip,
+            log_prob_clip_min=config.density.log_prob_clip_min,
+            log_prob_clip_max=config.density.log_prob_clip_max,
+        )
+    elif config.density.target_type == "smlj55q":
         initial_density = MultivariateGaussian(
             dim=config.density.input_dim,
             mean=jnp.zeros(config.density.input_dim),
