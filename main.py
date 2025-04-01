@@ -455,8 +455,8 @@ def main():
     # Set up input dimensions and other target-specific parameters
     if args.target == "gmm":
         input_dim = 2
-        n_particles = None
-        n_spatial_dim = None
+        n_particles = 2
+        n_spatial_dim = 1
     elif args.target == "gmm10":
         input_dim = 10
         n_particles = None
