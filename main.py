@@ -979,9 +979,11 @@ def main():
         )
 
     if not config.offline:
+        import time
         # Handle logging hyperparameters
         run = wandb.init(
             project="liouville_workshop_corrected",
+            name=f"{config.density.target_type}_{config.model.architecture}_{'sc' if config.training.use_shortcut else 'no_sc'}_{time.time()}",
             config=vars(config),
             reinit=True,
             tags=[
