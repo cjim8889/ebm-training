@@ -17,7 +17,7 @@ python main.py \
   --num-samples 2560 \
   --depth 4 \
   --hidden-dim 128 \
-  --network mlp2 \
+  --network transformer5 \
   --num-epochs 10000 \
   --steps-per-epoch 500 \
   --mcmc-method vsmc \
@@ -30,17 +30,20 @@ python main.py \
   --seed 1234 \
   --use-decoupled-loss \
   --batch-size 128 \
-  --learning-rate 1e-03 \
+  --learning-rate 1e-04 \
   --gradient-norm 1. \
   --optimizer adamw \
   --weight-decay 1e-04 \
-  --time-batch-size 64 \
+  --time-batch-size 16 \
+  --eval-frequency 25 \
   --n-samples-eval 1024 \
-  --use-cv \
   --eval-frequency 60 \
-  --use-shortcut \
-  --shortcut-size 32 64 128 \
-  --use-hutchinson \
   --continuous-time \
-  --n-probes 1
+  --estimator hutchinson \
+  --n-probes 2 \
+  --lambda-epochs 1000 \
+  --ess-threshold 0.5 \
+  --perturb --perturbation-scale 1.0 \
+  --log-z-estimation-frequency 1
+  
 
