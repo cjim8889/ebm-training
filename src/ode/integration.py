@@ -16,6 +16,7 @@ def generate_samples(
     ts: Float[Array, "num_timesteps"],
     sample_fn: Callable[[PRNGKeyArray, Tuple[int, ...]], Float[Array, "num_samples dim"]],
     use_shortcut: bool = False,
+    save_trajectory: bool = False,
     solver: str = "Euler",
     **kwargs,
 ) -> Dict[str, Union[Float[Array, "num_timesteps num_samples dim"], 
@@ -30,7 +31,7 @@ def generate_samples(
         use_shortcut=use_shortcut,
         exact_logp=True,
         forward=True,
-        save_trajectory=True,
+        save_trajectory=save_trajectory,
         solver=diffrax.Tsit5() if solver == "Tsit5" else diffrax.Euler(),
     )
     return {
