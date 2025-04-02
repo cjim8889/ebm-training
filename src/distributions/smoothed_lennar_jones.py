@@ -215,6 +215,7 @@ class QuadraticSmoothedLJ(Target):
             sample_fn=base_density.sample,
             ts=ts,
             use_shortcut=use_shortcut,
+            save_trajectory=False,
         )
 
         metrics["figure"] = self.visualise(samples_q["positions"])
