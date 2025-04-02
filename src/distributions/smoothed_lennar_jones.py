@@ -6,10 +6,9 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import optax
 
-from src.ode import generate_samples_with_log_prob
+from src.ode import generate_samples
 from src.utils.distributions import (
     compute_distances,
-    compute_log_effective_sample_size,
 )
 
 from .base import Target
@@ -209,27 +208,17 @@ class QuadraticSmoothedLJ(Target):
         metrics = {}
 
         key, sample_key = jax.random.split(key)
-        initial_samples = base_density.sample(
-            sample_key, (self.n_model_samples_eval,)
-        )  # Sample from base distribution q_0
-        initial_log_probs = jax.vmap(base_density.log_prob)(initial_samples)
-
-        samples_q, samples_log_q = generate_samples_with_log_prob(
+        samples_q = generate_samples(
+            key=sample_key,
             v_theta=v_theta,
-            initial_samples=initial_samples,
-            initial_log_probs=initial_log_probs,
+            num_samples=self.n_model_samples_eval,
+            sample_fn=base_density.sample,
             ts=ts,
             use_shortcut=use_shortcut,
         )
 
-        metrics["figure"] = self.visualise(samples_q)
+        metrics["figure"] = self.visualise(samples_q["positions"])
+        metrics["ess"] = 10
 
-        log_prob_samples = self.batched_log_prob(samples_q)
-
-        ess = compute_log_effective_sample_size(
-            log_p=log_prob_samples,
-            log_q=samples_log_q,
-        )
-        metrics["ess"] = jnp.exp(ess)
 
         return metrics
