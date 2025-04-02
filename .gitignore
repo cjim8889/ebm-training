@@ -177,3 +177,6 @@ artifacts/
 
 # Mac Specific
 .DS_Store
+
+
+media/
