@@ -465,8 +465,8 @@ def main():
         n_spatial_dim = None
     elif args.target == "mw32":
         input_dim = 32
-        n_particles = 16
-        n_spatial_dim = 2
+        n_particles = 32
+        n_spatial_dim = 1
     elif args.target in ["dw4", "dw4o"]:
         input_dim = 8
         n_particles = 4
