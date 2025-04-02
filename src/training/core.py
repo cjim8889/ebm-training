@@ -6,7 +6,6 @@ import chex
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-import matplotlib.pyplot as plt
 import optax
 from jaxtyping import Array, Float, PyTree
 
@@ -25,7 +24,7 @@ from src.utils.schedule import constant_then_cyclic_cosine_schedule
 # Added: Import new time utils
 from . import time_utils
 from .config import TrainingExperimentConfig
-from .loss import Particle, calculate_validation_loss_and_plot, loss_fn
+from .loss import Particle, loss_fn
 from .normalizing_constant import (
     estimate_log_Z_t,
 )
@@ -167,56 +166,6 @@ def _setup_path_distribution(
         target_density=target_density,
         method=config.density.annealing_path,
     )
-
-def _generate_initial_validation_set(
-    key: jax.random.PRNGKey,
-    v_theta: Callable, # Should be PyTree
-    validation_ts: Float[Array, " time"],
-    path_distribution: AnnealedDistribution,
-    config: TrainingExperimentConfig
-) -> Tuple[jax.random.PRNGKey, Particle]:
-    """Generates the initial set of particles for validation."""
-    key, subkey = jax.random.split(key)
-    # Use separate config or decide on validation set size
-    num_val_samples = config.density.n_samples_eval
-
-    print(f"Generating validation set with {num_val_samples} samples...")
-
-    validation_samples_dict = generate_samples_with_optional_mcmc(
-        key=subkey,
-        v_theta=v_theta,
-        ts=validation_ts,
-        path_distribution=path_distribution,
-        config=config,
-        mcmc_method="smc", # Use SMC for validation set generation
-        force_finite=True,
-        num_samples=num_val_samples,
-    )
-
-    # Estimate Log Z for the validation set times
-    validation_log_Z_t = estimate_log_Z_t(
-        xs=validation_samples_dict["positions"],
-        weights=validation_samples_dict["weights"],
-        ts=validation_ts,
-        time_derivative_log_density=path_distribution.time_derivative,
-        # Don't use control variate for validation Log Z estimation for consistency?
-    ).flatten()
-
-    # Reshape positions: (time, num_samples, dim) -> (time * num_samples, dim)
-    num_time_steps, _, dim = validation_samples_dict["positions"].shape
-    reshaped_positions = validation_samples_dict["positions"].reshape(-1, dim)
-
-    # Repeat ts and log_Z_t to match particles
-    repeated_t = jnp.repeat(validation_ts, num_val_samples)
-    repeated_log_Z_t = jnp.repeat(validation_log_Z_t, num_val_samples)
-
-    validation_particles = Particle(
-        x=reshaped_positions,
-        t=repeated_t,
-        log_Z_t=repeated_log_Z_t,
-        d=jnp.ones(repeated_log_Z_t.shape, dtype=jnp.float32) / config.sampling.num_timesteps if config.training.use_shortcut else None, # Assuming d is not used in validation
-    )
-    return key, validation_particles
 
 
 # --- Step Logic Helpers ---
@@ -561,7 +510,6 @@ def _calculate_and_log_epoch_metrics(
     epoch: int,
     avg_train_loss: Float[Array, ""],
     v_theta: PyTree,
-    validation_particles: Particle, # Use the pre-generated validation set
     path_distribution: AnnealedDistribution,
     config: TrainingExperimentConfig,
     lr_schedule_fn: Callable[[int], float], # Pass the schedule function
@@ -570,30 +518,13 @@ def _calculate_and_log_epoch_metrics(
     key, dropout_key = jax.random.split(key)
     global_step_count = epoch * config.training.steps_per_epoch # LR at start of epoch
 
-    # Calculate validation loss using the dedicated validation set
-    # Use settings consistent with how validation should be performed (e.g., no dropout, specific estimator)
-
-    val_loss = jitted_loss_fn(
-        v_theta,
-        validation_particles, # Use the dedicated validation set
-        path_distribution.time_derivative,
-        path_distribution.score_fn,
-        config.density.shift_fn,
-        estimator="none", # Typically 'none' for validation
-        key=key, # Provide a key
-        n_probes=config.training.n_probes, # Use same probes? Or 1? Let's use config for now.
-        combined_loss=False, # No combined loss for validation
-        shortcut_weight=config.training.shortcut_weight, # Include shortcut? Yes, likely.
-        random_alpha=False, # No random alpha for validation
-        # Dropout during validation? Usually no. Let's disable it here.
-        dropout_key=None, # dropout_key if config.model.dropout is not None and config.training.get('dropout_in_val', False) else None,
-    )
+    # Validation loss calculation removed.
 
     epoch_lr = lr_schedule_fn(global_step_count)
     epoch_metrics = {
         "epoch": epoch,
         "average_train_loss": avg_train_loss,
-        "validation_loss_epoch_end": val_loss, # More specific name
+        # "validation_loss_epoch_end": val_loss, # Removed
         "epoch_learning_rate": epoch_lr,
         "global_step": (epoch + 1) * config.training.steps_per_epoch # Step count at end of epoch
     }
@@ -603,11 +534,11 @@ def _calculate_and_log_epoch_metrics(
     
     print(f"--- Epoch {epoch} Summary ---")
     print(f"  Avg Train Loss: {avg_train_loss:.4f}")
-    print(f"  Validation Loss: {val_loss:.4f}")
+    # print(f"  Validation Loss: {val_loss:.4f}") # Removed
     print(f"  Learning Rate at Epoch Start: {epoch_lr:.6f}")
     print("----------------------")
 
-    return key, val_loss # Return validation loss for potential use in saving
+    return key # Return only key now
 
 
 def _maybe_evaluate_and_save(
@@ -617,8 +548,8 @@ def _maybe_evaluate_and_save(
     config: TrainingExperimentConfig,
     path_distribution: AnnealedDistribution,
     target_density: Target,
-    validation_particles: Particle, # For plotting validation loss curve
-    validation_ts: Float[Array, " time"], # For plotting validation loss curve
+    # validation_particles: Particle, # Removed
+    # validation_ts: Float[Array, " time"], # Removed
     best_metrics: List[Tuple[float, int]], # List of (metric_value, version)
     model_version: int,
 ) -> Tuple[jax.random.PRNGKey, List[Tuple[float, int]], int]:
@@ -654,47 +585,7 @@ def _maybe_evaluate_and_save(
                 target_density, # Pass target density for saving context
             )
 
-        validation_plt = None
-        validation_loss_curve = None
-        if config.training.eval_loss_curve:
-            # Calculate and plot validation loss curve
-            print("  Calculating validation loss curve...")
-            # Ensure calculate_validation_loss_and_plot uses appropriate settings (e.g., no dropout)
-            validation_loss_curve, validation_plt = calculate_validation_loss_and_plot(
-                v_theta,
-                validation_particles,
-                path_distribution,
-                validation_ts, # Use the ts corresponding to validation_particles
-                time_batch_size=config.training.time_batch_size, # Reuse config params
-                batch_size=config.sampling.num_timesteps,
-                # Pass other relevant config if needed by the function
-            )
-            # validation_loss_curve is the mean loss per time step
-
-        if not config.offline:
-            if config.training.eval_loss_curve:
-                # Log the mean validation loss across time
-                mean_validation_loss_curve = jnp.mean(validation_loss_curve)
-                wandb.log({
-                    "validation_loss_curve_mean": mean_validation_loss_curve,
-                    "validation_loss_plot": wandb.Image(validation_plt),
-                    "epoch": epoch
-                })
-                print(f"  Logged validation loss curve (Mean: {mean_validation_loss_curve:.4f}) and plot to WandB.")
-        else:
-            if config.training.eval_loss_curve:
-                # Show plot locally if offline
-                print(f"  Validation Loss Curve (Mean): {jnp.mean(validation_loss_curve):.4f}")
-                # Check if plot is None before showing
-                if config.training.eval_loss_curve and validation_plt is not None:
-                    plt.show() # Display the plot generated by calculate_validation_loss_and_plot
-                else:
-                    print("  (Plotting disabled or failed)")
-
-
-            # Close the plot figure if it exists
-            if config.training.eval_loss_curve and validation_plt is not None:
-                plt.close(validation_plt)
+        # Validation loss curve block removed (lines 588-628)
 
 
         print(f"--- Epoch {epoch}: Evaluation Complete ---")
@@ -713,8 +604,8 @@ def _run_training_loop(
     path_distribution: AnnealedDistribution,
     target_density: Target, # Needed for evaluation saving
     base_ts: Float[Array, " time"],
-    validation_particles: Particle,
-    validation_ts: Float[Array, " time"], # TS for validation particles
+    # validation_particles: Particle, # Removed
+    # validation_ts: Float[Array, " time"], # Removed
     log_Z_t_ref: List[Optional[Float[Array, " time"]]],
     best_metrics: List[Tuple[float, int]],
     model_version: int,
@@ -767,24 +658,17 @@ def _run_training_loop(
             epoch_training_samples, current_ts, log_Z_t, path_distribution, config
         )
         
-        if config.training.eval_loss_curve:
-            # 6. Calculate and Log Epoch Metrics (Validation Loss)
-            val_size = config.training.time_batch_size * config.sampling.num_timesteps
-            _validation_particles = Particle(
-                x=validation_particles.x[:val_size],
-                t=validation_particles.t[:val_size],
-                log_Z_t=validation_particles.log_Z_t[:val_size],
-                d=jnp.ones((val_size,), dtype=jnp.float32) / config.sampling.num_timesteps if config.training.use_shortcut else None, # Assuming d is 1 for validation
-            )
-            subkey_epoch, _ = _calculate_and_log_epoch_metrics( # val_loss not needed here
-                subkey_epoch, epoch, avg_epoch_loss, v_theta, _validation_particles,
-                path_distribution, config, lr_schedule_fn
-            )
+        # 6. Calculate and Log Epoch Metrics (Excluding Validation Loss)
+        subkey_epoch = _calculate_and_log_epoch_metrics(
+            subkey_epoch, epoch, avg_epoch_loss, v_theta,
+            path_distribution, config, lr_schedule_fn
+        )
 
         # 7. Evaluate and Save Model (Periodically)
         subkey_epoch, best_metrics, model_version = _maybe_evaluate_and_save(
             subkey_epoch, epoch, v_theta, config, path_distribution, target_density,
-            validation_particles, validation_ts, best_metrics, model_version
+            # validation_particles, validation_ts, # Removed
+            best_metrics, model_version
         )
 
         print(f"=== Finished Epoch {epoch} ===")
@@ -853,7 +737,8 @@ def train_velocity_field(
     print(f"Config: {config}") # Log config at start
 
     # 1. Initialization
-    key, subkey_init_opt, subkey_init_ts, subkey_init_path, subkey_init_val, subkey_loop = jax.random.split(key, 6)
+    # Removed subkey_init_val from split
+    key, subkey_init_opt, subkey_init_ts, subkey_init_path, subkey_loop = jax.random.split(key, 5)
 
     best_metrics: List[Tuple[float, int]] = []
     model_version = 0
@@ -869,18 +754,10 @@ def train_velocity_field(
     path_distribution = _setup_path_distribution(initial_density, target_density, config)
     opt_state = optimizer.init(eqx.filter(v_theta, eqx.is_inexact_array))
 
-    if config.training.eval_loss_curve:
-        # Generate validation set using the base time steps
-        validation_ts_init = jnp.array(base_ts)
-        subkey_init_val, validation_particles = _generate_initial_validation_set(
-            subkey_init_val, v_theta, validation_ts_init, path_distribution, config
-        )
-        print(f"Initialized Optimizer, Time Steps (Base shape: {base_ts.shape}), Path Distribution.")
-        print(f"Generated Initial Validation Set (Particles shape: {validation_particles.x.shape}, TS shape: {validation_ts_init.shape}).")
-    else:
-        validation_ts_init = jnp.array(base_ts) # Use base time steps for validation
-        validation_particles = None # No validation set generated
-        print("Validation loss curve generation disabled. No validation set created.")
+    # Validation set generation block removed (lines 756-767)
+    print("Initialized Optimizer, Time Steps, Path Distribution.")
+    print("Validation loss curve generation is disabled.")
+
 
     # 2. Run Training Loop
     v_theta, best_metrics = _run_training_loop(
@@ -892,8 +769,8 @@ def train_velocity_field(
         path_distribution=path_distribution,
         target_density=target_density,
         base_ts=base_ts,
-        validation_particles=validation_particles,
-        validation_ts=validation_ts_init, # Pass the ts used for validation particles
+        # validation_particles=validation_particles, # Removed
+        # validation_ts=validation_ts_init, # Removed
         log_Z_t_ref=log_Z_t_ref,
         best_metrics=best_metrics,
         model_version=model_version, # Pass initial version
