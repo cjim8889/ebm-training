@@ -19,6 +19,7 @@ class TrainingConfig:
     gradient_clip_norm: Optional[float] = None
     gradient_clip: Optional[float] = None
     eval_frequency: int = 20
+    eval_loss_curve: bool = False
     optimizer: Literal[
         "adam",
         "adamw",

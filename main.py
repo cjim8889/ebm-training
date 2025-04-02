@@ -274,6 +274,7 @@ def main():
     parser.add_argument("--initial-timesteps", type=int, default=16)
     parser.add_argument("--timestep-increment", type=int, default=2)
     parser.add_argument("--progression-frequency", type=int, default=100)
+    parser.add_argument("--eval-loss-curve", action="store_true")
 
     # Density configuration
     parser.add_argument(
@@ -378,6 +379,7 @@ def main():
 
     training_config = TrainingConfig(
         num_epochs=args.num_epochs,
+        eval_loss_curve=args.eval_loss_curve,
         steps_per_epoch=args.steps_per_epoch,
         learning_rate=args.learning_rate,
         gradient_clip_norm=args.gradient_norm,
