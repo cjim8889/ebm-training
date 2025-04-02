@@ -681,7 +681,8 @@ def _maybe_evaluate_and_save(
                     "epoch": epoch
                 })
                 print(f"  Logged validation loss curve (Mean: {mean_validation_loss_curve:.4f}) and plot to WandB.")
-            else:
+        else:
+            if config.training.eval_loss_curve:
                 # Show plot locally if offline
                 print(f"  Validation Loss Curve (Mean): {jnp.mean(validation_loss_curve):.4f}")
                 # Check if plot is None before showing
