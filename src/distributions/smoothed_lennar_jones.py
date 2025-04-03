@@ -186,7 +186,7 @@ class QuadraticSmoothedLJ(Target):
             bins=100,
             density=True,
             alpha=0.4,
-            range=(-60, 0),
+            range=(-300, 0),
             histtype="step",
             linewidth=2,
         )
