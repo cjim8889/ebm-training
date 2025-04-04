@@ -8,17 +8,14 @@ import matplotlib.pyplot as plt
 
 import wandb
 from src.distributions import MultivariateGaussian, QuadraticSmoothedLJ
-from src.models.transformer_v5 import ParticleTransformerV5
+from src.models.transformer_v4 import ParticleTransformerV4
 from src.ode import generate_samples
 
 run = wandb.init()
-# artifact = run.use_artifact(
-#     "iclac/liouville_workshop_corrected/velocity_field_model_29dspg8j:v1", type="model"
-# )
-
 artifact = run.use_artifact(
-    "iclac/liouville_workshop_corrected/velocity_field_model_fawu8a2c:v9", type="model"
+    "iclac/liouville_workshop_corrected/velocity_field_model_29dspg8j:v1", type="model"
 )
+
 
 artifact_dir = artifact.download()
 
@@ -31,15 +28,14 @@ mp_policy = jmp.Policy(
     output_dtype=jnp.float32,
 )
 
-v_theta = ParticleTransformerV5(
+v_theta = ParticleTransformerV4(
     n_particles=13,
     n_spatial_dim=3,
     hidden_size=128,
     num_layers=6,
     num_heads=4,
     key=key,
-    mp_policy=mp_policy,
-    shortcut=True,
+    mp_policy=mp_policy
 )
 # Load the saved parameters into the model
 v_theta = eqx.tree_deserialise_leaves(f"{artifact_dir}/model.eqx", v_theta)
@@ -61,13 +57,13 @@ for step in [128]:
         num_samples=5000,
         ts=ts,
         sample_fn=initial_density.sample,
-        use_shortcut=True,
-        save_trajectory=True,
+        use_shortcut=False,
     )
 
     # Save the samples to a local file
     save_path = f"data/lj13q_samples_{step}_steps_trajectory.npz"
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    print(samples["positions"][-1].shape)
     jnp.savez(
         save_path,
         positions=samples["positions"],
