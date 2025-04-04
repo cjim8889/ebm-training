@@ -139,7 +139,7 @@ class DiTBlock(eqx.Module):
     layernorm1: eqx.nn.LayerNorm
     layernorm2: eqx.nn.LayerNorm
     attention: eqx.nn.MultiheadAttention
-    # rotary_embeddings: eqx.nn.RotaryPositionalEmbedding
+    rotary_embeddings: eqx.nn.RotaryPositionalEmbedding
     modulation: AdaptiveLayerNormModulation
     ffn: EfficientFFN
     mp_policy: jmp.Policy = eqx.field(static=True)
@@ -165,11 +165,11 @@ class DiTBlock(eqx.Module):
             mp_policy=mp_policy,
         )
 
-        # self.rotary_embeddings = eqx.nn.RotaryPositionalEmbedding(
-        #     embedding_size=embedding_size // num_heads,
-        #     theta=10000.0,
-        #     dtype=self.mp_policy.param_dtype,
-        # )
+        self.rotary_embeddings = eqx.nn.RotaryPositionalEmbedding(
+            embedding_size=embedding_size // num_heads,
+            theta=10000.0,
+            dtype=self.mp_policy.param_dtype,
+        )
 
         self.modulation = AdaptiveLayerNormModulation(embedding_size, count=6, key=key3, mp_policy=mp_policy)
 
@@ -178,16 +178,16 @@ class DiTBlock(eqx.Module):
             x: Float[Array, "num_particles hidden_size"],
             c: Float[Array, "hidden_size"],
         ) -> Float[Array, "num_particles hidden_size"]:
-        # def process_heads(
-        #     query_heads: Float[Array, "num_particles num_heads qk_size"],
-        #     key_heads: Float[Array, "num_particles num_heads qk_size"],
-        #     value_heads: Float[Array, "num_particles num_heads vo_size"]
-        # ) -> tuple[Float[Array, "num_particles num_heads qk_size"], 
-        #           Float[Array, "num_particles num_heads qk_size"], 
-        #           Float[Array, "num_particles num_heads vo_size"]]:
-        #     query_heads = jax.vmap(self.rotary_embeddings, in_axes=1, out_axes=1)(query_heads)
-        #     key_heads = jax.vmap(self.rotary_embeddings, in_axes=1, out_axes=1)(key_heads)
-        #     return query_heads, key_heads, value_heads
+        def process_heads(
+            query_heads: Float[Array, "num_particles num_heads qk_size"],
+            key_heads: Float[Array, "num_particles num_heads qk_size"],
+            value_heads: Float[Array, "num_particles num_heads vo_size"]
+        ) -> tuple[Float[Array, "num_particles num_heads qk_size"], 
+                  Float[Array, "num_particles num_heads qk_size"], 
+                  Float[Array, "num_particles num_heads vo_size"]]:
+            query_heads = jax.vmap(self.rotary_embeddings, in_axes=1, out_axes=1)(query_heads)
+            key_heads = jax.vmap(self.rotary_embeddings, in_axes=1, out_axes=1)(key_heads)
+            return query_heads, key_heads, value_heads
         
         shift_attn, scale_attn, gate_attn, shift_ffn, scale_ffn, gate_ffn = self.modulation(c)
         # Expand to per-particle shape:
@@ -207,7 +207,7 @@ class DiTBlock(eqx.Module):
             key_=x_mod_attn,
             value=x_mod_attn,
             inference=True,
-            # process_heads=process_heads,
+            process_heads=process_heads,
         )
         x = x + gate_attn * attn_out
 
