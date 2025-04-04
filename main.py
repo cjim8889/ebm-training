@@ -36,6 +36,7 @@ from src.models import (
     ParticleTransformerV3,
     ParticleTransformerV4,
     ParticleTransformerV5,
+    ParticleTransformerV6,
     TimeVelocityField,
     TimeVelocityFieldWithPairwiseFeature,
     TimeVelocityFieldWithPairwiseFeatureThree,
@@ -88,6 +89,9 @@ def main():
     parser = argparse.ArgumentParser()
 
     # Model configuration
+    parser.add_argument("--embedding-dim", type=int, default=64)
+    parser.add_argument("--embedder-width", type=int, default=128)
+    parser.add_argument("--embedder-depth", type=int, default=2)
     parser.add_argument("--hidden-dim", type=int, default=256)
     parser.add_argument("--depth", type=int, default=3)
     parser.add_argument(
@@ -112,6 +116,7 @@ def main():
             "transformer3",
             "transformer4",
             "transformer5",
+            "transformer6",
         ],
     )
 
@@ -452,6 +457,9 @@ def main():
         num_heads=args.num_heads,
         dropout=args.dropout,
         theta=args.theta,
+        embedding_dim=args.embedding_dim,
+        embedder_width=args.embedder_width,
+        embedder_depth=args.embedder_depth,
     )
 
     # Set up input dimensions and other target-specific parameters
@@ -919,6 +927,20 @@ def main():
             key=model_key,
             shortcut=config.training.use_shortcut,
             mp_policy=config.mp_policy,
+        )
+    elif config.model.architecture == "transformer6":
+        v_theta = ParticleTransformerV6(
+            n_particles=config.density.n_particles,
+            n_spatial_dim=config.density.n_spatial_dim,
+            hidden_size=config.model.hidden_dim,
+            num_layers=config.model.num_layers,
+            num_heads=config.model.num_heads,
+            key=model_key,
+            shortcut=config.training.use_shortcut,
+            mp_policy=config.mp_policy,
+            embedding_size=config.model.embedding_dim,
+            embedder_depth=config.model.embedder_depth,
+            embedder_width=config.model.embedder_width,
         )
     elif config.model.architecture == "omlp":
         v_theta = OptimizedVelocityField(
