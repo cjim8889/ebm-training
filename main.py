@@ -301,6 +301,7 @@ def main():
             "sclj13t",
             "lj13ct",
             "smlj13q",
+            "tsmlj13q",
             "smlj55q",
         ],
     )
@@ -745,6 +746,24 @@ def main():
         initial_density = MultivariateGaussian(
             dim=config.density.input_dim,
             mean=jnp.zeros(config.density.input_dim),
+            sigma=config.density.initial_sigma,
+        )
+        target_density = QuadraticSmoothedLJ(
+            dim=config.density.input_dim,
+            n_particles=config.density.n_particles,
+            sigma=1.0,
+            min_dr=config.density.min_dr,
+            c=config.density.c,
+            r_min=config.density.r_min,
+            include_harmonic=config.density.include_harmonic,
+            log_prob_clip=config.density.log_prob_clip,
+            log_prob_clip_min=config.density.log_prob_clip_min,
+            log_prob_clip_max=config.density.log_prob_clip_max,
+        )
+    elif config.density.target_type == "tsmlj13q":
+        initial_density = TranslationInvariantGaussian(
+            N=config.density.n_particles,
+            D=config.density.n_spatial_dim,
             sigma=config.density.initial_sigma,
         )
         target_density = QuadraticSmoothedLJ(
