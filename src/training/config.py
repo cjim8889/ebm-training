@@ -108,7 +108,9 @@ class ModelConfig:
     geonorm: bool = False
     dropout: float = None
     architecture: Literal["mlp", "pdn", "transformer", "emlp", "egnn"] = "mlp"
-
+    embedding_dim: int = 64
+    embedder_width: int = 128
+    embedder_depth: int = 2
 
 @dataclass
 class DensityConfig:
