@@ -78,7 +78,6 @@ class TimeEmbedding(eqx.Module):
 
         # If d is provided, concatenate it with the embeddings.
         if d is not None:
-            d = d.reshape(1, 1)
             t_freq = jnp.concatenate([t_freq, d], axis=-1)
         
         # Pass the embeddings through the MLP.
