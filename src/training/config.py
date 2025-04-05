@@ -35,6 +35,7 @@ class TrainingConfig:
         "noisy_sgd",
     ] = "adamw"
     use_decoupled_loss: bool = False  # Whether to use decoupled loss function
+    training_data: Literal["combined", "vsmc", "random"] = "combined"
     # Optimizer parameters
     weight_decay: float = 0.0
     beta1: float = 0.9  # b1 for Adam-like optimizers

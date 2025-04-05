@@ -392,44 +392,48 @@ def _prepare_epoch_samples(
     """Prepares the pool of samples for the epoch's training steps."""
     base_mcmc_samples: Dict[str, Any]
 
-    if mcmc_samples_from_logz is None:
-        # This happens if log Z wasn't estimated this epoch. Need to generate base samples.
-        # Use the standard MCMC method defined in config for generating training samples.
-        print("Epoch: Generating base MCMC samples as none were provided (log Z reused).")
-        key, subkey = jax.random.split(key)
-        base_mcmc_samples = generate_samples_with_optional_mcmc(
-            subkey, v_theta, current_ts, path_distribution, config,
-            mcmc_method=config.mcmc.method, force_finite=True, lambda_factor=current_lambda
-        )
-    else:
-        # Reuse samples generated during log Z estimation
-        print("Epoch: Reusing MCMC samples generated during log Z estimation.")
-        base_mcmc_samples = mcmc_samples_from_logz
+    _need_mcmc_samples = config.training.training_data == "combined" or config.training.training_data == "vsmc"
 
-    base_positions = base_mcmc_samples["positions"] # Shape (time, num_particles, dim)
+    if _need_mcmc_samples:
+        if mcmc_samples_from_logz is None:
+            # This happens if log Z wasn't estimated this epoch. Need to generate base samples.
+            # Use the standard MCMC method defined in config for generating training samples.
+            print("Epoch: Generating base MCMC samples as none were provided (log Z reused).")
+            key, subkey = jax.random.split(key)
+            base_mcmc_samples = generate_samples_with_optional_mcmc(
+                subkey, v_theta, current_ts, path_distribution, config,
+                mcmc_method=config.mcmc.method, force_finite=True, lambda_factor=current_lambda
+            )
+        else:
+            # Reuse samples generated during log Z estimation
+            print("Epoch: Reusing MCMC samples generated during log Z estimation.")
+            base_mcmc_samples = mcmc_samples_from_logz
 
-    if config.training.use_decoupled_loss:
-        print("Epoch: Generating additional samples for decoupled loss.")
+    if config.training.training_data == "vsmc":
+        return key, base_mcmc_samples["positions"]
+    elif config.training.training_data == "combined":
+        print("Epoch: Generating additional samples for combined training data.")
         key, subkey = jax.random.split(key)
         # Generate samples using only the velocity field (no MCMC correction)
         v_theta_samples_dict = generate_samples_with_optional_mcmc(
             subkey, v_theta, current_ts, path_distribution, config,
             mcmc_method="none", force_finite=True, lambda_factor=current_lambda,
             # Ensure same number of particles as base_mcmc_samples
-            num_samples=base_positions.shape[1]
+            num_samples=base_mcmc_samples["positions"].shape[1]
         )
         v_theta_samples = v_theta_samples_dict["positions"]
         # Concatenate along the particle batch dimension
-        samples = jnp.concatenate([base_positions, v_theta_samples], axis=1)
-        print(f"Epoch: Concatenated samples for decoupled loss. New shape: {samples.shape}")
-    else:
-        samples = base_positions
-        print(f"Epoch: Using standard samples. Shape: {samples.shape}")
+        samples = jnp.concatenate([base_mcmc_samples["positions"], v_theta_samples], axis=1)
+        print(f"Epoch: Concatenated samples for combined training data. New shape: {samples.shape}")
 
-    # Basic shape check
-    chex.assert_rank(samples, 3) # time, batch, dim
+        return key, samples
+    elif config.training.training_data == "random":
+        print("Epoch: Generating random samples for training.")
+        key, subkey = jax.random.split(key)
+        # Generate random samples
+        random_samples = path_distribution.sample_initial(subkey, (config.sampling.num_timesteps, config.sampling.num_particles))
+        return key, random_samples
 
-    return key, samples
 
 
 def _run_steps_for_epoch(
