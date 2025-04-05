@@ -352,6 +352,7 @@ def main():
         action="store_true",
         help="Whether to use decoupled loss function",
     )
+    parser.add_argument("--training-data", type=str, default=None)
     parser.add_argument("--mixed-precision", action="store_true")
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--debug", action="store_true")
@@ -420,6 +421,7 @@ def main():
         perturbation_scale=args.perturbation_scale,
         augment=args.augment,
         translation_scale=args.translation_scale,
+        training_data=args.training_data,
     )
 
     mcmc_config = MCMCConfig(
