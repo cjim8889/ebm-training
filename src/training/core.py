@@ -431,7 +431,7 @@ def _prepare_epoch_samples(
         print("Epoch: Generating random samples for training.")
         key, subkey = jax.random.split(key)
         # Generate random samples
-        random_samples = path_distribution.sample_initial(subkey, (config.sampling.num_timesteps, config.sampling.num_particles, config.density.input_dim))
+        random_samples = path_distribution.sample_initial(subkey, (config.sampling.num_timesteps, config.sampling.num_particles))
         return key, random_samples
 
 
