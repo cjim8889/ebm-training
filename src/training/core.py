@@ -432,6 +432,7 @@ def _prepare_epoch_samples(
         key, subkey = jax.random.split(key)
         # Generate random samples
         random_samples = path_distribution.sample_initial(subkey, (config.sampling.num_timesteps, config.sampling.num_particles))
+        random_samples = random_samples.reshape(config.sampling.num_timesteps, config.sampling.num_particles, -1)
         return key, random_samples
 
 
