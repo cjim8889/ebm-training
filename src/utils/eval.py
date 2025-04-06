@@ -167,7 +167,7 @@ def save_model_if_best(
 
     # Check if this is better than any existing in top 10
     should_save = False
-    if len(best_metrics) < 1000:
+    if len(best_metrics) < 20:
         should_save = True
     else:
         # Get worst in current top 10 (since list is maintained in sorted order)
