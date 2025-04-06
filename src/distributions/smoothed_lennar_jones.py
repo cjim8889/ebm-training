@@ -70,7 +70,7 @@ class QuadraticSmoothedLJ(Target):
 
         # Load ground truth samples if provided
         if ground_truth_samples_path is not None:
-            self.ground_truth_samples = jnp.load("data/lj13q_smc_samples.npz")["positions"]
+            self.ground_truth_samples = jnp.load(ground_truth_samples_path)["positions"]
 
             # Compute distances for ground truth samples
             self.ground_truth_distances = self.interatomic_dist(
