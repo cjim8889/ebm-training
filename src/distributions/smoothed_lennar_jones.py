@@ -11,13 +11,18 @@ from src.utils.distributions import (
     compute_distances,
 )
 
+from src.utils.distributions import (
+    compute_total_variation_distance,
+)
+
 from .base import Target
 
 
 class QuadraticSmoothedLJ(Target):
     TIME_DEPENDENT = False
     TARGET_METRIC = (
-        ("ess", False),
+        ("distance_total_variation", True),
+        ("energy_total_variation", True),
     )
 
     def __init__(
@@ -34,6 +39,7 @@ class QuadraticSmoothedLJ(Target):
         log_prob_clip: float = None,
         log_prob_clip_min: float = None,
         log_prob_clip_max: float = None,
+        ground_truth_samples_path: str = "data/lj13_bj_atempered_smc_samples.npz",
         **kwargs,
     ):
         super().__init__(
@@ -61,6 +67,23 @@ class QuadraticSmoothedLJ(Target):
 
         # Compute polynomial coefficients
         self.a, self.b, self.c_coeff = self.compute_quadratic_coefficients()
+
+        # Load ground truth samples if provided
+        if ground_truth_samples_path is not None:
+            self.ground_truth_samples = jnp.load("data/lj13q_smc_samples.npz")["positions"]
+
+            # Compute distances for ground truth samples
+            self.ground_truth_distances = self.interatomic_dist(
+                self.ground_truth_samples
+            )
+
+            # Compute energies for ground truth samples
+            self.r_min = 0.0
+            self.ground_truth_energies = -self.batched_log_prob(
+                self.ground_truth_samples
+            )
+            self.r_min = r_min
+
 
     def compute_quadratic_coefficients(self):
         r_min = self.r_min
@@ -178,19 +201,48 @@ class QuadraticSmoothedLJ(Target):
             density=True,
             histtype="step",
             linewidth=2,
+            label="Velocity Field Samples",
         )
+
+        if self.ground_truth_samples is not None:
+            axs[0].hist(
+                self.ground_truth_distances.flatten(),
+                bins=100,
+                alpha=0.5,
+                density=True,
+                histtype="step",
+                linewidth=2,
+                label="Ground Truth Samples",
+            )
         axs[0].set_xlabel("Interatomic distance")
+        axs[0].set_ylabel("Density")
+        axs[0].set_title("Distribution of Interatomic Distances")
+        axs[0].legend()
 
         axs[1].hist(
             energy_samples,
             bins=100,
             density=True,
-            alpha=0.4,
-            range=(-300, 0),
+            alpha=0.5,
+            range=(-65, 0),
             histtype="step",
             linewidth=2,
         )
+        if self.ground_truth_samples is not None:
+            axs[1].hist(
+                self.ground_truth_energies,
+                bins=100,
+                density=True,
+                alpha=0.5,
+                range=(-65, 0),
+                histtype="step",
+                linewidth=2,
+                label="Ground Truth Samples",
+            )
         axs[1].set_xlabel("Energy")
+        axs[1].set_ylabel("Density")
+        axs[1].set_title("Distribution of Energy Values")
+        axs[1].legend()
 
         fig.canvas.draw()
         return fig
@@ -218,8 +270,28 @@ class QuadraticSmoothedLJ(Target):
             save_trajectory=False,
         )
 
+        log_prob_samples = -self.batched_log_prob(samples_q["positions"])
+
+        energy_total_variation = compute_total_variation_distance(
+            log_prob_samples.reshape(-1, 1),
+            self.ground_truth_energies.reshape(-1, 1)[:log_prob_samples.shape[0]],
+            num_bins=200,
+            lower_bound=-65,
+            upper_bound=0,
+        )
+        metrics["energy_total_variation"] = energy_total_variation
+
+        distance_samples = self.interatomic_dist(samples_q["positions"])
+        dist_total_variation = compute_total_variation_distance(
+            distance_samples.reshape(-1, 1),
+            self.ground_truth_distances.reshape(-1, 1)[:distance_samples.shape[0]],
+            num_bins=200,
+            lower_bound=0,
+            upper_bound=8.,
+        )
+        metrics["distance_total_variation"] = dist_total_variation
+
         metrics["figure"] = self.visualise(samples_q["positions"])
-        metrics["ess"] = 10
 
 
         return metrics
