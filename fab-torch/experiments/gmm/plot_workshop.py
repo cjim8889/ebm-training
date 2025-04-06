@@ -71,11 +71,14 @@ def visualise_samples(target, path="", name="", plotting_bounds=(-1.4 * 40, 1.4 
 def main(cfg: DictConfig, debug=False):
     target = setup_target(cfg, 1000)
 
-    # path = f"{PATH}/ckpts/samples/gmm/nfs/"
+    # path = f"{PATH}/ckpts/samples/gmm/nfs2/"
     # visualise_samples(target, path=path, name=f"{PATH}/nfs_gmm_diff_stpes")
 
-    path = f"{PATH}/ckpts/samples/gmm/idem/"
-    visualise_samples(target, path=path, name=f"{PATH}/idem_gmm_diff_stpes")
+    path = f"{PATH}/ckpts/samples/gmm/nfs/"
+    visualise_samples(target, path=path, name=f"{PATH}/nfs_noshortcut_gmm_diff_stpes")
+
+    # path = f"{PATH}/ckpts/samples/gmm/idem/"
+    # visualise_samples(target, path=path, name=f"{PATH}/idem_gmm_diff_stpes")
     
     # path = f"{PATH}/ckpts/samples/gmm/lfis/"
     # visualise_samples(target, path=path, name=f"{PATH}/lfis_gmm_diff_stpes")

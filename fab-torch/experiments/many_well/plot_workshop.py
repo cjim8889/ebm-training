@@ -98,11 +98,14 @@ def main(cfg: DictConfig):
     # path = f"{PATH}/ckpts/samples/mw32/nfs"
     # visualise_samples(target, path=path, name=f"{PATH}/nfs_mw32_diff_stpes")
 
+    path = f"{PATH}/ckpts/samples/mw32/nfs_noshortcut"
+    visualise_samples(target, path=path, name=f"{PATH}/nfs_noshortch_mw32_diff_stpes")
+
     # path = f"{PATH}/ckpts/samples/mw32/idem"
     # visualise_samples(target, path=path, name=f"{PATH}/idem_mw32_diff_stpes")
 
-    path = f"{PATH}/ckpts/samples/mw32/lfis"
-    visualise_samples(target, path=path, name=f"{PATH}/lfis_mw32_diff_stpes")
+    # path = f"{PATH}/ckpts/samples/mw32/lfis"
+    # visualise_samples(target, path=path, name=f"{PATH}/lfis_mw32_diff_stpes")
 
 if __name__ == '__main__':
     main()
