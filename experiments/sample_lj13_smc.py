@@ -1,14 +1,13 @@
-import blackjax.adaptation
-import blackjax.adaptation.mass_matrix
-import jax
+import os
+
 import blackjax
 import blackjax.smc.resampling as resampling
+import jax
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
-from distributions.multivariate_gaussian import MultivariateGaussian
-from distributions.time_dependent_lennard_jones_butler import (
-    TimeDependentLennardJonesEnergyButler,
-)
+from src.distributions.multivariate_gaussian import MultivariateGaussian
+from src.distributions.smoothed_lennar_jones import QuadraticSmoothedLJ
 
 # plt.rcParams["figure.dpi"] = 300
 # plt.rcParams["figure.figsize"] = [6.0, 4.0]
@@ -19,20 +18,11 @@ key = jax.random.PRNGKey(1234)
 
 
 initial_density = MultivariateGaussian(dim=39, mean=0, sigma=1.)
-target_density = TimeDependentLennardJonesEnergyButler(
+target_density = QuadraticSmoothedLJ(
     dim=39,
     n_particles=13,
-    alpha=0.2,
-    sigma=1.0,
-    epsilon_val=1.0,
-    min_dr=1e-4,
-    n=1,
-    m=1,
-    c=0.5,
     include_harmonic=True,
-    cubic_spline=True,
-    # log_prob_clip=100.0,
-)
+)   
 
 initial_density = MultivariateGaussian(dim=39, mean=0.0, sigma=1.0)
 
@@ -63,7 +53,7 @@ def smc_inference_loop(rng_key, smc_kernel, initial_state):
 
 
 key, subkey = jax.random.split(key)
-initial_position = target_density.initialize_position(subkey)
+initial_position = initial_density.sample(subkey, (1,))
 warmup = blackjax.window_adaptation(
     blackjax.hmc,
     target_density.log_prob,
@@ -88,7 +78,7 @@ hmc = blackjax.hmc(target_density.log_prob, **parameters)
 kernel = jax.jit(hmc.step)
 
 target_ess = 0.6
-num_mcmc_steps = 10
+num_mcmc_steps = 15
 
 tempered = blackjax.adaptive_tempered_smc(
     initial_density.log_prob,
@@ -103,9 +93,12 @@ tempered = blackjax.adaptive_tempered_smc(
 
 tempered_kernel = jax.jit(tempered.step)
 
-num_particles = 10240
+num_particles = 5000
 sample_keys = jax.random.split(key, num_particles)
-initial_positions = jax.vmap(target_density.initialize_position)(sample_keys)
+initial_positions = initial_density.sample(
+    sample_keys[0],
+    (num_particles,),
+)
 initial_state = tempered.init(initial_positions)
 
 
@@ -120,5 +113,12 @@ samples = final_state.particles
 print("Samples shape:", samples.shape)
 fig = target_density.visualise(samples)
 
-plt.savefig("lj13c.png")
+save_path = "data/lj13_bj_atempered_smc_samples.npz"
+os.makedirs(os.path.dirname(save_path), exist_ok=True)
+jnp.savez(
+    save_path,
+    positions=samples,
+)
+print(f"Samples saved to {save_path}")
+plt.savefig("lj13_bj_atempered_smc_samples.png")
 # plt.show()
