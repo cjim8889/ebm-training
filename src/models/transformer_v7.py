@@ -40,7 +40,7 @@ class TimeEmbedding(eqx.Module):
         )
 
         if shortcut:
-            self.d_net = eqx.nn.Linear(embedding_size, embedding_size, key=net_key, use_bias=True)
+            self.d_net = eqx.nn.Linear(1, embedding_size, key=net_key, use_bias=True)
             # Initialize weights
             self.d_net = init_linear_weights(self.d_net, xavier_init, key=d_key)
 
