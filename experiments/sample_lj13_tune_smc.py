@@ -16,7 +16,7 @@ jax.config.update("jax_platform_name", "cpu")
 key = jax.random.PRNGKey(1234)
 
 
-initial_density = MultivariateGaussian(dim=39, mean=0, sigma=2.)
+initial_density = MultivariateGaussian(dim=39, mean=0, sigma=1.)
 target_density = QuadraticSmoothedLJ(
     dim=39,
     n_particles=13,
@@ -44,7 +44,7 @@ for t in jnp.linspace(0, 1, 128):
         num_integration_steps=10,
         initial_step_size=1.0,
         target_acceptance_rate=0.6,
-        progress_bar=False, # Disable inner progress bar for cleaner output
+        progress_bar=True, # Disable inner progress bar for cleaner output
     )
 
     key, warmup_key, sample_key = jax.random.split(key, 3)
@@ -52,7 +52,7 @@ for t in jnp.linspace(0, 1, 128):
     (state, parameters), _ = warmup.run(
         warmup_key,
         initial_position,
-        num_steps=10000, # Note: 10000 steps per t might be slow for 128 t values.
+        num_steps=2000, # Note: 10000 steps per t might be slow for 128 t values.
     )
     print("HMC Warmup done for t=", t)
     # Store parameters instead of printing individually
