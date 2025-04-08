@@ -40,8 +40,10 @@ class AnnealedDistribution(Target):
             beta = (1 - (1 - t) ** 0.5)
         else:
             beta = get_inverse_temperature(t, 250.0, 1.0)
-
+        
         initial_prob = (1 - beta) * self.initial_density.log_prob(xs)
+        
+        # initial_prob = self.initial_density.log_prob(xs)
 
         if self.target_density.TIME_DEPENDENT:
             target_prob = beta * self.target_density.time_dependent_log_prob(xs, t)
