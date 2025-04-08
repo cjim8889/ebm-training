@@ -250,12 +250,20 @@ def _prepare_step_batch(
     selected_log_Z_t = jnp.repeat(log_Z_t, num_chains_per_step)
 
     key, subkey = jax.random.split(key)
+
+    _d = None
+    if config.training.use_shortcut:
+        if config.training.skip_shortcut:
+            _d = jnp.ones(selected_log_Z_t.shape) / config.sampling.num_timesteps
+        else:
+            _d = jax.random.uniform(subkey, selected_log_Z_t.shape)
+
     training_particles = Particle(
         x=selected_chains, # Will be potentially augmented later
         t=selected_t,
         log_Z_t=selected_log_Z_t,
         # d and loss_weight are not used in the original code snippet for training_particles
-        d=jax.random.uniform(subkey, selected_log_Z_t.shape) if config.training.use_shortcut else None,
+        d=_d,
         loss_weight=None,
     )
     # Return selected_chains before augmentation for the augmentation function
