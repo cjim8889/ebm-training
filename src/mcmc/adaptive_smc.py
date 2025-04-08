@@ -43,11 +43,10 @@ def generate_samples_with_adaptive_smc(
             time_dependent_log_density,
             x,
             beta,
-            mcmc_steps,
-            integration_steps,
             eta,
             covariance,
-            lambda x: x,  # placeholder for shift_fn
+            integration_steps,
+            mcmc_steps,
         ),
         in_axes=(0, 0, None, None),
     )

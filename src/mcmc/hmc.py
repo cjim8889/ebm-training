@@ -42,7 +42,7 @@ def sample_hamiltonian_monte_carlo_blackjax(
 
     # Initialize Blackjax HMC kernel with passed parameters
     hmc = blackjax.hmc(
-        logprob_fn=lambda state: time_dependent_log_density(state, t),
+        logdensity_fn=lambda state: time_dependent_log_density(state, t),
         step_size=step_size,
         inverse_mass_matrix=_inverse_mass_matrix,
         num_integration_steps=num_integration_steps,

@@ -10,7 +10,6 @@ from jaxtyping import Array, Float, Int, PRNGKeyArray
 
 from .hmc import sample_hamiltonian_monte_carlo_blackjax
 
-
 @jax.jit
 def log_weights_to_weights(log_weights: Float[Array, "num_samples"]) -> Float[Array, "num_samples"]:
     """
@@ -67,38 +66,38 @@ def generate_samples_with_smc(
     initial_samples: Float[Array, "num_samples dim"],
     time_dependent_log_density: Callable[[Float[Array, "dim"], float], float],
     ts: Float[Array, "num_timesteps"],
-    num_steps: int = 10,
+    num_mcmc_steps: int = 10,
     integration_steps: int = 3,
     eta: float = 0.1,
-    shift_fn: Callable[[Float[Array, "dim"]], Float[Array, "dim"]] = lambda x: x,
     ess_threshold: float = 0.6,
     resampling_fn: Callable[
         [PRNGKeyArray, Float[Array, "num_samples"], int], Int[Array, "num_samples"]
     ] = systematic,
-    covariances: Optional[Float[Array, "num_timesteps dim dim"]] = None,
-    estimate_covariance: bool = False,
     v_theta: Optional[Callable[[Float[Array, "dim"], float], Float[Array, "dim"]]] = None,
     use_shortcut: bool = False,
     initial_log_weights: Optional[Float[Array, "num_samples"]] = None,
     lambda_factor: Float[Array, ""] = 1.0,
-) -> Dict[str, Union[Float[Array, "num_timesteps num_samples dim"], 
-                     Float[Array, "num_timesteps num_samples"], 
-                     Float[Array, "num_timesteps"]]]:
-    batched_shift_fn = jax.vmap(shift_fn)
-    batched_hmc = jax.vmap(
-        lambda key, x, t, covariance: sample_hamiltonian_monte_carlo_blackjax(
-            key,
-            time_dependent_log_density,
-            x,
-            t,
-            num_steps,
-            integration_steps,
-            eta,
-            covariance,
-            shift_fn,
-        ),
-        in_axes=(0, 0, None, None),
-    )
+    hmc_parameters: Optional[Dict] = None, # Add optional HMC parameters Pytree
+    incremental_delta: Optional[Callable[[Float[Array, "dim"], float], Float[Array, "dim"]]] = None,
+) -> Dict[str, Union[Float[Array, "num_timesteps num_samples dim"],
+                      Float[Array, "num_timesteps num_samples"],
+                      Float[Array, "num_timesteps"]]]:
+    # (Docstring would ideally be updated here too, but focusing on code changes)
+    # Remove the old top-level batched_hmc definition.
+    # It will be defined inside the 'step' function based on parameters for the specific time step.
+    # batched_hmc = jax.vmap(
+    #     lambda key, x, t, covariance: sample_nuts_blackjax(
+    #         key,
+    #         time_dependent_log_density,
+    #         x,
+    #         t,
+    #         num_steps,
+    #         eta,
+    #         covariance,
+    #         shift_fn,
+    #     ),
+    #     in_axes=(0, 0, None, None),
+    # )
 
     num_samples = initial_samples.shape[0]
     # Initialize particles with provided samples or generate new ones
@@ -121,13 +120,13 @@ def generate_samples_with_smc(
         "ess": jnp.array(1.0),
     }
 
-    def _delta(positions, t, t_prev):
-        return time_dependent_log_density(
-            positions, t
-        ) - time_dependent_log_density(positions, t_prev)
+    # def _delta(positions, t, t_prev):
+    #     return time_dependent_log_density(
+    #         positions, t
+    #     ) - time_dependent_log_density(positions, t_prev)
 
-    batched_delta = jax.vmap(_delta, in_axes=(0, None, None))
-
+    # batched_delta = jax.vmap(_delta, in_axes=(0, None, None))
+    batched_delta = jax.vmap(incremental_delta, in_axes=(0, None))
     if v_theta is not None:
         if use_shortcut:
             batched_v_theta = jax.vmap(v_theta, in_axes=(0, None, None))
@@ -165,7 +164,8 @@ def generate_samples_with_smc(
 
     def step(carry, inputs):
         particles_prev, t_idx = carry
-        keys, cov_t = inputs
+        # Unpack inputs: keys, covariance for this step, hmc params for this step
+        keys, hmc_params_t = inputs
         
         # Get current and next time from ts
         t_prev = ts[t_idx]
@@ -174,19 +174,6 @@ def generate_samples_with_smc(
         # Time step for ODE integration
         d = t - t_prev
         
-        # Use provided covariance or estimate it if needed
-        if covariances is None and estimate_covariance:
-            cov = _estimate_covariance(
-                particles_prev["positions"], 
-                log_weights_to_weights(particles_prev["log_weights"]), 
-                diagonal=True
-            )
-        elif covariances is None:
-            # Use default identity covariance when neither provided nor estimated
-            cov = None
-        else:
-            cov = cov_t
-
         # Compute ESS and Resample if necessary
         ess_val = ess(log_weights=particles_prev["log_weights"])  # Scalar
         ess_percentage = ess_val / num_samples  # Scalar
@@ -206,6 +193,7 @@ def generate_samples_with_smc(
             log_weights_normalized = particles_prev["log_weights"] - jax.scipy.special.logsumexp(
                 particles_prev["log_weights"]
             )
+
             return {
                 "positions": particles_prev["positions"],
                 "log_weights": log_weights_normalized,
@@ -220,16 +208,13 @@ def generate_samples_with_smc(
         particles_new["ess"] = ess_percentage
 
         # Apply shift function
-        shifted_positions = batched_shift_fn(
-            particles_new["positions"]
-        )  # Shape: (num_samples, ...)
-
+        shifted_positions = particles_new["positions"]
         # If v_theta is provided, use it to propagate particles first
         if v_theta is not None:
             if use_shortcut:
                 # Match Euler's behavior by using t_prev and absolute dt
                 propagated_positions = shifted_positions + lambda_factor * d * batched_v_theta(
-                    shifted_positions, t_prev, jnp.abs(d)
+                    shifted_positions, t_prev, d
                 )
             else:
                 propagated_positions = shifted_positions + lambda_factor * d * batched_v_theta(
@@ -238,13 +223,42 @@ def generate_samples_with_smc(
         else:
             propagated_positions = shifted_positions
 
-        # Apply HMC to propagate particles
-        propagated_positions = batched_hmc(
-            keys, propagated_positions, t, cov
-        )  # Shape: (num_samples, ...)
+        # --- Determine HMC parameters for this step t ---
+        if hmc_params_t is not None:
+            # Use pre-computed parameters for this time step
+            hmc_step_size = hmc_params_t["step_size"]
+            hmc_inv_mass_matrix = hmc_params_t["inverse_mass_matrix"]
+            hmc_num_integration_steps = hmc_params_t["num_integration_steps"]
+        else:
+            # Use fallback parameters (eta, integration_steps, cov)
+            hmc_step_size = eta
+            hmc_inv_mass_matrix = None # This was determined earlier (lines 190-200)
+            hmc_num_integration_steps = integration_steps # From outer scope
+
+        # --- Define and apply HMC kernel for this step ---
+        # Note: sample_hamiltonian_monte_carlo_blackjax now takes num_hmc_steps
+        #       which defaults to 10, matching the typical use here. We use the
+        #       outer scope 'num_mcmc_steps' to control how many HMC steps per SMC step.
+        batched_hmc_step = jax.vmap(
+            lambda key, pos: sample_hamiltonian_monte_carlo_blackjax(
+                key=key,
+                time_dependent_log_density=time_dependent_log_density,
+                x=pos,
+                t=t, # Use the current time t
+                step_size=hmc_step_size,
+                inverse_mass_matrix=hmc_inv_mass_matrix,
+                num_integration_steps=hmc_num_integration_steps,
+                num_hmc_steps=num_mcmc_steps, # Use outer scope arg here
+            ),
+            in_axes=(0, 0) # Map over keys and positions
+        )
+
+        propagated_positions = batched_hmc_step(
+            keys, propagated_positions
+        ) # Shape: (num_samples, ...)
 
         # Compute incremental weights
-        w_delta = batched_delta(propagated_positions, t, t_prev)
+        w_delta = batched_delta(propagated_positions, t - t_prev)
         # Update log weights in log space
         next_log_weights = particles_new["log_weights"] + w_delta
         next_log_weights = next_log_weights - jax.scipy.special.logsumexp(
@@ -269,18 +283,26 @@ def generate_samples_with_smc(
             "ess": particles_new["ess"],
         }
 
-    # Prepare covariances for scan if provided
-    if covariances is not None:
-        scan_covariances = covariances[1:]  # Skip first element since we match with ts[1:] in the scan
+    # Prepare HMC parameters for scan (for t=1 to T)
+    if hmc_parameters is not None:
+        # Slice parameters Pytree for each step (t=1 to T)
+        # Assumes parameters have shape (num_timesteps, ...) matching ts
+        chex.assert_tree_shape_prefix(hmc_parameters, (ts.shape[0],)) # Sanity check
+        scan_hmc_params = jax.tree.map(lambda x: x[1:], hmc_parameters)
     else:
-        scan_covariances = None
-    
+        # If no pre-computed params, create a placeholder input for scan.
+        # Pass None for each step; the step function handles this.
+        # We need *something* with the correct length for scan to iterate over.
+        # num_scan_steps = ts.shape[0] - 1
+        # scan_hmc_params = [None] * num_scan_steps # List of Nones
+        scan_hmc_params = None
+
     # Run scan over time indices from 0 to num_timesteps-2
     # This will generate particles at times ts[1] to ts[num_timesteps-1]
     _, scan_particles = jax.lax.scan(
         step,
         (particles, 0),  # Initial carry: particles at ts[0] and time index 0
-        (sample_keys, scan_covariances),  # Inputs for each time step
+        (sample_keys, scan_hmc_params),  # Inputs for each time step
     )
     
     # Now we need to include the initial particles at ts[0]

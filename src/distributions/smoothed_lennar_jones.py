@@ -39,7 +39,7 @@ class QuadraticSmoothedLJ(Target):
         log_prob_clip: float = None,
         log_prob_clip_min: float = None,
         log_prob_clip_max: float = None,
-        ground_truth_samples_path: str = "data/gt_lj13_samples.npz",
+        ground_truth_samples_path: str = "data/lj13_stan_samples.npz",
         **kwargs,
     ):
         super().__init__(
