@@ -15,16 +15,20 @@ target_density = QuadraticSmoothedLJ(
 gt_samples = jnp.load("data/gt_lj13_samples.npz")["positions"]
 idem_samples = jnp.load("data/idem_lj13_samples.npz")["positions"]
 nfs_samples = jnp.load("data/lj13q_samples_128_steps_trajectory.npz")["positions"][-1]
+stan_samples = jnp.load("data/lj13_stan_samples.npz")["positions"]
+
 
 # Calculate interatomic distances for all sample types
 dist_gt = target_density.interatomic_dist(gt_samples)
 dist_idem = target_density.interatomic_dist(idem_samples)
 dist_nfs = target_density.interatomic_dist(nfs_samples)
+dist_stan = target_density.interatomic_dist(stan_samples)
 
 # Calculate energies for all sample types
 energy_gt = -target_density.batched_log_prob(gt_samples)
 energy_idem = -target_density.batched_log_prob(idem_samples)
 energy_nfs = -target_density.batched_log_prob(nfs_samples)
+energy_stan = -target_density.batched_log_prob(stan_samples)
 
 # Create subplots for visualization
 fig, axs = plt.subplots(1, 2, figsize=(14, 6))
@@ -59,6 +63,16 @@ axs[0].hist(
     linewidth=2,
     label="NFS",
     color="red"
+)
+axs[0].hist(
+    dist_stan.flatten(),
+    bins=100,
+    alpha=0.5,
+    density=True,
+    histtype="step",
+    linewidth=2,
+    label="Stan",
+    color="orange"
 )
 axs[0].set_xlabel("Interatomic distance")
 axs[0].set_ylabel("Density")
@@ -98,6 +112,17 @@ axs[1].hist(
     linewidth=2,
     label="NFS",
     color="red"
+)
+axs[1].hist(
+    energy_stan,
+    bins=100,
+    density=True,
+    alpha=0.5,
+    range=(-65, 0),
+    histtype="step",
+    linewidth=2,
+    label="Stan",
+    color="orange"
 )
 axs[1].set_xlabel("Energy")
 axs[1].set_ylabel("Density")
