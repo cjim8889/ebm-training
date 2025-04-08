@@ -26,6 +26,7 @@ dependencies = [
     "jmp>=0.0.4",
     "jaxtyping>=0.2.36",
     "logfire>=3.10.0",
+    "cmdstanpy>=1.2.5",
 ]
 
 [project.optional-dependencies]
