@@ -348,6 +348,8 @@ def main():
     parser.add_argument("--num-heads", type=int, default=4)
     parser.add_argument("--log-z-estimation-frequency", type=int, default=1,
                        help="How often to estimate log_Z_t (in epochs) for decoupled loss")
+    parser.add_argument("--skip-shortcut", action="store_true",)
+
     # Other configuration
     parser.add_argument(
         "--use-decoupled-loss",
@@ -424,6 +426,7 @@ def main():
         augment=args.augment,
         translation_scale=args.translation_scale,
         training_data=args.training_data,
+        skip_shortcut=args.skip_shortcut,
     )
 
     mcmc_config = MCMCConfig(

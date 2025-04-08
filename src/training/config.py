@@ -67,6 +67,7 @@ class TrainingConfig:
     perturbation_scale: float = 1.
     augment: bool = False  # Whether to use augmentations
     translation_scale: float = 2.  # Scale for translation augmentation
+    skip_shortcut: bool = False  # Whether to skip the shortcut connection
 
 @dataclass
 class MCMCConfig:
