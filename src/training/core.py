@@ -188,6 +188,7 @@ def _execute_jitted_step(
     config_training_shortcut_weight: float, # Static arg
     config_training_random_alpha: bool, # Static arg
     config_model_dropout: Optional[float], # Static arg
+    config_skip_shortcut: bool, # Static arg
 ) -> Tuple[PyTree, PyTree, Float[Array, ""]]:
     """Performs a single training step (loss, gradients, update). JIT compiled."""
     key, dropout_key = jax.random.split(key)
@@ -207,6 +208,7 @@ def _execute_jitted_step(
             shortcut_weight=config_training_shortcut_weight,
             random_alpha=config_training_random_alpha,
             dropout_key=dropout_key if config_model_dropout is not None else None,
+            skip_shortcut=config_skip_shortcut
         )
 
     loss, grads = eqx.filter_value_and_grad(compute_loss)(v_theta)
@@ -508,6 +510,7 @@ def _run_steps_for_epoch(
         config.training.shortcut_weight,
         config.training.random_alpha,
         config.model.dropout,
+        config.training.skip_shortcut,
     )
 
     for s in range(steps_per_epoch):

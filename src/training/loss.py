@@ -264,7 +264,7 @@ def loss_fn(
     shortcut_weight: float = 0.5,
     random_alpha: bool = False,
     dropout_key: Optional[jax.random.PRNGKey] = None,
-    reweighted: bool = False,
+    skip_shortcut: Optional[bool] = False,
 ) -> float:
     """Computes the loss for training the velocity field.
 
@@ -340,7 +340,7 @@ def loss_fn(
     else:
         _loss = jnp.mean(epsilons**2)
 
-    if particles.d is not None:
+    if particles.d is not None and not skip_shortcut:
         if random_alpha:
             key, subkey = jax.random.split(key)
             alpha = jax.random.uniform(subkey, shape=(particles.x.shape[0],))
