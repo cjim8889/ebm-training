@@ -78,5 +78,5 @@ model {
   target += -(total_lj_energy + c_harmonic * harmonic_energy);
 
   // Add a standard normal prior to the positions for regularization
-  x ~ std_normal();
+  // x ~ std_normal();
 }
