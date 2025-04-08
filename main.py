@@ -37,6 +37,7 @@ from src.models import (
     ParticleTransformerV4,
     ParticleTransformerV5,
     ParticleTransformerV6,
+    ParticleTransformerV7,
     TimeVelocityField,
     TimeVelocityFieldWithPairwiseFeature,
     TimeVelocityFieldWithPairwiseFeatureThree,
@@ -117,6 +118,7 @@ def main():
             "transformer4",
             "transformer5",
             "transformer6",
+            "transformer7",
         ],
     )
 
@@ -951,6 +953,20 @@ def main():
         )
     elif config.model.architecture == "transformer6":
         v_theta = ParticleTransformerV6(
+            n_particles=config.density.n_particles,
+            n_spatial_dim=config.density.n_spatial_dim,
+            hidden_size=config.model.hidden_dim,
+            num_layers=config.model.num_layers,
+            num_heads=config.model.num_heads,
+            key=model_key,
+            shortcut=config.training.use_shortcut,
+            mp_policy=config.mp_policy,
+            embedding_size=config.model.embedding_dim,
+            embedder_depth=config.model.embedder_depth,
+            embedder_width=config.model.embedder_width,
+        )
+    elif config.model.architecture == "transformer7":
+        v_theta = ParticleTransformerV7(
             n_particles=config.density.n_particles,
             n_spatial_dim=config.density.n_spatial_dim,
             hidden_size=config.model.hidden_dim,
