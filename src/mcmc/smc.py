@@ -78,26 +78,9 @@ def generate_samples_with_smc(
     initial_log_weights: Optional[Float[Array, "num_samples"]] = None,
     lambda_factor: Float[Array, ""] = 1.0,
     hmc_parameters: Optional[Dict] = None, # Add optional HMC parameters Pytree
-    incremental_delta: Optional[Callable[[Float[Array, "dim"], float], Float[Array, "dim"]]] = None,
 ) -> Dict[str, Union[Float[Array, "num_timesteps num_samples dim"],
                       Float[Array, "num_timesteps num_samples"],
                       Float[Array, "num_timesteps"]]]:
-    # (Docstring would ideally be updated here too, but focusing on code changes)
-    # Remove the old top-level batched_hmc definition.
-    # It will be defined inside the 'step' function based on parameters for the specific time step.
-    # batched_hmc = jax.vmap(
-    #     lambda key, x, t, covariance: sample_nuts_blackjax(
-    #         key,
-    #         time_dependent_log_density,
-    #         x,
-    #         t,
-    #         num_steps,
-    #         eta,
-    #         covariance,
-    #         shift_fn,
-    #     ),
-    #     in_axes=(0, 0, None, None),
-    # )
 
     num_samples = initial_samples.shape[0]
     # Initialize particles with provided samples or generate new ones
@@ -120,13 +103,12 @@ def generate_samples_with_smc(
         "ess": jnp.array(1.0),
     }
 
-    # def _delta(positions, t, t_prev):
-    #     return time_dependent_log_density(
-    #         positions, t
-    #     ) - time_dependent_log_density(positions, t_prev)
+    def _delta(positions, t, t_prev):
+        return time_dependent_log_density(
+            positions, t
+        ) - time_dependent_log_density(positions, t_prev)
 
-    # batched_delta = jax.vmap(_delta, in_axes=(0, None, None))
-    batched_delta = jax.vmap(incremental_delta, in_axes=(0, None))
+    batched_delta = jax.vmap(_delta, in_axes=(0, None, None))
     if v_theta is not None:
         if use_shortcut:
             batched_v_theta = jax.vmap(v_theta, in_axes=(0, None, None))
@@ -258,7 +240,7 @@ def generate_samples_with_smc(
         ) # Shape: (num_samples, ...)
 
         # Compute incremental weights
-        w_delta = batched_delta(propagated_positions, t - t_prev)
+        w_delta = batched_delta(propagated_positions, t, t_prev)
         # Update log weights in log space
         next_log_weights = particles_new["log_weights"] + w_delta
         next_log_weights = next_log_weights - jax.scipy.special.logsumexp(
