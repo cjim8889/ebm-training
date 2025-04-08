@@ -35,7 +35,8 @@ def compute_total_energy(x_flat, n_particles, n_spatial_dim, c=0.5, sigma_sq=1.0
         for j in range(i + 1, n_particles):
             disp = x[i] - x[j]
             r_sq = np.sum(disp**2)
-            total_lj_energy += lennard_jones_potential(r_sq, sigma_sq, epsilon)
+            # Multiply by 2.0 to match the modified Stan model (repeat=True logic)
+            total_lj_energy += 2.0 * lennard_jones_potential(r_sq, sigma_sq, epsilon)
 
     harm_energy = harmonic_potential(x_flat, n_particles, n_spatial_dim, c)
     return total_lj_energy + harm_energy
