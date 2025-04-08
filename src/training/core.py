@@ -6,6 +6,7 @@ import chex
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
 import optax
 from jaxtyping import Array, Float, PyTree
 
@@ -23,12 +24,12 @@ from src.utils.schedule import constant_then_cyclic_cosine_schedule
 
 # Added: Import new time utils
 from . import time_utils
+from .augmentation import batch_augment_chain  # Added for refactoring
 from .config import TrainingExperimentConfig
 from .loss import Particle, loss_fn
 from .normalizing_constant import (
     estimate_log_Z_t,
 )
-from .augmentation import batch_augment_chain # Added for refactoring
 
 # === Sample Generation (Unchanged, added type hints) ===
 
@@ -355,16 +356,57 @@ def _maybe_estimate_log_z(
 
         # Logging
         log_Z_t_to_log = jnp.nan_to_num(log_Z_t, nan=0.0, posinf=1.0, neginf=-1.0)
-        log_data = {"log_Z_t": log_Z_t_to_log, "epoch": epoch}
-        if "ess" in mcmc_samples:
-             log_data["ess"] = mcmc_samples["ess"]
+
+        smc_fig = None
+        try:
+            if hasattr(path_distribution.target_density, 'visualise') and callable(path_distribution.target_density.visualise):
+                print(f"Epoch {epoch}: Visualising target density final positions...")
+                # Pass epoch and final samples, dynamically checking signature
+                final_positions = mcmc_samples["positions"][-1] if mcmc_samples is not None and "positions" in mcmc_samples else None
+                if final_positions is not None:
+                    smc_fig = path_distribution.target_density.visualise(final_positions)
+                else:
+                    print(f"Epoch {epoch}: No final positions available to visualise.")
+            else:
+                print(f"Warning: path_distribution.target_density.visualise method not found or not callable for epoch {epoch}.")
+        except Exception as e:
+            print(f"Warning: Failed to visualise target density for epoch {epoch}: {e}")
 
         if not config.offline:
-            wandb.log(log_data)
+            # Log scalar metrics first (moved from log_data dict for clarity)
+            wandb.log({"log_Z_t_mean": jnp.mean(log_Z_t_to_log), "epoch": epoch}) # Log mean/summary statistic
+            if "ess" in mcmc_samples:
+                 wandb.log({"ess": mcmc_samples["ess"], "epoch": epoch}) # Log ESS if available
+
+            # Visualize the log Z(t)
+            try:
+                # Ensure ts_for_estimation and log_Z_t_to_log are numpy arrays for zip
+                ts_np = jnp.asarray(ts_for_estimation)
+                log_z_np = jnp.asarray(log_Z_t_to_log)
+                # Create table data
+                table_data = list(zip(ts_np, log_z_np))
+                if table_data: # Only log if data exists
+                    log_z_table = wandb.Table(data=table_data, columns=["t", "log_Z_t"])
+                    wandb.log({f"Log Z(t) Plot/epoch_{epoch}": wandb.plot.line(log_z_table, "t", "log_Z_t", title=f"Epoch {epoch}: Log Z(t) vs t"), "epoch": epoch})
+                else:
+                    print(f"Epoch {epoch}: No data to plot for log Z(t).")
+            except Exception as e:
+                print(f"Warning: Failed to plot log Z(t) for epoch {epoch}: {e}")
+
+            # Visualize the final positions of the MCMC samples
+            if smc_fig is not None:
+                wandb.log({"SMC Final Positions": smc_fig, "epoch": epoch})
+            else:
+                print(f"Epoch {epoch}: No figure to log for SMC final positions.")
+
         else:
             print(f"Epoch {epoch}, Log Z(t) estimated (shape {log_Z_t.shape})")
             if "ess" in mcmc_samples:
                 print(f"Epoch {epoch}, MCMC Samples ESS: {mcmc_samples['ess']}")
+
+            plt.show() # Show the plot if offline
+
+        plt.close("all")
 
     else:
         # Reuse the previous estimation
