@@ -397,7 +397,7 @@ def _maybe_estimate_log_z(
 
             # Visualize the final positions of the MCMC samples
             if smc_fig is not None:
-                wandb.log({"SMC Final Positions": smc_fig, "epoch": epoch})
+                wandb.log({"SMC Final Positions": wandb.Image(smc_fig), "epoch": epoch})
             else:
                 print(f"Epoch {epoch}: No figure to log for SMC final positions.")
 
