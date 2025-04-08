@@ -59,9 +59,9 @@ model {
       // Calculate squared distance to avoid sqrt
       real r_sq = squared_distance(pos_i, pos_j);
 
-      // Add LJ potential contribution
+      // Add LJ potential contribution, multiplied by 2 to match 'repeat=True' logic
       // Add a small epsilon to avoid division by zero if particles overlap exactly
-      total_lj_energy += lj_potential(r_sq + 1e-12, sigma_sq, epsilon);
+      total_lj_energy += 2.0 * lj_potential(r_sq + 1e-12, sigma_sq, epsilon);
     }
   }
 
