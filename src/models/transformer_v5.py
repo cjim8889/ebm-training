@@ -107,8 +107,9 @@ class EfficientFFN(eqx.Module):
         
         residual = x
         x = jax.vmap(linear1)(x)
-        x = self.mp_policy.cast_to_compute(jax.nn.gelu(self.mp_policy.cast_to_param(x)))
+        x = jax.nn.gelu(self.mp_policy.cast_to_param(x))
         x = jax.vmap(linear2)(x) + residual
+        x = self.mp_policy.cast_to_compute(x)
 
         return x
 
@@ -118,7 +119,6 @@ class EfficientFFN(eqx.Module):
 class AdaptiveLayerNormModulation(eqx.Module):
     linear: eqx.nn.Linear
     count: int = eqx.field(static=True)
-    policy: jmp.Policy = eqx.field(static=True)
 
     def __init__(self, hidden_size: int, count: int, key: jax.random.PRNGKey, mp_policy: jmp.Policy):
         # Mimic: SiLU -> Linear(hidden_size, count*hidden_size)
@@ -127,15 +127,10 @@ class AdaptiveLayerNormModulation(eqx.Module):
 
         # Initialize weights to zero
         self.linear = init_linear_weights(self.linear, xavier_init, key=key)
-        self.policy = mp_policy
 
     def __call__(self, c: Float[Array, "hidden_size"]) -> List[Float[Array, "hidden_size"]]:
         # c: conditioning vector (shape: (hidden_size,) or (batch, hidden_size))
-        linear = self.policy.cast_to_compute(self.linear)
-        c = self.policy.cast_to_param(c)
-
-        params = linear(self.policy.cast_to_compute(jax.nn.silu(c)))  # shape: (count*hidden_size,)
-
+        params = self.linear(jax.nn.silu(c))  # shape: (count*hidden_size,)
         return jnp.split(params, self.count, axis=-1)  # returns [shift_attn, scale_attn, gate_attn, shift_ffn, scale_ffn, gate_ffn]
 
 
@@ -194,9 +189,6 @@ class DiTBlock(eqx.Module):
             key_heads = jax.vmap(self.rotary_embeddings, in_axes=1, out_axes=1)(key_heads)
             return query_heads, key_heads, value_heads
         
-        x = self.mp_policy.cast_to_compute(x)
-        c = self.mp_policy.cast_to_compute(c)
-        
         shift_attn, scale_attn, gate_attn, shift_ffn, scale_ffn, gate_ffn = self.modulation(c)
         # Expand to per-particle shape:
         shift_attn = jnp.broadcast_to(shift_attn, x.shape)
@@ -208,11 +200,8 @@ class DiTBlock(eqx.Module):
 
 
         # Attention branch:
-        x_norm_attn = jax.vmap(self.layernorm1)(self.mp_policy.cast_to_param(x))
-        x_norm_attn = self.mp_policy.cast_to_compute(x_norm_attn)
-
+        x_norm_attn = jax.vmap(self.layernorm1)(x)
         x_mod_attn = modulate(x_norm_attn, shift_attn, scale_attn)
-
         attn_out = self.attention(
             query=x_mod_attn,
             key_=x_mod_attn,
@@ -223,8 +212,7 @@ class DiTBlock(eqx.Module):
         x = x + gate_attn * attn_out
 
         # FFN branch:
-        x_norm_ffn = jax.vmap(self.layernorm2)(self.mp_policy.cast_to_param(x))
-        x_norm_ffn = self.mp_policy.cast_to_compute(x_norm_ffn)
+        x_norm_ffn = jax.vmap(self.layernorm2)(x)
         x_mod_ffn = modulate(x_norm_ffn, shift_ffn, scale_ffn)
         ffn_out = self.ffn(x_mod_ffn)
         x = x + gate_ffn * ffn_out
@@ -241,7 +229,6 @@ class FinalLayer(eqx.Module):
     norm_final: eqx.nn.LayerNorm
     linear: eqx.nn.Linear
     adaLN_modulation: AdaptiveLayerNormModulation
-    mp_policy: jmp.Policy = eqx.field(static=True)
 
     def __init__(self, hidden_size: int, output_size: int, key: jax.random.PRNGKey, mp_policy: jmp.Policy):
         self.norm_final = eqx.nn.LayerNorm(hidden_size, use_bias=False, use_weight=False, eps=1e-6)
@@ -250,21 +237,15 @@ class FinalLayer(eqx.Module):
         self.adaLN_modulation = AdaptiveLayerNormModulation(hidden_size, count=2, key=key1, mp_policy=mp_policy)
         # Initialize weights to zero
         self.linear = init_linear_weights(self.linear, zero_init, key=key2)
-        self.mp_policy = mp_policy
 
     def __call__(self, x: Float[Array, "num_particles hidden_size"], c: Float[Array, "hidden_size"]) -> Float[Array, "num_particles output_size"]:
-        x = self.mp_policy.cast_to_compute(x)
-        c = self.mp_policy.cast_to_compute(c)
-        linear = self.mp_policy.cast_to_compute(self.linear)
-        
         shift, scale = self.adaLN_modulation(c)
         # Expand to per-particle shape:
         shift = jnp.broadcast_to(shift, x.shape)
         scale = jnp.broadcast_to(scale, x.shape)
 
-        _x = self.mp_policy.cast_to_compute(jax.vmap(self.norm_final)(self.mp_policy.cast_to_param(x)))
-        x = modulate(_x, shift, scale)
-        x = jax.vmap(linear)(x)
+        x = modulate(jax.vmap(self.norm_final)(x), shift, scale)
+        x = jax.vmap(self.linear)(x)
         return x
 
 
@@ -273,6 +254,7 @@ class FinalLayer(eqx.Module):
 ###############################################################################
 class EmbedderBlock(eqx.Module):
     particle_embedder: eqx.nn.MLP
+    layernorm: eqx.nn.LayerNorm
     shortcut: bool = eqx.field(static=True)
     mp_policy: jmp.Policy = eqx.field(static=True)
 
@@ -300,6 +282,7 @@ class EmbedderBlock(eqx.Module):
             key=key,
             dtype=mp_policy.param_dtype,
         )
+        self.layernorm = eqx.nn.LayerNorm(shape=(embedding_size,), dtype=jnp.float32)
 
     def __call__(
         self, 
@@ -310,7 +293,7 @@ class EmbedderBlock(eqx.Module):
         input = self.mp_policy.cast_to_compute(input)
         embedder = self.mp_policy.cast_to_compute(self.particle_embedder)
         embedded = jax.vmap(embedder)(input)
-        return embedded
+        return self.mp_policy.cast_to_output(embedded)
 
 
 ###############################################################################
@@ -386,18 +369,17 @@ class ParticleTransformerV5(eqx.Module):
             raise ValueError("d must be provided when shortcut is enabled")
         
         xs = self.mp_policy.cast_to_compute(xs)
-        # t = self.mp_policy.cast_to_compute(t)
-        # if d is not None:
-            # d = self.mp_policy.cast_to_compute(d)
+        t = self.mp_policy.cast_to_compute(t)
+        if d is not None:
+            d = self.mp_policy.cast_to_compute(d)
 
+        predictor = self.mp_policy.cast_to_compute(self.predictor)
 
         xs = xs.reshape(-1, self.n_spatial_dim)
         x = self.embedder(xs)
         c = self.time_embedder(t, d)
 
-        c = self.mp_policy.cast_to_compute(c)
-
         for layer in self.layers:
             x = layer(x, c)
 
-        return self.mp_policy.cast_to_output(self.predictor(x, c).flatten())
+        return self.mp_policy.cast_to_output(predictor(x, c).flatten())
