@@ -39,7 +39,7 @@ class QuadraticSmoothedLJ(Target):
         log_prob_clip: float = None,
         log_prob_clip_min: float = None,
         log_prob_clip_max: float = None,
-        ground_truth_samples_path: str = "data/lj13_bj_atempered_smc_samples.npz",
+        ground_truth_samples_path: str = "data/gt_lj13_samples.npz",
         **kwargs,
     ):
         super().__init__(
@@ -147,7 +147,7 @@ class QuadraticSmoothedLJ(Target):
         return 0.5 * jnp.sum(distances_to_com**2)
 
     def compute_smoothed_lj_energy(self, x: jnp.ndarray) -> jnp.ndarray:
-        pairwise_dr = compute_distances(x, self.n_particles, self.n_spatial_dim, min_dr=self.min_dr)
+        pairwise_dr = compute_distances(x, self.n_particles, self.n_spatial_dim, min_dr=self.min_dr, repeat=True)
         lj_energy = self.smoothed_lennard_jones_potential(pairwise_dr)
         total_lj_energy = jnp.sum(lj_energy, axis=-1)
 
@@ -182,7 +182,7 @@ class QuadraticSmoothedLJ(Target):
     def interatomic_dist(self, x):
         x = x.reshape(-1, self.n_particles, self.n_spatial_dim)
         distances = jax.vmap(
-            lambda x: compute_distances(x, self.n_particles, self.n_spatial_dim)
+            lambda x: compute_distances(x, self.n_particles, self.n_spatial_dim, repeat=True)
         )(x)
 
         return distances
