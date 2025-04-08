@@ -201,7 +201,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output-file",
         type=str,
-        default="data/lj13_harmonic_stan_samples.npz",
+        default="data/lj13_stan_samples.npz",
         help="Path to save the output samples (NPZ format).",
     )
     parser.add_argument(
