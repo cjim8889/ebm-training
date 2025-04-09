@@ -99,11 +99,11 @@ class EfficientFFN(eqx.Module):
     linear2: eqx.nn.Linear
     mp_policy: jmp.Policy = eqx.field(static=True)
 
-    def __init__(self, input_size: int, hidden_size: int, key: jax.random.PRNGKey, mp_policy: jmp.Policy):
+    def __init__(self, input_size: int, key: jax.random.PRNGKey, mp_policy: jmp.Policy):
         self.mp_policy = mp_policy
         key1, key2 = jax.random.split(key, 2)
-        self.linear1 = eqx.nn.Linear(input_size, hidden_size, key=key1, dtype=mp_policy.param_dtype)
-        self.linear2 = eqx.nn.Linear(hidden_size, input_size, key=key2, dtype=mp_policy.param_dtype)
+        self.linear1 = eqx.nn.Linear(input_size, input_size * 4, key=key1, dtype=mp_policy.param_dtype)
+        self.linear2 = eqx.nn.Linear(input_size * 4, input_size, key=key2, dtype=mp_policy.param_dtype)
 
     def __call__(
         self, 
@@ -168,7 +168,6 @@ class DiTBlock(eqx.Module):
         
         self.ffn = EfficientFFN(
             input_size=embedding_size,
-            hidden_size=hidden_size,
             key=key2,
             mp_policy=mp_policy,
         )
