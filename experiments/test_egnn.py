@@ -1,24 +1,3 @@
-import jax
-import jax.numpy as jnp
-
-from models.egnn import EGNN
-
-
-key = jax.random.PRNGKey(0)
-
-egnn = EGNN(
-    n_node=13,
-    hidden_size=32,
-    key=key,
-    num_layers=2,
-    normalize=True,
-    num_nearest_neighbors=5,
-    geonorm=True,
-)
-
-nodes = jnp.zeros((1,))
-pos = jax.random.normal(key, (13, 3))
-
-pos = egnn(pos, nodes)
-
-print(pos.shape)
+version https://git-lfs.github.com/spec/v1
+oid sha256:b4a103d9acc2daac672d98fe2e4e9ad0fdfab85d71b6d63551090bcdac18633f
+size 349

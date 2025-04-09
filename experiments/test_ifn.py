@@ -1,23 +1,3 @@
-import jax
-import jax.numpy as jnp
-
-from models.imlp import InvariantFeatureNet
-
-
-key = jax.random.PRNGKey(0)
-
-mlp = InvariantFeatureNet(
-    key=key,
-    n_particles=13,
-    n_spatial_dim=3,
-    hidden_dim=32,
-    depth=3,
-    shortcut=True,
-    mixed_precision=True,
-)
-
-pos = jax.random.normal(key, (13 * 3))
-
-pos = mlp(pos, jnp.array(0.5), jnp.array(0.125))
-
-print(pos.shape)
+version https://git-lfs.github.com/spec/v1
+oid sha256:63921dec6d3526d55757c5ce5ae3f4eb7e2b45f49bff84a246596e3a078ad0d6
+size 379

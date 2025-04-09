@@ -1,21 +1,3 @@
-import jax
-import jax.numpy as jnp
-
-from models.mlp import VelocityFieldTwo
-
-
-key = jax.random.PRNGKey(0)
-
-mlp = VelocityFieldTwo(
-    key=key,
-    dim=32,
-    hidden_dim=32,
-    depth=2,
-    shortcut=True,
-)
-
-pos = jax.random.normal(key, (32,))
-
-pos = mlp(pos, jnp.array(0.5), jnp.array(0.125))
-
-print(pos.shape)
+version https://git-lfs.github.com/spec/v1
+oid sha256:cf005196c4b5447aa0f6b5613dbda1712a95b1831e2f2b1573fcbf460368f6c0
+size 314

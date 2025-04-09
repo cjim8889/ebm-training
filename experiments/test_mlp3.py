@@ -1,22 +1,3 @@
-import jax
-import jax.numpy as jnp
-
-from models.mlp import VelocityFieldThree
-
-
-key = jax.random.PRNGKey(0)
-
-mlp = VelocityFieldThree(
-    key=key,
-    n_particles=4,
-    n_spatial_dim=2,
-    hidden_dim=32,
-    depth=2,
-    shortcut=True,
-)
-
-pos = jax.random.normal(key, (8,))
-
-pos = mlp(pos, jnp.array(0.5), jnp.array(0.125))
-
-print(pos.shape)
+version https://git-lfs.github.com/spec/v1
+oid sha256:d5d5be5f062a3e27823341ed1075f995e66f3ae337c9a5dafb55cf35c6034b7c
+size 345

@@ -1,5 +1,3 @@
-import sys
-import os
-
-# Add the project root directory to Python's path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))) 
+version https://git-lfs.github.com/spec/v1
+oid sha256:ac9db40dc97115618362218640cd9f74714797aa5829493d593881840c975158
+size 155
