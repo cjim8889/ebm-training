@@ -19,3 +19,4 @@ from .transformer_v4 import ParticleTransformerV4
 from .transformer_v5 import ParticleTransformerV5
 from .transformer_v6 import ParticleTransformerV6
 from .transformer_v7 import ParticleTransformerV7
+from .transformer_v8 import ParticleTransformerV8
