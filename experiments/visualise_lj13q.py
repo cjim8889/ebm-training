@@ -8,15 +8,19 @@ from src.distributions import QuadraticSmoothedLJ
 target_density = QuadraticSmoothedLJ(
     dim=39,
     n_particles=13,
-    r_min=0.8,
+    # r_min=0.8,
 )
 
 # Load the three types of samples
-gt_samples = jnp.load("data/gt_lj13_samples.npz")["positions"]
+gt_samples = jnp.load("data/train_split_LJ13-1000.npy")
 idem_samples = jnp.load("data/idem_lj13_samples.npz")["positions"]
 nfs_samples = jnp.load("data/lj13q_samples_128_steps_trajectory.npz")["positions"][-1]
 stan_samples = jnp.load("data/lj13_stan_samples.npz")["positions"]
 
+print(f"GT samples shape: {gt_samples.shape}")
+print(f"IDEM samples shape: {idem_samples.shape}")
+print(f"NFS samples shape: {nfs_samples.shape}")
+print(f"Stan samples shape: {stan_samples.shape}")
 
 # Calculate interatomic distances for all sample types
 dist_gt = target_density.interatomic_dist(gt_samples)
