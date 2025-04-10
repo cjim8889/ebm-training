@@ -14,7 +14,7 @@ eval "$(~/anaconda3/bin/conda shell.bash hook)"
 source activate py12
 
 python main.py \
-  --num-samples 2560 \
+  --num-samples 5000 \
   --depth 6 \
   --hidden-dim 128 \
   --embedding-dim 128 --embedder-width 128 --embedder-depth 3 \
