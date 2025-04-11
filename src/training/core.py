@@ -166,6 +166,7 @@ def _setup_path_distribution(
         initial_density=initial_density,
         target_density=target_density,
         method=config.density.annealing_path,
+        prior_regularization=config.density.prior_regularization,
     )
 
 

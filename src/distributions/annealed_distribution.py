@@ -14,6 +14,7 @@ class AnnealedDistribution(Target):
         initial_density: Target,
         target_density: Target,
         method: str = "linear",
+        prior_regularization: bool = False,
     ):
         super().__init__(
             dim=initial_density.dim,
@@ -25,6 +26,7 @@ class AnnealedDistribution(Target):
         )
         self.initial_density = initial_density
         self.target_density = target_density
+        self.prior_regularization = prior_regularization
         self.method = method
 
     def log_prob(self, xs: chex.Array) -> chex.Array:
@@ -41,9 +43,11 @@ class AnnealedDistribution(Target):
         else:
             beta = get_inverse_temperature(t, 250.0, 1.0)
         
-        initial_prob = (1 - beta) * self.initial_density.log_prob(xs)
+        if self.prior_regularization:
+            initial_prob = self.initial_density.log_prob(xs)
+        else:
+            initial_prob = (1 - beta) * self.initial_density.log_prob(xs)
         
-        # initial_prob = self.initial_density.log_prob(xs)
 
         if self.target_density.TIME_DEPENDENT:
             target_prob = beta * self.target_density.time_dependent_log_prob(xs, t)

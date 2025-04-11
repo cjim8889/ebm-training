@@ -370,6 +370,8 @@ def main():
     parser.add_argument("--perturb", action="store_true")
     parser.add_argument("--augment", action="store_true")
     parser.add_argument("--translation-scale", type=float, default=2.)
+    parser.add_argument("--prior", action="store_true")
+
     args = parser.parse_args()
 
     if args.debug:
@@ -534,6 +536,7 @@ def main():
         data_path_val=args.data_path_val,
         data_path_train=args.data_path_train,
         n_samples_eval=args.n_samples_eval,
+        prior_regularization=args.prior,
     )
 
     config = TrainingExperimentConfig(
