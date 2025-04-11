@@ -26,7 +26,7 @@ target_density = QuadraticSmoothedLJ(
     # r_min=0.8,
 )
 
-initial_density = MultivariateGaussian(dim=39, sigma=1.0)
+initial_density = MultivariateGaussian(dim=39, sigma=2.5)
 path_density = AnnealedDistribution(
     initial_density=initial_density,
     target_density=target_density,
@@ -71,7 +71,7 @@ samples = generate_samples_with_smc(
     eta=0.01,               # Kept as default/fallback if adaptive params fail
     ess_threshold=0.6,
     hmc_parameters=adaptive_params, # Pass loaded parameters
-    incremental_delta=path_density.incremental_log_delta,
+    # incremental_delta=path_density.incremental_log_delta,
     # estimate_covariance=False, # Removed argument
 )
 print("Sampling done")
@@ -86,7 +86,7 @@ fig = target_density.visualise(final_positions)
 
 plt.show()
 # Save the samples to a local file
-save_path = "data/lj13c_adaptive_smc_samples.npz" # Changed filename slightly
+save_path = "data/lj13c_smc_regularized_samples.npz" # Changed filename slightly
 os.makedirs(os.path.dirname(save_path), exist_ok=True)
 jnp.savez(
     save_path,
@@ -98,7 +98,7 @@ jnp.savez(
 print(f"Samples saved to {save_path}")
 
 # Save the figure
-fig_save_path = "lj13c_adaptive_smc_samples.png" # Changed filename slightly
+fig_save_path = "lj13c_smc_regularized_samples.png" # Changed filename slightly
 plt.savefig(fig_save_path)
 print(f"Figure saved to {fig_save_path}")
 plt.close(fig) # Close the plot to free memory
