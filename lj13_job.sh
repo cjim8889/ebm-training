@@ -18,36 +18,36 @@ python main.py \
   --depth 6 \
   --hidden-dim 128 \
   --embedding-dim 128 --embedder-width 128 --embedder-depth 3 \
-  --network transformer8 \
+  --network transformer5 \
   --num-epochs 20000 \
   --steps-per-epoch 1000 \
   --mcmc-method vsmc \
-  --mcmc-step-size 0.01 \
-  --mcmc-steps 12 \
+  --mcmc-step-size 0.02 \
+  --mcmc-steps 15 \
   --mcmc-integration-steps 10 \
-  --initial-sigma 2.5 \
+  --initial-sigma 2 \
   --target smlj13q \
-  --seed 12345 \
+  --seed 8888 \
   --training-data combined \
   --batch-size 128 \
-  --learning-rate 1e-04 \
+  --learning-rate 4e-05 \
   --gradient-norm 1. \
   --optimizer adamw \
   --weight-decay 0. \
   --time-batch-size 4 \
   --n-samples-eval 5000 \
-  --eval-frequency 10 \
+  --eval-frequency 5 \
   --shortcut-weight 0.1 \
   --include-harmonic \
-  --estimator hutchinson \
+  --estimator none \
   --n-probes 3 \
   --r-min 0.8 \
   --num-heads 4 \
-  --lambda-epochs 500 \
+  --lambda-epochs 1 \
   --ess-threshold 0.5 \
   --perturb --perturbation-scale .5 \
   --log-z-estimation-frequency 1 \
-  --augment --translation-scale 10. --continuous-time \
-  --mixed-precision --use-shortcut --skip-shortcut
+  --augment --translation-scale 10. \
+  --mixed-precision --use-shortcut --skip-shortcut --resume-from velocity_field_model_96i4f5zg:v41
 
 
