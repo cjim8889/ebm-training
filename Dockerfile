@@ -5,9 +5,9 @@ FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install essential system packages and uv
-RUN apt-get update &amp;&amp; \
-    apt-get install -y --no-install-recommends curl ca-certificates git &amp;&amp; \
-    rm -rf /var/lib/apt/lists/* &amp;&amp; \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl ca-certificates git && \
+    rm -rf /var/lib/apt/lists/* && \
     curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Add uv to PATH (default install location for root)
