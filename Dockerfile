@@ -11,7 +11,7 @@ RUN apt-get update && \
     curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Add uv to PATH (default install location for root)
-ENV PATH="/root/.cargo/bin:${PATH}"
+ENV PATH="/root/.local/bin:${PATH}"
 
 # Set the working directory
 WORKDIR /app
@@ -21,7 +21,7 @@ COPY pyproject.toml .
 
 # Install Python and dependencies using uv
 # --system-site-packages installs them into the Python managed by uv
-RUN uv sync --system-site-packages
+RUN uv sync
 
 # Copy the rest of the application code
 COPY . .
