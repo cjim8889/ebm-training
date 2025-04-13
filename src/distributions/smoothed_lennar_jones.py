@@ -1,3 +1,4 @@
+import os
 from typing import Callable
 
 import chex
@@ -68,22 +69,30 @@ class QuadraticSmoothedLJ(Target):
         # Compute polynomial coefficients
         self.a, self.b, self.c_coeff = self.compute_quadratic_coefficients()
 
-        # Load ground truth samples if provided
+        # Initialize ground truth attributes
+        self.ground_truth_samples = None
+        self.ground_truth_distances = None
+        self.ground_truth_energies = None
+
+        # Load ground truth samples if path is provided and file exists
         if ground_truth_samples_path is not None:
-            self.ground_truth_samples = jnp.load(ground_truth_samples_path)["positions"]
+            if os.path.exists(ground_truth_samples_path):
+                self.ground_truth_samples = jnp.load(ground_truth_samples_path)["positions"]
 
-            # Compute distances for ground truth samples
-            self.ground_truth_distances = self.interatomic_dist(
-                self.ground_truth_samples
-            )
+                # Compute distances for ground truth samples
+                self.ground_truth_distances = self.interatomic_dist(
+                    self.ground_truth_samples
+                )
 
-            # Compute energies for ground truth samples
-            self.r_min = 0.0
-            self.ground_truth_energies = -self.batched_log_prob(
-                self.ground_truth_samples
-            )
-            self.r_min = r_min
-
+                # Compute energies for ground truth samples
+                original_r_min = self.r_min  # Store original r_min
+                self.r_min = 0.0
+                self.ground_truth_energies = -self.batched_log_prob(
+                    self.ground_truth_samples
+                )
+                self.r_min = original_r_min  # Restore original r_min
+            else:
+                print(f"Warning: Ground truth samples file not found at {ground_truth_samples_path}. Skipping loading.")
 
     def compute_quadratic_coefficients(self):
         r_min = self.r_min
@@ -272,25 +281,37 @@ class QuadraticSmoothedLJ(Target):
 
         log_prob_samples = -self.batched_log_prob(samples_q["positions"])
 
-        energy_total_variation = compute_total_variation_distance(
-            log_prob_samples.reshape(-1, 1),
-            self.ground_truth_energies.reshape(-1, 1)[:log_prob_samples.shape[0]],
-            num_bins=200,
-            lower_bound=-65,
-            upper_bound=0,
-        )
-        metrics["energy_total_variation"] = energy_total_variation
+        # Calculate energy TV distance if ground truth exists
+        if self.ground_truth_energies is not None:
+            energy_total_variation = compute_total_variation_distance(
+                log_prob_samples.reshape(-1, 1),
+                self.ground_truth_energies.reshape(-1, 1)[:log_prob_samples.shape[0]],
+                num_bins=200,
+                lower_bound=-65,
+                upper_bound=0,
+            )
+            metrics["energy_total_variation"] = energy_total_variation
+        else:
+            # Use infinity if ground truth is missing, assuming lower is better
+            metrics["energy_total_variation"] = float('inf')
 
-        distance_samples = self.interatomic_dist(samples_q["positions"])
-        dist_total_variation = compute_total_variation_distance(
-            distance_samples.reshape(-1, 1),
-            self.ground_truth_distances.reshape(-1, 1)[:distance_samples.shape[0]],
-            num_bins=200,
-            lower_bound=0,
-            upper_bound=8.,
-        )
-        metrics["distance_total_variation"] = dist_total_variation
+        # Calculate distance TV distance if ground truth exists
+        if self.ground_truth_distances is not None:
+            distance_samples = self.interatomic_dist(samples_q["positions"])
+            dist_total_variation = compute_total_variation_distance(
+                distance_samples.reshape(-1, 1),
+                self.ground_truth_distances.reshape(-1, 1)[:distance_samples.shape[0]],
+                num_bins=200,
+                lower_bound=0,
+                upper_bound=8.,
+            )
+            metrics["distance_total_variation"] = dist_total_variation
+        else:
+            # Use infinity if ground truth is missing, assuming lower is better
+            metrics["distance_total_variation"] = float('inf')
 
+
+        # Visualisation handles None internally
         metrics["figure"] = self.visualise(samples_q["positions"])
 
 

@@ -22,12 +22,13 @@ ENV PATH="/root/.local/bin:${PATH}"
 WORKDIR /app
 
 # Clone the repository and switch branch, skipping LFS smudge during clone
-RUN GIT_LFS_SKIP_SMUDGE=1 git clone https://github.com/cjim8889/ebm-training . && \
-    GIT_LFS_SKIP_SMUDGE=1 git checkout jax-corrected
+# RUN git clone https://github.com/cjim8889/ebm-training.git . && \
+#     git checkout jax-corrected
 
 # Install LFS hooks and explicitly pull LFS files
-RUN git lfs install && \
-    git lfs pull
+RUN git lfs install --skip-smudge && \
+    git clone https://github.com/cjim8889/ebm-training.git . && \
+    git checkout jax-corrected
 
 # Install Python and dependencies using uv (uses pyproject.toml from cloned repo)
 # --system-site-packages installs them into the Python managed by uv
