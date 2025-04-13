@@ -94,6 +94,8 @@ class QuadraticSmoothedLJ(Target):
             else:
                 print(f"Warning: Ground truth samples file not found at {ground_truth_samples_path}. Skipping loading.")
 
+        # Initialize a counter for missing ground truth evaluations
+        self._missing_gt_counter = 0
     def compute_quadratic_coefficients(self):
         r_min = self.r_min
         sigma = self.sigma
@@ -292,8 +294,9 @@ class QuadraticSmoothedLJ(Target):
             )
             metrics["energy_total_variation"] = energy_total_variation
         else:
-            # Use infinity if ground truth is missing, assuming lower is better
-            metrics["energy_total_variation"] = float('inf')
+            # Use decreasing counter if ground truth is missing
+            metrics["energy_total_variation"] = self._missing_gt_counter
+            self._missing_gt_counter -= 1
 
         # Calculate distance TV distance if ground truth exists
         if self.ground_truth_distances is not None:
@@ -307,8 +310,9 @@ class QuadraticSmoothedLJ(Target):
             )
             metrics["distance_total_variation"] = dist_total_variation
         else:
-            # Use infinity if ground truth is missing, assuming lower is better
-            metrics["distance_total_variation"] = float('inf')
+            # Use decreasing counter if ground truth is missing
+            metrics["distance_total_variation"] = self._missing_gt_counter
+            self._missing_gt_counter -= 1
 
 
         # Visualisation handles None internally
