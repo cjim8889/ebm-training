@@ -21,16 +21,16 @@ ENV PATH="/root/.local/bin:${PATH}"
 # Set the working directory
 WORKDIR /app
 
-# Clone the repository and switch branch *before* installing dependencies
-RUN git clone https://github.com/cjim8889/ebm-training . && \
-    git checkout jax-corrected
+# Clone the repository and switch branch, skipping LFS smudge during clone
+RUN GIT_LFS_SKIP_SMUDGE=1 git clone https://github.com/cjim8889/ebm-training . && \
+    GIT_LFS_SKIP_SMUDGE=1 git checkout jax-corrected
+
+# Install LFS hooks and explicitly pull LFS files
+RUN git lfs install && \
+    git lfs pull
 
 # Install Python and dependencies using uv (uses pyproject.toml from cloned repo)
 # --system-site-packages installs them into the Python managed by uv
 RUN uv sync
-
-# Install and pull LFS files
-RUN git lfs install && \
-    git lfs pull
 
 # (Optional: Define a default command if needed, e.g., CMD ["python", "main.py"])
