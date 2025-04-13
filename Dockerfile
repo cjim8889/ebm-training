@@ -21,20 +21,16 @@ ENV PATH="/root/.local/bin:${PATH}"
 # Set the working directory
 WORKDIR /app
 
-# Copy only pyproject.toml first to leverage Docker cache
-# Note: This assumes pyproject.toml is sufficient for `uv sync` before cloning the full repo.
-# If the full repo is needed for `uv sync`, this COPY and the RUN uv sync might need adjustment
-# depending on the project structure in the repo.
-COPY pyproject.toml .
+# Clone the repository and switch branch *before* installing dependencies
+RUN git clone https://github.com/cjim8889/ebm-training . && \
+    git checkout jax-corrected
 
-# Install Python and dependencies using uv
+# Install Python and dependencies using uv (uses pyproject.toml from cloned repo)
 # --system-site-packages installs them into the Python managed by uv
 RUN uv sync
 
-# Clone the repository, switch branch, and pull LFS files
-RUN git clone https://github.com/cjim8889/ebm-training . && \
-    git checkout jax-corrected && \
-    git lfs install && \
+# Install and pull LFS files
+RUN git lfs install && \
     git lfs pull
 
 # (Optional: Define a default command if needed, e.g., CMD ["python", "main.py"])
