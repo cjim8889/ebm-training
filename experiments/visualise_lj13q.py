@@ -16,7 +16,7 @@ target_density = QuadraticSmoothedLJ(
 )
 
 # Load the three types of samples
-gt_samples = jnp.load("data/train_split_LJ13-1000.npy")
+gt_samples = jnp.load("data/gt_lj13_samples.npz")["positions"]
 efm_samples_full = jnp.load("data/efm_LJ13_all.npy")
 n_efm_total = efm_samples_full.shape[0]
 n_efm_subsample = 400_000

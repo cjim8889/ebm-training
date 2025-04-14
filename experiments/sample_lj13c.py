@@ -23,10 +23,11 @@ target_density = QuadraticSmoothedLJ(
     include_harmonic=True,
     r_min=0.01,
     min_dr=1e-6,
+    c=1,
     # r_min=0.8,
 )
 
-initial_density = MultivariateGaussian(dim=39, sigma=2.5)
+initial_density = MultivariateGaussian(dim=39, sigma=2.)
 path_density = AnnealedDistribution(
     initial_density=initial_density,
     target_density=target_density,
@@ -52,7 +53,7 @@ except Exception as e:
     print(f"Error loading adaptive parameters: {e}. Running without adaptive parameters.")
     adaptive_params = None
 # ------------------------------------
-
+adaptive_params = None
 
 keys = jax.random.split(key, 2) # Only need 2 keys now
 key = keys[0]
@@ -67,8 +68,8 @@ samples = generate_samples_with_smc(
     time_dependent_log_density=path_density.time_dependent_log_prob,
     ts=ts,
     num_mcmc_steps=15,      # Renamed from num_steps
-    integration_steps=15,   # Kept as default/fallback if adaptive params fail
-    eta=0.01,               # Kept as default/fallback if adaptive params fail
+    integration_steps=10,   # Kept as default/fallback if adaptive params fail
+    eta=0.02,               # Kept as default/fallback if adaptive params fail
     ess_threshold=0.6,
     hmc_parameters=adaptive_params, # Pass loaded parameters
     # incremental_delta=path_density.incremental_log_delta,
@@ -86,7 +87,7 @@ fig = target_density.visualise(final_positions)
 
 plt.show()
 # Save the samples to a local file
-save_path = "data/lj13c_smc_regularized_samples.npz" # Changed filename slightly
+save_path = "data/lj13c_smc_regularized_samples_2.npz" # Changed filename slightly
 os.makedirs(os.path.dirname(save_path), exist_ok=True)
 jnp.savez(
     save_path,
@@ -98,7 +99,7 @@ jnp.savez(
 print(f"Samples saved to {save_path}")
 
 # Save the figure
-fig_save_path = "lj13c_smc_regularized_samples.png" # Changed filename slightly
+fig_save_path = "lj13c_smc_regularized_samples_2.png" # Changed filename slightly
 plt.savefig(fig_save_path)
 print(f"Figure saved to {fig_save_path}")
 plt.close(fig) # Close the plot to free memory

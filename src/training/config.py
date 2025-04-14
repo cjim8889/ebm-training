@@ -141,7 +141,7 @@ class DensityConfig:
     min_dr: Optional[float] = 1e-3
     m: Optional[int] = 1
     n: Optional[int] = 1.0
-    c: Optional[float] = 0.5
+    c: Optional[float] = 1.0
     r_min: Optional[float] = 0.2
     log_prob_clip: Optional[float] = None
     log_prob_clip_min: Optional[float] = None

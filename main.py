@@ -333,7 +333,7 @@ def main():
     parser.add_argument("--min-dr", type=float, default=1e-3)
     parser.add_argument("--m", type=int, default=1)
     parser.add_argument("--n", type=int, default=1)
-    parser.add_argument("--c", type=float, default=0.5)
+    parser.add_argument("--c", type=float, default=1.0)
     parser.add_argument("--log-prob-clip", type=float, default=None)
     parser.add_argument("--log-prob-clip-min", type=float, default=None)
     parser.add_argument("--log-prob-clip-max", type=float, default=None)

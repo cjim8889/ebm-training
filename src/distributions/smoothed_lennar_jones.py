@@ -35,7 +35,7 @@ class QuadraticSmoothedLJ(Target):
         r_min: float = 0.1,
         V_max: float = 100.0,
         min_dr: float = 1e-4,
-        c: float = 0.5,
+        c: float = 1.,
         include_harmonic: bool = True,
         log_prob_clip: float = None,
         log_prob_clip_min: float = None,
